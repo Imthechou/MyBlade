@@ -14,6 +14,16 @@
 
 安装 Cocos Creator **3.8.x**，从 Dashboard 导入此仓库根目录，打开 `assets/scene.scene`，预览。场景脚本挂载使用 `LabBootstrap.ts.meta` 的稳定 UUID。首次导入需要等待编辑器初始化索引。
 
+## Windows 11 一键部署
+
+请优先阅读 [Windows 安装与 Runner 安全配置](docs/WINDOWS_SETUP.md)。安装 Cocos Creator 3.8.x 和 Node.js 22+，用 Dashboard 首次导入工程后，在工程根目录运行：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\tools\run-local-validation.ps1
+```
+
+这会在本机实际构建 Web 并截图，**不需要 GitHub Runner**。本机验证通过后，可按安装说明注册独立的 GitHub Actions Runner，前台启动：`tools/start-windows-runner.ps1`。由于仓库公开，切勿在日常主力电脑上长期开放自托管执行。
+
 ## 自动验收
 
 `npm run` 非此工程构建入口：Cocos 工程由编辑器构建。GitHub Actions 分为：

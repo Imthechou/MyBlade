@@ -38,7 +38,7 @@ try {
   const page=await context.newPage();
   page.on('pageerror',e=>errors.push(e.message));
   await page.goto('http://127.0.0.1:8123/',{waitUntil:'domcontentloaded'});
-  await page.waitForFunction(()=>globalThis.__MYBLADE?.ready===true,{timeout:90000});
+  await page.waitForFunction(()=>globalThis.__MYBLADE?.ready===true,undefined,{timeout:90000});
   await page.waitForTimeout(1500);
   await page.screenshot({path:'artifacts/01-normal.png'});
   const before=await page.evaluate(()=>globalThis.__MYBLADE.state.cutCount);
