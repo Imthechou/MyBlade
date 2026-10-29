@@ -1,0 +1,59 @@
+name: Cocos 3D lab validation
+on:
+  push:
+    branches: [main, feat/cocos-blade-lab]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  structure:
+    name: Validate project and asset links
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Scene and source structural checks
+        run: node tools/validate-project.mjs
+
+  cocos-web-playtest:
+    name: Build Cocos Web and Playwright screenshots
+    needs: structure
+    # This MUST be a GUI-capable Windows self-hosted agent with Cocos Creator 3.8 installed.
+    runs-on: [self-hosted, windows, cocos-3.8]
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Require locally installed Cocos Creator
+        shell: pwsh
+        run: |
+          if (-not $env:COCOS_CREATOR_EXE) { throw "Set COCOS_CREATOR_EXE in self-hosted runner environment." }
+          if (-not (Test-Path $env:COCOS_CREATOR_EXE)) { throw "Cocos exe not found at $env:COCOS_CREATOR_EXE" }
+      - name: Cocos Creator 3.8 build web-mobile
+        shell: pwsh
+        run: |
+          $args = @("--project", "$((Get-Location).Path)", "--build", "platform=web-mobile;debug=true;buildPath=project://build;outputName=web-mobile;startScene=d09b082c-0b82-4dbb-8018-6e0e4c443f4a")
+          & $env:COCOS_CREATOR_EXE @args
+          $exit = $LASTEXITCODE
+          Write-Host "Cocos exit code: $exit"
+          if ($exit -ne 0 -and $exit -ne 36) { throw "Cocos Creator build failed ($exit)" }
+      - name: Install Playwright Chromium
+        shell: pwsh
+        run: |
+          npm install --no-save --no-package-lock playwright@1.56.1
+          npx playwright install chromium
+      - name: Real WebGL launch and screenshot assertions
+        shell: pwsh
+        run: node tools/verify-web.mjs
+      - name: Upload screenshots and report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: myblade-cocos-web-visual-audit
+          path: artifacts/
+          if-no-files-found: warn
+          retention-days: 14
