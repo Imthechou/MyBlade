@@ -18,6 +18,14 @@
 
 打开游戏，在舞台中间从左到右划动手指；击中后看木块分离、翻滚、落地。点击 **STEEL COLOR / PATTERN / LIGHTING** 按钮调整外观。
 
+## 已完成的实机浏览器验收（2026-10-30）
+
+首次 CI 构建、WebGL 启动、金属变色/灯光修改、木块分裂和自动重生全部通过；Playwright 控制台没有报错。
+[测试运行与截图（Actions）](https://github.com/Imthechou/MyBlade/actions/runs/40987290845)。
+[截图 Artifact](https://github.com/Imthechou/MyBlade/actions/runs/40987290845/artifacts/12947443175)。
+
+发布网页只差仓库首次启用 Pages：打开 [Settings → Pages](https://github.com/Imthechou/MyBlade/settings/pages)，将 Source 设为 **GitHub Actions**，然后重跑 Godot workflow。未启用时部署作业现在会跳过，不影响已通过的实际构建。
+
 ## 验收
 
 - `git clone -b feat/godot-3d-lab https://github.com/Imthechou/MyBlade.git`
