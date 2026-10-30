@@ -1,0 +1,97 @@
+name: Godot Web build + Playwright
+on:
+  push:
+    branches: [feat/godot-3d-lab]
+  pull_request:
+    paths:
+      - 'project.godot'
+      - 'scenes/**'
+      - 'scripts/**'
+      - 'shaders/**'
+      - 'export_presets.cfg'
+      - '.github/workflows/godot-web.yml'
+      - 'tests/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-test:
+    name: Godot 4.5.2 cloud build and actual WebGL playtest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download Godot 4.5.2 and official Web export templates
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE="https://github.com/godotengine/godot/releases/download/4.5.2-stable"
+          curl -fL --retry 3 "$BASE/Godot_v4.5.2-stable_linux.x86_64.zip" -o /tmp/godot.zip
+          sudo unzip -q /tmp/godot.zip -d /usr/local/bin/
+          sudo mv /usr/local/bin/Godot_v4.5.2-stable_linux.x86_64 /usr/local/bin/godot
+          sudo chmod +x /usr/local/bin/godot
+          godot --version
+          curl -fL --retry 3 "$BASE/Godot_v4.5.2-stable_export_templates.tpz" -o /tmp/templates.tpz
+          mkdir -p /tmp/godot-templates "$HOME/.local/share/godot/export_templates/4.5.2.stable"
+          unzip -q /tmp/templates.tpz -d /tmp/godot-templates
+          cp -R /tmp/godot-templates/templates/. "$HOME/.local/share/godot/export_templates/4.5.2.stable/"
+          ls "$HOME/.local/share/godot/export_templates/4.5.2.stable/" | head -30
+      - name: Parse source and import scene
+        run: |
+          mkdir -p artifacts
+          godot --headless --path . --editor --quit 2>&1 | tee artifacts/godot-import.log
+          godot --headless --path . --check-only --script res://scripts/arena.gd 2>&1 | tee artifacts/godot-script-check.log
+      - name: Export actual WebGL game
+        run: |
+          mkdir -p build/web
+          godot --headless --path . --export-release "Web" build/web/index.html 2>&1 | tee artifacts/godot-export.log
+          test -s build/web/index.html
+          du -sh build/web
+      - name: Upload playable Web package
+        uses: actions/upload-artifact@v4
+        with:
+          name: godot-web-build
+          path: build/web/
+          retention-days: 14
+      - name: Install browser test dependencies
+        run: |
+          npm install --no-save --no-package-lock playwright@1.56.1
+          npx playwright install --with-deps chromium
+      - name: Serve exported Web game and test real rendering
+        run: |
+          python3 -m http.server 8123 --bind 127.0.0.1 --directory build/web > artifacts/http.log 2>&1 &
+          echo $! > /tmp/myblade-http.pid
+          node tests/web-smoke.mjs
+      - name: Upload screenshot + logs (also on failure)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: godot-web-screenshots
+          path: artifacts/
+          retention-days: 14
+
+  pages:
+    name: Deploy Web preview (once Pages enabled)
+    needs: build-test
+    if: ${{ github.event_name == 'push' }}
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: godot-web-build
+          path: build/web
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: build/web
+      - id: deployment
+        uses: actions/deploy-pages@v4
