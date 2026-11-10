@@ -1,0 +1,25 @@
+{
+  "cell": 256,
+  "columns": [
+    "foam",
+    "rope",
+    "wood",
+    "plastic",
+    "ice",
+    "metal"
+  ],
+  "rows": [
+    "whole",
+    "top",
+    "bottom",
+    "chips",
+    "flash"
+  ],
+  "version": 2,
+  "asset": "assets/arena/targets.webp",
+  "sources": "deterministic generated raster sprites, no SVG and no remote downloads",
+  "dimensions": [
+    1536,
+    1280
+  ]
+}

@@ -1,0 +1,35 @@
+name: MyBlade forge visual and gameplay QA
+on:
+  push:
+    branches: [feat/forge-visual-interaction-v404-20261110]
+permissions:
+  contents: read
+jobs:
+  forge-qa:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check source syntax
+        run: |
+          node --check game/src/v19/forgeView.js
+          node --check game/src/v19/stage.js
+          node --check game/src/v19/materials.js
+          node --check game/src/v19/forgeMarkup.js
+      - name: Install Chromium and Chinese fonts
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq fonts-noto-cjk
+          npm install --no-audit --no-fund --no-save playwright@1.56.1
+          npx playwright install chromium
+      - name: Play all five forge phases
+        shell: bash
+        run: |
+          python3 -m http.server 4173 --bind 127.0.0.1 --directory game >/tmp/forge-server.log 2>&1 &
+          sleep 2
+          timeout --signal=TERM --kill-after=10s 155s node qa/forge-visual.spec.cjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: myblade-forge-qa
+          path: audit/
+          if-no-files-found: ignore
