@@ -13,6 +13,21 @@ async function snap(page,name){
     three:!!globalThis.THREE?.GLTFLoader,
     canvasHost:document.querySelector('#scene')?.parentElement?.id,
     horizontalOverflow:document.documentElement.scrollWidth>innerWidth,
+    stage:globalThis.__testStage&&{
+      mode:globalThis.__testStage.mode,
+      shown:globalThis.__testStage.shown,
+      want:globalThis.__testStage.want,
+      contentVisible:globalThis.__testStage.content.visible,
+      meshVisible:globalThis.__testStage.mesh?.visible,
+      rendering:globalThis.__testStage.rendering,
+      onScreen:globalThis.__testStage.onScreen,
+      pending:Array.from(globalThis.__testStage.pending.keys()),
+      frame:globalThis.__testStage.renderer.info.render.frame,
+      lastRender:Math.round(globalThis.__testStage.lastRender||0),
+      now:Math.round(performance.now()),
+      dirtyUntil:Math.round(globalThis.__testStage.dirtyUntil||0),
+      canvasRect:globalThis.__testStage.canvas.getBoundingClientRect().toJSON(),
+    },
     resources:performance.getEntriesByType('resource').filter(r=>/three\\.bundle|three\\.addons|models\\/.test(r.name)).map(r=>({
       path:new URL(r.name).pathname,duration:Math.round(r.duration),size:r.transferSize})),
   }));
@@ -45,6 +60,22 @@ async function snap(page,name){
   await page.waitForFunction(()=>Boolean(globalThis.THREE?.GLTFLoader),{timeout:20000});
   await page.waitForTimeout(900);
   const home=await snap(page,'02_home_with_showcase');
+  await page.evaluate(async()=>{
+    const {ForgeStage}=await import('/src/v19/stage.js');
+    if(ForgeStage.prototype.__handoffInstrumented)return;
+    const old=ForgeStage.prototype.suspendPresentation;
+    ForgeStage.prototype.suspendPresentation=function(...args){
+      globalThis.__testStage=this;
+      old.apply(this,args);
+      (globalThis.__handoffReports ||= []).push({
+        shown:this.shown,mode:this.mode,
+        contentVisible:this.content.visible,
+        meshVisible:this.mesh?.visible,
+      });
+    };
+    ForgeStage.prototype.__handoffInstrumented=true;
+    globalThis.__handoffReports=[];
+  });
   if(home.canvasHost!=='homeStage')issues.push('Home scene not mounted');
   const modelCountBefore=home.resources.filter(r=>r.path.includes('models/')).length;
   console.log('HOME_MODEL_REQUEST_COUNT',modelCountBefore);
@@ -54,6 +85,8 @@ async function snap(page,name){
   await snap(page,'03_forge_early');
   await page.waitForTimeout(1450);
   const ore=await snap(page,'04_forge_ore_ready');
+  await page.waitForTimeout(2150);
+  await snap(page,'04b_ore_after_wait');
   if(ore.canvasHost!=='stage')issues.push('Forge stage did not receive canvas');
   if(ore.phase!=='ore')issues.push('Forge did not enter ore');
   await page.getByRole('button',{name:/返回首页/}).click();
@@ -104,24 +137,12 @@ async function snap(page,name){
     await page.getByRole('button',{name:/确认并鉴定/}).click();
     await page.waitForTimeout(750);
     await snap(page,'11_saved_blade_appraisal');
+    await page.waitForTimeout(1200);
+    await snap(page,'11b_appraisal_wait');
     await page.getByRole('button',{name:/返回首页/}).click();
     await page.waitForTimeout(1050);
     await snap(page,'12_home_owned_blade');
-    await page.evaluate(async()=>{
-      const {ForgeStage}=await import('/src/v19/stage.js');
-      if(ForgeStage.prototype.__handoffInstrumented)return;
-      const old=ForgeStage.prototype.suspendPresentation;
-      ForgeStage.prototype.suspendPresentation=function(...args){
-        old.apply(this,args);
-        (globalThis.__handoffReports ||= []).push({
-          shown:this.shown,mode:this.mode,
-          contentVisible:this.content.visible,
-          meshVisible:this.mesh?.visible,
-        });
-      };
-      ForgeStage.prototype.__handoffInstrumented=true;
-      globalThis.__handoffReports=[];
-    });
+    await page.evaluate(()=>{globalThis.__handoffReports=[]});
     await page.getByRole('button',{name:/开始锻刀/}).click();
     await page.waitForFunction(()=>document.querySelector('#v19-forge')?.dataset.phase==='ore');
     await snap(page,'13_fresh_forge_after_owned_blade');
