@@ -215,12 +215,12 @@ export function mountForge(root, { onArena, onCollection }) {
       readout.replaceChildren();
       actions.innerHTML = button('restart', '再开一炉');
     }
-    stage?.sync(run, ore, fit);
+    const modelReady = stage?.sync(run, ore, fit);
     viewTools.hidden = !stage || !['reveal', 'forge', 'fit', 'appraise'].includes(phase);
     viewTools.dataset.zoom = String(Boolean(stage?.canZoom));
     renderGripFocus();
     renderTools(run, ore);
-    renderTray(run, fit);
+    renderTray(run, fit, modelReady);
     if (changedPhase) { root.closest('.page').scrollTop = 0; impactFeedback.classList.remove('is-active'); stageBox.classList.remove('is-striking'); }
   }
 
@@ -256,11 +256,17 @@ export function mountForge(root, { onArena, onCollection }) {
     viewTools.dataset.zoom = String(Boolean(preview));
   }
 
-  function renderTray(run, fit) {
+  let thumbnailEpoch = 0;
+  const idleSlot = () => new Promise(resolve => {
+    if (typeof requestIdleCallback === 'function') requestIdleCallback(resolve, { timeout: 1000 });
+    else setTimeout(resolve, 100);
+  });
+  function renderTray(run, fit, modelReady) {
     const { phase } = run;
     const key = [run.seed, phase, run.batch, run.selected, run.refreshed, run.fit, JSON.stringify(run.inspections)].join('|');
     if (key === trayKey) return;
     trayKey = key;
+    const epoch = ++thumbnailEpoch;
     if (phase === 'ore') {
       const stones = offers(run);
       tray.innerHTML = `<div class="ore-grid">${stones.map((stone, index) => {
@@ -273,14 +279,27 @@ export function mountForge(root, { onArena, onCollection }) {
         </button>`;
       }).join('')}</div>`;
       const { batch, seed } = run;
-      for (const stone of stones) stage?.oreThumbnail(stone).then(src => {
-        if (!active || save.run.phase !== 'ore' || save.run.seed !== seed || save.run.batch !== batch) return;
-        const img = tray.querySelector(`img[data-stone="${stone.id}"]`);
-        if (img) {
-          img.src = src;
-          img.closest('.ore-thumbnail').classList.add('is-loaded');
+      const current = () => active && epoch === thumbnailEpoch && save?.run?.phase === 'ore' &&
+        save.run.seed === seed && save.run.batch === batch && stage?.rendering;
+      // First show the chosen 3D stone. Three off-screen thumbnail renders
+      // and GPU readbacks must not contend with the visible model's first frame.
+      void Promise.resolve(modelReady).then(async () => {
+        await new Promise(resolve => setTimeout(resolve, 220));
+        for (const stone of stones) {
+          if (!current()) return;
+          await idleSlot();
+          if (!current()) return;
+          try {
+            const src = await stage.oreThumbnail(stone);
+            if (!current()) return;
+            const img = tray.querySelector(`img[data-stone="${stone.id}"]`);
+            if (img) {
+              img.src = src;
+              img.closest('.ore-thumbnail').classList.add('is-loaded');
+            }
+          } catch (error) { console.warn('Specimen preview', error); }
         }
-      }).catch(error => console.warn('Specimen preview', error));
+      }).catch(error => console.warn('Specimen previews deferred', error));
     } else if (phase === 'fit') {
       tray.innerHTML = `<div class="fit-grid">${fitOptions(run).map(item => {
         const best = Math.max(...item.delta);
@@ -663,9 +682,7 @@ export function mountForge(root, { onArena, onCollection }) {
       sound.configure(getProgress().settings);
       stageInput?.abort();
       try {
-        const stones = save.run.phase === 'ore' ? offers(save.run) : [];
-        const models = stones.length ? [stones[save.run.selected], ...stones].map(oreModelId) : [];
-        stage = attachForgeStage(stageBox, models);
+        stage = attachForgeStage(stageBox);
         stageInput = new AbortController();
         bindStageInput(stage, {
           signal: stageInput.signal,
@@ -693,6 +710,8 @@ export function mountForge(root, { onArena, onCollection }) {
       revealPending = busy = resultPause = queuedStop = false;
       queuedHit = undefined;
       stageInput?.abort();
+      thumbnailEpoch++;
+      trayKey = null;
       releaseForgeStage(stageBox);
       active = false;
     },
