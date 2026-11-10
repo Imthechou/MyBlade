@@ -19,6 +19,7 @@ export function mountForge(root, { onArena, onCollection }) {
   const tray = get('tray');
   const readout = get('readout');
   const msg = get('stage-message');
+  const impactFeedback = get('impact-feedback');
   const sound = new ForgeSound();
   const stepNames = ['选料', '精炼', '锻打', '装配', '鉴定'];
   const roman = ['', ' I', ' II', ' III'];
@@ -113,7 +114,7 @@ export function mountForge(root, { onArena, onCollection }) {
   function lookChips(run) {
     const fields = Object.entries(LOOKS).filter(([slot]) => LOOKS[slot][run.skin[slot]]);
     const combination = signature(run.skin);
-    return `<div class="look-list">${fields.map(([slot, names]) => `<span class="look-chip ${run.skin.levels[slot] >= 3 ? 'rarity' : ''}">${names[run.skin[slot]]}${roman[run.skin.levels[slot]] || ''}</span>`).join('')}${combination ? `<span class="look-chip rarity">${combination}</span>` : ''}</div>`;
+    return `<div class="look-list">${fields.map(([slot, names]) => `<span class="look-chip ${run.skin.levels[slot] >= 3 ? 'rarity' : ''}"><span>${names[run.skin[slot]]}</span><span class="look-level" aria-label="${run.skin.levels[slot]}级">${'◆'.repeat(run.skin.levels[slot] || 0)}${'◇'.repeat(Math.max(0, 3 - (run.skin.levels[slot] || 0)))}</span></span>`).join('')}${combination ? `<span class="look-chip rarity"><span>${combination}</span><span class="look-level">✦</span></span>` : ''}</div>`;
   }
 
   function render() {
@@ -136,7 +137,7 @@ export function mountForge(root, { onArena, onCollection }) {
     }
     get('stage-state').hidden = !webglError;
     get('stage-state').textContent = webglError ? '3D 暂不可用' : '';
-    const hints = { reveal: '拖动看切面', forge: '点刀落锤', fit: '横拖旋转', appraise: '横拖旋转' };
+    const hints = { reveal: '转动看切面', forge: '轻点刀身落锤 · 横拖旋转', fit: '旋转查看 · 可放大刀柄', appraise: '旋转鉴赏成刀' };
     get('stage-hint').textContent = hints[phase] || '';
     if (phase === 'ore') {
       title('挑一块原石', '第 ' + (run.batch + 1) + ' / ' + BATCHES + ' 批', ore.price > save.credits ? '余额不足，换一块原石' : '');
@@ -183,7 +184,7 @@ export function mountForge(root, { onArena, onCollection }) {
       drawHeat();
     } else if (phase === 'forge') {
       const risk = fractureRisk(run);
-      title(MODELS[run.model], '', '刀腹塑纹 · 刃侧上色 · 刀尖生光');
+      title(MODELS[run.model]);
       readout.innerHTML = `<div class="forge-meters"><div><span>落锤</span><b id="hit-count">${run.hits}${run.hits < 6 ? ' / 6' : ' 锤'}</b></div>
         <div><span>下一锤断率</span><b class="risk-value ${risk >= .075 ? 'alert' : ''}" id="risk">${fmt(risk)}</b>
           <div class="risk-bar"><span style="width:${risk / .9 * 100}%"></span></div></div></div>${lookChips(run)}`;
@@ -192,7 +193,7 @@ export function mountForge(root, { onArena, onCollection }) {
       actions.innerHTML = fallback + button('finish', run.hits < 6 ? '第 6 锤后可收锤' : '收锤，去装配', { off: run.hits < 6 });
     } else if (phase === 'fit') {
       title('给刀装柄', '选 1 套');
-      readout.innerHTML = fit ? `<p class="fit-detail">${fit.parts} · ${fit.delta.map((n, i) => n ? STAT_NAMES[i] + signed(n) : '').filter(Boolean).join(' · ')}</p>` : '';
+      readout.innerHTML = fit ? `<div class="fit-stats"><span>${esc(fit.parts)}</span><strong>${fit.delta.map((n, i) => n > 0 ? `${STAT_NAMES[i]} +${n}` : '').filter(Boolean).slice(0, 3).join('　')}</strong></div>` : '';
       const price = fittingPrice(run);
       actions.innerHTML = button('appraise', '确认并鉴定', { off: !fit }) +
         button('refresh', run.refreshed ? '已换配件' : run.freeFitting ? '免费换一批' : '换一批 · ' + price + ' CR', { kind: 'secondary', off: run.refreshed || save.credits < price });
@@ -220,7 +221,7 @@ export function mountForge(root, { onArena, onCollection }) {
     renderGripFocus();
     renderTools(run, ore);
     renderTray(run, fit);
-    if (changedPhase) root.closest('.page').scrollTop = 0;
+    if (changedPhase) { root.closest('.page').scrollTop = 0; impactFeedback.classList.remove('is-active'); stageBox.classList.remove('is-striking'); }
   }
 
 
@@ -329,7 +330,8 @@ export function mountForge(root, { onArena, onCollection }) {
       heatInput.green = green;
     }
     const canPour = heat.step === 'molten' && heat.elapsed >= HEAT.minimum && heat.quality >= HEAT.minQuality;
-    const state = [heat.step, danger, rank, paused, Boolean(heatInput?.blowing), canPour].join('|');
+    const state = [heat.step, danger, rank, paused, Boolean(heatInput?.blowing), canPour, green].join('|');
+    stageBox.dataset.heatZone = danger ? 'danger' : green ? 'ideal' : 'warming';
     if (!force && state === heatHud.state && now - heatHud.updated < 80) return;
     heatHud.state = state;
     heatHud.updated = now;
@@ -418,6 +420,23 @@ export function mountForge(root, { onArena, onCollection }) {
     drawHeat();
   }
 
+  function showImpact(hit, result) {
+    if (!stage || !impactFeedback) return;
+    const rect = stageBox.getBoundingClientRect();
+    const at = stage.project(hit.world, rect);
+    impactFeedback.style.setProperty('--hit-x', Math.min(88, Math.max(12, (at.x - rect.left) / rect.width * 100)) + '%');
+    impactFeedback.style.setProperty('--hit-y', Math.min(83, Math.max(14, (at.y - rect.top) / rect.height * 100)) + '%');
+    impactFeedback.className = 'impact-feedback';
+    void impactFeedback.offsetWidth;
+    impactFeedback.classList.add('is-active');
+    if (result.notable || result.fusion || result.type === 'surge') impactFeedback.classList.add('is-rare');
+    stageBox.classList.remove('is-striking');
+    void stageBox.offsetWidth;
+    stageBox.classList.add('is-striking');
+    clearTimeout(impactFeedback._clear);
+    impactFeedback._clear = setTimeout(() => stageBox.classList.remove('is-striking'), 220);
+  }
+
   function hitBlade(hit) {
     sound.configure(getProgress().settings);
     if (!hit || save.run.phase !== 'forge' || queuedStop || pendingCheckpoint) return;
@@ -435,6 +454,7 @@ export function mountForge(root, { onArena, onCollection }) {
       sound.impact(result, save.run.purity);
       haptics.feedback(result.type === 'break' ? 'fracture' : result.notable ? 'trait' : 'hammer');
       stage?.impact(hit, result);
+      showImpact(hit, result);
       render();
       if (save.run.phase === 'forge' && [.10, .25, .50].some(level => result.risk < level && fractureRisk(save.run) >= level)) {
         sound.play('tension', 1, .12);
