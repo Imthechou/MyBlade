@@ -82,8 +82,9 @@
   而 ESM 是 deferred 的 —— 经典脚本先执行完，THREE 一定已就位。
   （换成 ESM 版 three 需要改 legacy 内核，暂不做。）
 -->
-<!-- The 3D runtime is loaded by threeRuntime.js only when a scene is requested.
-     Keep first paint/navigation independent of Three.js download and parsing. -->
+<script src="src/render/legacy/three.bundle.js"></script>
+<script src="src/render/legacy/three.addons.js"></script>
+<!-- Diagnostic: keep the rest of lazy loading and canvas handoff unchanged. -->
 
 <!-- 应用层入口（ESM）。⚠ ES Module 需经 HTTP 访问，file:// 会被 CORS 拦截。 -->
 <script type="module" src="src/app/bootstrap.js"></script>
