@@ -23,13 +23,18 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
           import zipfile, shutil
-          with zipfile.ZipFile('锻刀大赛.zip') as z:
-              z.extractall('_unpacked')
-          files=sorted(Path('_unpacked').rglob('index.html'),key=lambda p:len(p.parts))
-          if not files: raise RuntimeError('Game index.html missing from ZIP')
-          shutil.copytree(files[0].parent, '_site', dirs_exist_ok=True)
+          if Path('game/index.html').exists():
+              shutil.copytree('game', '_site', dirs_exist_ok=True)
+              source = 'editable game/'
+          else:
+              with zipfile.ZipFile('锻刀大赛.zip') as z:
+                  z.extractall('_unpacked')
+              files=sorted(Path('_unpacked').rglob('index.html'),key=lambda p:len(p.parts))
+              if not files: raise RuntimeError('Game index.html missing from ZIP')
+              shutil.copytree(files[0].parent, '_site', dirs_exist_ok=True)
+              source = str(files[0].parent)
           Path('_site/.nojekyll').touch()
-          print('Prepared', len(list(Path('_site').rglob('*'))), 'items from', files[0].parent)
+          print('Prepared', len(list(Path('_site').rglob('*'))), 'items from', source)
           PY
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v4
