@@ -70,6 +70,28 @@ async function run() {
  await page.getByRole('button',{name:/继续锻刀|开始锻刀/}).click();
  await page.waitForTimeout(1750);
  await shot(page,'06_forge');
+ const inspectStage=async(name)=>{
+   const data=await page.evaluate(async()=>{
+     const {attachForgeStage}=await import('/src/v19/sharedStage.js');
+     const stage=attachForgeStage(document.querySelector('#v19-forge #stage'));
+     return {
+       mode:stage.mode, want:stage.want, shown:stage.shown,
+       cache:Array.from(stage.cache.keys()),pending:Array.from(stage.pending.keys()),
+       rendering:stage.rendering,onScreen:stage.onScreen,lastRender:stage.lastRender,
+       meshVisible:stage.mesh?.visible, meshScale:stage.mesh?.scale.toArray(),
+       sceneChildren:stage.scene?.children?.length,
+       rendererInfo:stage.renderer?.info?.render,
+       shaderInfo:stage.active?.mesh?.material?.userData,
+       geometryVertices:stage.mesh?.geometry?.attributes?.position?.count,
+       resources:performance.getEntriesByType('resource').filter(r=>r.name.includes('knife_')).map(r=>({name:r.name,size:r.transferSize,duration:r.duration}))
+     }
+   });
+   console.log('INSPECT_STAGE_'+name,JSON.stringify(data).slice(0,3000))
+ };
+ await inspectStage('FIRST_FORGE');
+ await page.waitForTimeout(2400);
+ await inspectStage('AFTER_WAIT');
+ await shot(page,'06b_forge_wait');
  const scene=page.locator('#v19-forge #scene');
  await scene.focus();
  await page.keyboard.press('Space');
@@ -84,6 +106,7 @@ async function run() {
  await shot(page,'09_fit_selected');
  await page.getByRole('button',{name:/确认并鉴定/}).click();
  await shot(page,'10_appraise');
+ await inspectStage('APPRAISAL');
  const stats=await page.locator('.stat-list .stat').count();
  console.log('STAT_COUNT',stats);
  if(stats!==6)throw new Error('Missing final six attributes');
