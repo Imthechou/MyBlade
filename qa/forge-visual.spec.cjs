@@ -5,7 +5,8 @@ fs.mkdirSync(output,{recursive:true});
 const scenes = [];
 const errors = [];
 async function shot(page, label) {
-  await page.waitForTimeout(950);
+  console.log('CAPTURE_START', label);
+  await page.waitForTimeout(750);
   const state = await page.evaluate(() => ({
     phase: document.querySelector('#v19-forge')?.dataset.phase,
     heading: document.querySelector('#v19-forge #title')?.textContent,
@@ -16,7 +17,7 @@ async function shot(page, label) {
     visualCss: Boolean(Array.from(document.styleSheets).some(s=>s.href?.includes('forge-art-direction.css')))
   }));
   console.log('SCENE',label,JSON.stringify(state));
-  const bytes=await page.screenshot({type:'jpeg',quality:64,animations:'disabled',path:output+'/'+label+'.jpg'});
+  const bytes=await page.screenshot({type:'jpeg',quality:64,animations:'disabled',timeout:9000,path:output+'/'+label+'.jpg'});
   console.log('SHOT_BEGIN_'+label);
   console.log(bytes.toString('base64'));
   console.log('SHOT_END_'+label);
@@ -26,6 +27,8 @@ async function run() {
  const browser=await chromium.launch({headless:true,args:['--disable-dev-shm-usage','--use-gl=angle','--use-angle=swiftshader','--enable-webgl']});
  const context=await browser.newContext({viewport:{width:390,height:844},deviceScaleFactor:1,isMobile:true,hasTouch:true});
  const page=await context.newPage();
+ page.setDefaultTimeout(7500);
+ page.setDefaultNavigationTimeout(12000);
  page.on('pageerror',err=>errors.push('JS '+err.stack));
  page.on('console',m=>{if(m.type()==='error')errors.push('CONSOLE '+m.text())});
  page.on('response',r=>{if(r.status()>=400)errors.push('HTTP '+r.status()+' '+r.url())});
