@@ -326,16 +326,16 @@ steel *= 1.-inclusions*(.38+.40*(1.-fRefine));
 vec4 sourceField = mineralField(vec3(0.,st.y*.84-.42,st.x*1.42-.71),fOreFamily,fOreStyle,fOreSeed);
 float inheritedGrain = sourceField.x * (.45+.55*fOreTrace);
 vec3 sourceBase = fOreTone*(.72+coarse*.18);
-steel = mix(steel,sourceBase,metalStyle == 0 ? .72 : .49);
+steel = mix(steel,sourceBase,metalStyle == 0 ? .64 : .31);
 vec3 sourceLight = mix(vec3(.59,.64,.67),fOreTone,.66);
-if(fOreFamily < .5) steel = mix(steel,steel*.34,inheritedGrain*.80);
-else if(fOreFamily < 1.5) steel = mix(steel,sourceLight*(.36+sourceField.y*.70),.46+inheritedGrain*.18);
-else if(fOreFamily < 2.5) steel = mix(steel*.69,fOreTone*(.92+.18*sourceField.z),inheritedGrain*.84);
-else if(fOreFamily < 3.5) steel = mix(steel*.74,sourceLight,inheritedGrain*.72);
-else steel = mix(steel*.84,sourceLight,inheritedGrain*.61);
+if(fOreFamily < .5) steel = mix(steel,steel*.48,inheritedGrain*.57);
+else if(fOreFamily < 1.5) steel = mix(steel,sourceLight*(.55+sourceField.y*.58),.25+inheritedGrain*.14);
+else if(fOreFamily < 2.5) steel = mix(steel*.85,fOreTone*(.96+.18*sourceField.z),inheritedGrain*.51);
+else if(fOreFamily < 3.5) steel = mix(steel*.89,sourceLight,inheritedGrain*.54);
+else steel = mix(steel*.90,sourceLight,inheritedGrain*.46);
 float sourceHaze=(1.-fOreClarity)*smoothstep(.30,.74,sourceField.z);
 steel=mix(steel,mix(steel*.83,vec3(.40,.43,.45),.18),sourceHaze*.30);
-forgeRough += inheritedGrain*.10 + (sourceField.z-.5)*.025 + (1.-fOreClarity)*.085 - fOreClarity*.028;
+forgeRough += inheritedGrain*.07 + (sourceField.z-.5)*.025 + (1.-fOreClarity)*.068 - fOreClarity*.030;
 
 vec2 relief = vec2(0.);
 vec4 special = vec4(0.);
@@ -369,8 +369,8 @@ steel *= 1.-grind.x*.18;
 steel = mix(steel, steel*.71+vec3(.29,.30,.31), grind.y*(.28+.19*grazing));
 forgeRough += grind.x*.077 - grind.y*.039 + wear*.025;
 #endif
-steel = mix(steel,vec3(.64,.68,.71)*(1.-.22*grazing),edge*(.22+.14*fRefine));
-forgeRough = mix(forgeRough, .14+forgeRough*.36, edge*.54);
+steel = mix(steel,vec3(.76,.80,.83)*(1.-.18*grazing),edge*(.27+.17*fRefine));
+forgeRough = mix(forgeRough, .12+forgeRough*.33, edge*.61);
 float pulse = fPulse * exp(-abs(vForgePos.x-fHit.x)*9. - abs(vForgePos.y-fHit.y)*20.);
 vec3 aura = mineralAccent(vec3(.28,.67,.86),.27);
 vec3 forgeGlow = special.rgb * (1.-.26*max(relief.y,relief.x*.48));
@@ -496,10 +496,10 @@ export function makeOreMaterial(original, uniforms, family = 'river') {
       stone=mix(stone,polished,window);
       float lampDistance=length((vOreView.xy-vec2(.16,.09))*vec2(1.,1.08));
       float lampBeam=1.-smoothstep(.35,.66,lampDistance);
-      float lampCore=exp(-pow(lampDistance/.22,2.));
-      float lampHalo=exp(-pow((lampDistance-.30)/.20,2.));
+      float lampCore=exp(-pow(lampDistance/.16,2.));
+      float lampHalo=exp(-pow((lampDistance-.27)/.23,2.));
       float scatter=oreTransmission*(.55+.45*weather);
-      stone=mix(stone,oreCoreColor*(.65+.35*n),oreLamp*lampBeam*scatter*.32);
+      stone=mix(stone,oreCoreColor*(.65+.35*n),oreLamp*lampBeam*scatter*.50);
       diffuseColor.rgb=stone;
       float oreM=mix(clamp(oreMetalness+exposed*.33+glint*.20,.06,.65),mix(.19,.12,oreClarity),window);
       float oreR=mix(clamp(oreRoughness+pore*.07-exposed*.28-glint*.18,.35,.98),mix(.47,.12,oreClarity),window);
@@ -509,8 +509,8 @@ export function makeOreMaterial(original, uniforms, family = 'river') {
       .replace('#include <metalnessmap_fragment>', 'float metalnessFactor = oreM;')
       .replace('#include <normal_fragment_maps>', '#include <normal_fragment_maps>\nnormal = rockBump(normal,rockHeight,vViewPosition);')
       .replace('#include <emissivemap_fragment>', `
-        totalEmissiveRadiance += oreCoreColor*oreLamp*scatter*(lampBeam*.52+lampHalo*.34)
-          + vec3(1.,.94,.76)*oreLamp*lampCore*.46
+        totalEmissiveRadiance += oreCoreColor*oreLamp*scatter*(lampBeam*.32+lampHalo*.13)
+          + vec3(1.,.89,.73)*oreLamp*lampCore*.11
           + vec3(.91,.15,.022)*oreHeat*oreHeat*(.08+crack*.27);
       `);
   };
@@ -587,7 +587,7 @@ export function makeCutMaterial(uniforms) {
       core=mix(core,oreBaseColor*(.40+.19*n),rim);
       diffuseColor.rgb=core;
       float cutMetal=mix(.13+presence*(.32-oreClarity*.19)+deposit.x*.07,.08,rim);
-      float cutRough=mix(.70-presence*(.22+oreClarity*.28)-quality*.03+flaws*.2,.91,rim);
+      float cutRough=mix(.66-presence*(.24+oreClarity*.27)-quality*.03+flaws*.2,.86,rim);
       float cutHeight=(deposit.z-.5)*.0004+flaws*.001+rim*.001;
     `).replace('#include <roughnessmap_fragment>', 'float roughnessFactor = cutRough;')
       .replace('#include <metalnessmap_fragment>', 'float metalnessFactor = cutMetal;')
