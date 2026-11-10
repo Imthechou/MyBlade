@@ -67,7 +67,7 @@ async function run() {
  console.log('SEEDED_STAGE_FOR_VISUAL_REVIEW',JSON.stringify(result).slice(0,800));
  if(!result?.ok) throw new Error('Could not prepare visual forge fixture: '+JSON.stringify(result));
  await page.getByRole('button',{name:'返回首页'}).click();
- await page.getByRole('button',{name:/开始锻刀/}).click();
+ await page.getByRole('button',{name:/继续锻刀|开始锻刀/}).click();
  await page.waitForTimeout(1750);
  await shot(page,'06_forge');
  const scene=page.locator('#v19-forge #scene');
@@ -97,7 +97,7 @@ async function run() {
  const big=await desktop.newPage();
  big.on('pageerror',e=>errors.push('DESKTOP '+e.message));
  await big.goto('http://127.0.0.1:4173/',{waitUntil:'domcontentloaded'});
- await big.getByRole('button',{name:/开始锻刀/}).click();
+ await big.getByRole('button',{name:/继续锻刀|开始锻刀/}).click();
  await big.waitForTimeout(1000);
  const desktopLayout=await big.evaluate(()=>({xscroll:document.documentElement.scrollWidth>innerWidth,heading:document.querySelector('#title')?.innerText}));
  console.log('DESKTOP',JSON.stringify(desktopLayout));
@@ -108,4 +108,4 @@ async function run() {
  const fatal=errors.filter(x=>/Shader Error|ERROR: 0:|WebGLProgram|Uncaught|Cannot read|404|500|SyntaxError|TypeError|ReferenceError/i.test(x));
  if(fatal.length)throw new Error('Fatal browser errors: '+fatal.slice(0,7).join('; '));
 }
-run().catch(e=>{console.error('AUDIT_FAILED',e.stack||String(e));process.exitCode=1});
+run().catch(e=>{console.error('AUDIT_FAILED',e.stack||String(e));process.exit(1)});
