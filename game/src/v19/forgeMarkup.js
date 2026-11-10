@@ -10,6 +10,7 @@ export const forgeMarkup = `
           </button>
         </div>
         <div class="stage-message" id="stage-message" aria-hidden="true"></div>
+        <div class="impact-feedback" id="impact-feedback" aria-hidden="true"></div>
         <div id="ore-tools" class="ore-tools" hidden>
           <span id="inspection-note" aria-live="polite">转动原石，寻找露脉</span>
           <div class="inspection-tools">
