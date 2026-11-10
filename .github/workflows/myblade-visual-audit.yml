@@ -1,0 +1,86 @@
+name: MyBlade visual smoke audit
+on:
+  push:
+    branches: [review/myblade-visual-audit-20261110]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  browser-review:
+    runs-on: ubuntu-latest
+    timeout-minutes: 16
+    steps:
+      - uses: actions/checkout@v4
+      - name: Unpack and identify game
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import zipfile, os
+          p=Path("锻刀大赛.zip")
+          print("ZIP_BYTES", p.stat().st_size)
+          with zipfile.ZipFile(p) as z:
+            entries=z.infolist()
+            print("ZIP_ENTRIES",len(entries))
+            print("TOP_LEVEL", sorted(set(i.filename.split("/")[0] for i in entries))[:40])
+            for f in entries[:55]: print("FILE", f.filename, f.file_size)
+            z.extractall("extracted")
+          indexes=sorted(Path("extracted").rglob("index.html"), key=lambda p:(len(p.parts),len(str(p))))
+          print("INDEX_CANDIDATES",[str(x) for x in indexes[:25]])
+          pkg=sorted(Path("extracted").rglob("package.json"))
+          print("PACKAGE_CANDIDATES",[str(x) for x in pkg[:15]])
+          if indexes:
+            site=indexes[0].parent.resolve()
+            Path("site-root.txt").write_text(str(site))
+            print("SELECTED_SITE",str(site))
+            print("HTML_PREVIEW",indexes[0].read_text(errors="replace")[:800])
+          else: print("NO_INDEX_HTML")
+          PY
+      - name: Install browser automation
+        if: hashFiles('site-root.txt') != ''
+        shell: bash
+        run: |
+          npm install --no-audit --no-fund --no-save playwright@1.56.1
+          npx playwright install chromium
+      - name: Browser smoke test
+        if: hashFiles('site-root.txt') != ''
+        shell: bash
+        run: |
+          python3 -m http.server 4173 --bind 127.0.0.1 --directory "$(cat site-root.txt)" >/tmp/myblade-webserver.log 2>&1 &
+          sleep 2
+          node <<'JS'
+          const { chromium } = require('playwright');
+          (async () => {
+            const browser = await chromium.launch({headless:true,args:['--disable-dev-shm-usage','--use-gl=angle','--use-angle=swiftshader']});
+            for (const [label, w,h, mobile] of [['MOBILE',390,844,true],['DESKTOP',1365,768,false]]) {
+              const context = await browser.newContext({viewport:{width:w,height:h},deviceScaleFactor:1,isMobile:mobile,hasTouch:mobile});
+              const page = await context.newPage();
+              const errors=[];
+              page.on('pageerror', e => errors.push('PAGEERROR:'+e.message));
+              page.on('console',m => {if(m.type()==='error')errors.push('CONSOLE:'+m.text())});
+              page.on('response', r => {if(r.status()>=400)errors.push('HTTP:'+r.status()+' '+r.url().slice(-150))});
+              try {
+                const response=await page.goto('http://127.0.0.1:4173/',{waitUntil:'domcontentloaded',timeout:30000});
+                await page.waitForTimeout(3500);
+                console.log('BROWSER', label, 'STATUS',response?.status(), 'URL',page.url(),'TITLE',await page.title());
+                console.log('VISIBLE',label,JSON.stringify(await page.evaluate(() => ({
+                  bodyText: document.body.innerText.slice(0,1800),
+                  buttons:Array.from(document.querySelectorAll('button,[role="button"],a,input')).slice(0,35).map(el=>({tag:el.tagName,text:(el.innerText||el.value||el.ariaLabel||'').slice(0,60)})),
+                  canvas: Array.from(document.querySelectorAll('canvas')).map(x=>({width:x.width,height:x.height,rect:x.getBoundingClientRect().toJSON()})),
+                  scrollWidth:document.documentElement.scrollWidth, viewportWidth:innerWidth,
+                  images:document.images.length,brokenImages:Array.from(document.images).filter(x=>!x.complete||x.naturalWidth===0).map(x=>x.src.slice(-120)),
+                }))));
+                const shot=await page.screenshot({type:'jpeg',quality:55,fullPage:false,animations:'disabled'});
+                console.log('SHOT_BEGIN_'+label);console.log(shot.toString('base64'));console.log('SHOT_END_'+label);
+                const buttons=page.locator('button:visible');
+                const n=await buttons.count();console.log('BUTTON_COUNT',label,n);
+                if(n>0) {
+                  console.log('FIRST_BUTTONS',label,JSON.stringify((await buttons.allTextContents()).slice(0,15)));
+                }
+              } catch (e) {console.log('BROWSER_FAILURE',label,e.stack||String(e))}
+              console.log('ERRORS',label,JSON.stringify(errors.slice(0,25)));
+              await context.close();
+            }
+            await browser.close()
+          })().catch(e=>{console.error(e);process.exitCode=1});
+          JS
