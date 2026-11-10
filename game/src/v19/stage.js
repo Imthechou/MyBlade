@@ -345,8 +345,15 @@ export class ForgeStage {
     this.onScreen = true;
     new ResizeObserver(() => this.resize()).observe(canvas);
     if (typeof IntersectionObserver === 'function') new IntersectionObserver(([entry]) => {
-      this.onScreen = entry.isIntersecting;
-      if (this.onScreen) this.invalidate(250);
+      // The WebGL canvas is reused across home and forge. An intersection
+      // notification from its previous mount can arrive after reattachment:
+      // avoid freezing a perfectly visible sword until the next observer tick.
+      if (!canvas.isConnected || !this.rendering) return;
+      const rect = canvas.getBoundingClientRect();
+      const visible = rect.width > 1 && rect.height > 1 &&
+        rect.bottom > 0 && rect.top < window.innerHeight;
+      this.onScreen = entry.isIntersecting || visible;
+      if (this.onScreen) this.invalidate(650);
     }).observe(canvas);
     this.setRendering(true);
   }
@@ -363,6 +370,7 @@ export class ForgeStage {
     this.previousFrame = 0;
     this.onScreen = true;
     this.resize();
+    this.invalidate(950);
     this.scheduleWarm();
     this.frameId = requestAnimationFrame(this.frame);
   }
@@ -717,7 +725,15 @@ export class ForgeStage {
 
   show(id) {
     if (!this.cache.has(id)) return;
-    this.invalidate(300);
+    // A just-loaded model can require a shader warmup on mobile GPUs.
+    // Keep its first visible frames scheduled without continuously rendering.
+    this.invalidate(950);
+    if (this.rendering && this.canvas.isConnected) {
+      const rect = this.canvas.getBoundingClientRect();
+      if (rect.width > 1 && rect.height > 1 && rect.bottom > 0 && rect.top < window.innerHeight) {
+        this.onScreen = true;
+      }
+    }
     const asset = this.cache.get(id);
     if (this.shown !== id) {
       this.cache.delete(id);
