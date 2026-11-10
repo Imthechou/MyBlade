@@ -40,6 +40,7 @@ jobs:
         if: hashFiles('site-root.txt') != ''
         shell: bash
         run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq fonts-noto-cjk
           npm install --no-audit --no-fund --no-save playwright@1.56.1
           npx playwright install chromium
       - name: Browser smoke test
@@ -72,6 +73,25 @@ jobs:
                 }))));
                 const shot=await page.screenshot({type:'jpeg',quality:55,fullPage:false,animations:'disabled'});
                 console.log('SHOT_BEGIN_'+label);console.log(shot.toString('base64'));console.log('SHOT_END_'+label);
+                if(label==='MOBILE'){
+                  for (const [view,target] of [['FORGE',/开始锻刀/],['ARENA',/赛事/],['COLLECTION',/藏刀阁/],['WORKSHOP',/工坊/]]){
+                    try {
+                      await page.goto('http://127.0.0.1:4173/',{waitUntil:'domcontentloaded',timeout:20000});
+                      await page.waitForTimeout(1400);
+                      await page.getByRole('button',{name:target}).last().click({timeout:9000});
+                      await page.waitForTimeout(2200);
+                      console.log('VIEW_'+view,JSON.stringify(await page.evaluate(()=>({
+                        title:document.title,
+                        text:document.body.innerText.slice(0,2800),
+                        buttons:Array.from(document.querySelectorAll('button')).filter(el=>el.getBoundingClientRect().width>0&&el.getBoundingClientRect().height>0).map(el=>({text:(el.innerText||el.ariaLabel||'').slice(0,70),title:el.title})).slice(0,40),
+                        canvas:Array.from(document.querySelectorAll('canvas')).map(x=>({w:x.width,h:x.height})),
+                        width:document.documentElement.scrollWidth
+                      }))));
+                      const sc=await page.screenshot({type:'jpeg',quality:60,fullPage:false,animations:'disabled'});
+                      console.log('SHOT_BEGIN_'+view);console.log(sc.toString('base64'));console.log('SHOT_END_'+view);
+                    }catch(e){console.log('VIEW_FAIL_'+view,String(e))}
+                  }
+                }
                 const buttons=page.locator('button:visible');
                 const n=await buttons.count();console.log('BUTTON_COUNT',label,n);
                 if(n>0) {
