@@ -251,15 +251,15 @@ function makeSparks() {
 }
 
 export class ForgeStage {
-  constructor(canvas, initialModels = []) {
+  constructor(canvas) {
     this.canvas = canvas;
     this.renderer = new T.WebGLRenderer({ canvas, antialias: true, alpha: true, powerPreference: 'high-performance' });
     this.loader = new T.GLTFLoader();
     this.cache = new Map();
     this.pending = new Map();
     this.prefetchedModels = new Map();
-    // Start the offered specimens while the renderer builds the studio lighting.
-    for (const id of initialModels) this.load(id).catch(() => {});
+    // Only the selected/visible model is loaded on the critical path.
+    // Other specimens are generated as idle-time thumbnails later.
     this.renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5));
     this.budget = new RenderBudget(this.renderer.getPixelRatio());
     this.renderer.setClearColor(0x000000, 0);
@@ -356,6 +356,30 @@ export class ForgeStage {
       if (this.onScreen) this.invalidate(650);
     }).observe(canvas);
     this.setRendering(true);
+  }
+
+  suspendPresentation() {
+    // Release any clipping meshes from the previous page, not the cached GLBs.
+    this.clearOrePieces();
+    this.clearPieces();
+    this.sparks.particles.length = 0;
+    this.warmQueue.length = 0;
+    this.warmQueued.clear();
+    this.preloadSeed = null;
+    // A single WebGL canvas serves both the home showcase and the furnace.
+    // Never allow the previous owner's model to flash on the next page.
+    this.content.visible = false;
+    if (this.mesh) this.mesh.visible = false;
+    this.anvil.visible = false;
+    this.crucible.visible = false;
+    this.hammer.visible = false;
+    this.sparks.view.visible = false;
+    this.contact.visible = false;
+    this.trail.visible = false;
+    this.blow = null;
+    this.lastImpact = null;
+    this.bangedAt = undefined;
+    this.refiningRunning = false;
   }
 
   setRendering(enabled) {
@@ -508,11 +532,11 @@ export class ForgeStage {
     return pending;
   }
 
-  warm(id) {
+  warm(id, delay = 32) {
     if (this.warmed.has(id) || this.warmQueued.has(id)) return;
     this.warmQueued.add(id);
     this.warmQueue.push(id);
-    this.scheduleWarm();
+    this.scheduleWarm(delay);
   }
 
   scheduleWarm(delay = 32) {
@@ -605,15 +629,16 @@ export class ForgeStage {
       for (const id of this.cache.keys()) if (!keep.has(id)) this.disposeAsset(id);
       for (const id of this.prefetchedModels.keys()) if (!keep.has(id)) this.prefetchedModels.delete(id);
       if (run.phase === 'reveal' || run.phase === 'refine') {
-        for (const id of ['molten', 'blank', normal]) {
-          this.prefetchWorkshopModel(id, id === 'molten' ? 'auto' : 'low');
-          this.warm(id);
-        }
+        // On slower mobile connections, speculative .glb downloads used to
+        // compete with the active ore and stall its first visible frame.
+        for (const id of ['molten', 'blank', normal]) this.warm(id, 850);
       } else if (run.phase === 'forge' && run.hits < 4) {
-        this.warm(normal);
+        this.warm(normal, 850);
       }
     }
-    if (run.phase === 'forge' && run.hits >= 8) for (const id of rare) this.warm(id);
+    // Rare shapes are speculative. Defer their uploads and shader compilation,
+    // so taps, strikes and the visible model keep GPU priority.
+    if (run.phase === 'forge' && run.hits >= 8) for (const id of rare) this.warm(id, 950);
   }
 
   setHeat(heat, running = false) {
@@ -712,12 +737,16 @@ export class ForgeStage {
       this.show(this.want);
       return null;
     }
+    // The next model can be a different ore/knife. Keep the scene empty
+    // instead of displaying the previously selected knife while it loads.
+    this.content.visible = false;
     const id = this.want;
     return this.load(id).then(() => {
       if (this.want !== id) return false;
       this.show(id);
       return true;
     }).catch(error => {
+      if (this.want === id) this.content.visible = false;
       console.error('Blade model', error);
       return false;
     });
@@ -725,6 +754,8 @@ export class ForgeStage {
 
   show(id) {
     if (!this.cache.has(id)) return;
+    this.content.visible = true;
+    this.cache.get(id).mesh.visible = true;
     // A just-loaded model can require a shader warmup on mobile GPUs.
     // Keep its first visible frames scheduled without continuously rendering.
     this.invalidate(950);
@@ -819,10 +850,18 @@ export class ForgeStage {
       group.position.set(direction * (.49 * slide + jolt), direction * .026 * slide - .025 * slide, -.07 * slide);
       group.rotation.set(.018 * slide, direction * 1.08 * slide, direction * .065 * slide);
       group.updateWorldMatrix(true, false);
-      plane.setFromNormalAndCoplanarPoint(
-        new T.Vector3(direction, 0, 0).transformDirection(group.matrixWorld),
-        group.localToWorld(new T.Vector3(cut, 0, 0)),
-      );
+      const normal = new T.Vector3(direction, 0, 0).transformDirection(group.matrixWorld);
+      const point = group.localToWorld(new T.Vector3(cut, 0, 0));
+      // Avoid passing a non-finite clipping plane to WebGL's uniform cache:
+      // its vec4-array upload path cannot handle NaN first components.
+      const finite = Number.isFinite(normal.x) && Number.isFinite(normal.y) &&
+        Number.isFinite(normal.z) && Number.isFinite(point.x) &&
+        Number.isFinite(point.y) && Number.isFinite(point.z);
+      if (finite) plane.setFromNormalAndCoplanarPoint(normal, point);
+      else {
+        console.warn('[forge] recovered invalid cut plane', { direction, elapsed });
+        plane.set(new T.Vector3(direction, 0, 0), -direction * cut);
+      }
     }
   }
 
@@ -1056,7 +1095,9 @@ export class ForgeStage {
     const melt = this.shown === 'molten';
     const failedRefining = mode === 'broken' && this.run?.last?.type === 'refine-fail';
     const working = mode === 'forge' || mode === 'broken' || mode === 'refine';
-    const strikeAge = now - (this.bangedAt ?? -5000);
+    // Never pass Infinity into Math.sin: 0 * sin(Infinity) is NaN and
+    // contaminates the entire blade's world matrix after a page handoff.
+    const strikeAge = Math.max(0, now - (Number.isFinite(this.bangedAt) ? this.bangedAt : now - 5000));
     const transition = (mode === 'reveal' && elapsed < 1500) || (mode === 'appraise' && elapsed < 1850 && !this.reduceMotion) ||
       (this.pieces && now - this.splitAt < 2200) || now - this.swapAt < 350;
     const continuous = (mode === 'refine' && this.refiningRunning) || this.blow || transition ||
