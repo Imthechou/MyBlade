@@ -28,8 +28,8 @@ async function snap(page,name){
   const context=await browser.newContext({viewport:{width:390,height:844},deviceScaleFactor:1,isMobile:true,hasTouch:true});
   const page=await context.newPage();
   page.setDefaultTimeout(13000);
-  page.on('pageerror',e=>issues.push('JS '+e.stack));
-  page.on('console',msg=>{if(msg.type()==='error')issues.push('CONSOLE '+msg.text())});
+  page.on('pageerror',e=>{if(issues.length<5)console.log('PAGE_ERROR_NOW',Date.now(),String(e.stack).slice(0,1100));issues.push('JS '+e.stack)});
+  page.on('console',msg=>{if(msg.type()==='error'){if(issues.length<5)console.log('CONSOLE_ERROR_NOW',Date.now(),msg.text().slice(0,600));issues.push('CONSOLE '+msg.text())}});
   page.on('response',r=>{if(r.status()>=400)issues.push('HTTP '+r.status()+' '+r.url())});
   // Artificially delay engine download: home controls should not be blocked.
   await page.route('**/src/render/legacy/three.bundle.js',async route=>{
