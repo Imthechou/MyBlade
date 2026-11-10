@@ -29,16 +29,13 @@ async function snap(page,name){
   const page=await context.newPage();
   page.setDefaultTimeout(13000);
   page.on('pageerror',e=>{if(issues.length<5)console.log('PAGE_ERROR_NOW',Date.now(),String(e.stack).slice(0,1100));issues.push('JS '+e.stack)});
-  page.on('console',msg=>{if(msg.text().startsWith('UNIFORM_DIAG'))console.log('UNIFORM_DIAG_CAPTURE',msg.text());if(msg.type()==='error'){if(issues.length<5)console.log('CONSOLE_ERROR_NOW',Date.now(),msg.text().slice(0,600));issues.push('CONSOLE '+msg.text())}});
+  page.on('console',msg=>{if(msg.type()==='error'){if(issues.length<5)console.log('CONSOLE_ERROR_NOW',Date.now(),msg.text().slice(0,600));issues.push('CONSOLE '+msg.text())}});
   page.on('response',r=>{if(r.status()>=400)issues.push('HTTP '+r.status()+' '+r.url())});
   // Artificially delay engine download: home controls should not be blocked.
   await page.route('**/src/render/legacy/three.bundle.js',async route=>{
-    const response=await route.fetch();
-    let source=await response.text();
-    const needle='function Do(t,e){const n=lo(e,this.size,4);t.uniform4fv(this.addr,n)}';
-    if(!source.includes(needle))throw Error('Could not inspect Three uniform setter');
-    source=source.replace(needle,'function Do(t,e){if(e?.length && typeof e[0]?.toArray!=="function" && !globalThis.__badVec4Once){globalThis.__badVec4Once=true;console.log("UNIFORM_DIAG",this.id,"size",this.size,"length",e.length,"first",e[0]);}const n=lo(e,this.size,4);t.uniform4fv(this.addr,n)}');
-    await route.fulfill({response,body:source});
+    console.log('ENGINE_DOWNLOAD_DEFERRED');
+    await sleep(1500);
+    await route.continue();
   });
   await page.goto('http://127.0.0.1:4173/',{waitUntil:'domcontentloaded'});
   await page.locator('.home-start').waitFor({state:'visible'});
