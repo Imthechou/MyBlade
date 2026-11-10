@@ -378,7 +378,7 @@ export class ForgeStage {
     this.trail.visible = false;
     this.blow = null;
     this.lastImpact = null;
-    this.bangedAt = -Infinity;
+    this.bangedAt = undefined;
     this.refiningRunning = false;
   }
 
@@ -1095,7 +1095,9 @@ export class ForgeStage {
     const melt = this.shown === 'molten';
     const failedRefining = mode === 'broken' && this.run?.last?.type === 'refine-fail';
     const working = mode === 'forge' || mode === 'broken' || mode === 'refine';
-    const strikeAge = now - (this.bangedAt ?? -5000);
+    // Never pass Infinity into Math.sin: 0 * sin(Infinity) is NaN and
+    // contaminates the entire blade's world matrix after a page handoff.
+    const strikeAge = Math.max(0, now - (Number.isFinite(this.bangedAt) ? this.bangedAt : now - 5000));
     const transition = (mode === 'reveal' && elapsed < 1500) || (mode === 'appraise' && elapsed < 1850 && !this.reduceMotion) ||
       (this.pieces && now - this.splitAt < 2200) || now - this.swapAt < 350;
     const continuous = (mode === 'refine' && this.refiningRunning) || this.blow || transition ||
