@@ -27,6 +27,18 @@ async function snap(page,name){
       now:Math.round(performance.now()),
       dirtyUntil:Math.round(globalThis.__testStage.dirtyUntil||0),
       canvasRect:globalThis.__testStage.canvas.getBoundingClientRect().toJSON(),
+      contentChildren:globalThis.__testStage.content.children.map(o=>({type:o.type,visible:o.visible})),
+      rendererInfo:{...globalThis.__testStage.renderer.info.render},
+      camera:{zoom:globalThis.__testStage.camera.zoom,position:globalThis.__testStage.camera.position.toArray()},
+      mesh:globalThis.__testStage.mesh&&{
+        inContent:globalThis.__testStage.content.children.includes(globalThis.__testStage.mesh),
+        parent:globalThis.__testStage.mesh.parent?.type,
+        materialVisible:globalThis.__testStage.mesh.material?.visible,
+        vertices:globalThis.__testStage.mesh.geometry?.attributes.position?.count,
+        scale:globalThis.__testStage.mesh.scale.toArray(),
+        worldPosition:new globalThis.THREE.Vector3().setFromMatrixPosition(globalThis.__testStage.mesh.matrixWorld).toArray(),
+        projectedCenter:globalThis.__testStage.mesh.geometry.boundingBox?.getCenter(new globalThis.THREE.Vector3()).applyMatrix4(globalThis.__testStage.mesh.matrixWorld).project(globalThis.__testStage.camera).toArray(),
+      },
     },
     resources:performance.getEntriesByType('resource').filter(r=>/three\\.bundle|three\\.addons|models\\/.test(r.name)).map(r=>({
       path:new URL(r.name).pathname,duration:Math.round(r.duration),size:r.transferSize})),
