@@ -26,7 +26,7 @@ jobs:
         run: |
           python3 -m http.server 4173 --bind 127.0.0.1 --directory game >/tmp/forge-server.log 2>&1 &
           sleep 2
-          node qa/forge-visual.spec.cjs
+          timeout --signal=TERM --kill-after=10s 155s node qa/forge-visual.spec.cjs
       - uses: actions/upload-artifact@v4
         if: always()
         with:
