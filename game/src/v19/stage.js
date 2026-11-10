@@ -359,6 +359,13 @@ export class ForgeStage {
   }
 
   suspendPresentation() {
+    // Release any clipping meshes from the previous page, not the cached GLBs.
+    this.clearOrePieces();
+    this.clearPieces();
+    this.sparks.particles.length = 0;
+    this.warmQueue.length = 0;
+    this.warmQueued.clear();
+    this.preloadSeed = null;
     // A single WebGL canvas serves both the home showcase and the furnace.
     // Never allow the previous owner's model to flash on the next page.
     this.content.visible = false;
@@ -843,10 +850,18 @@ export class ForgeStage {
       group.position.set(direction * (.49 * slide + jolt), direction * .026 * slide - .025 * slide, -.07 * slide);
       group.rotation.set(.018 * slide, direction * 1.08 * slide, direction * .065 * slide);
       group.updateWorldMatrix(true, false);
-      plane.setFromNormalAndCoplanarPoint(
-        new T.Vector3(direction, 0, 0).transformDirection(group.matrixWorld),
-        group.localToWorld(new T.Vector3(cut, 0, 0)),
-      );
+      const normal = new T.Vector3(direction, 0, 0).transformDirection(group.matrixWorld);
+      const point = group.localToWorld(new T.Vector3(cut, 0, 0));
+      // Avoid passing a non-finite clipping plane to WebGL's uniform cache:
+      // its vec4-array upload path cannot handle NaN first components.
+      const finite = Number.isFinite(normal.x) && Number.isFinite(normal.y) &&
+        Number.isFinite(normal.z) && Number.isFinite(point.x) &&
+        Number.isFinite(point.y) && Number.isFinite(point.z);
+      if (finite) plane.setFromNormalAndCoplanarPoint(normal, point);
+      else {
+        console.warn('[forge] recovered invalid cut plane', { direction, elapsed });
+        plane.set(new T.Vector3(direction, 0, 0), -direction * cut);
+      }
     }
   }
 
