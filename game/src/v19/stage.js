@@ -132,6 +132,9 @@ function studio(renderer) {
   softbox(2.8, .15, 2.8, 1.2, 4.6, 0xb0d1ff, 2.25);
   softbox(.7, -1.3, 2.4, 5.2, .46, 0xc5dae7, 2.05);
   softbox(-2.1, .2, -3.8, 4.2, 1.4, 0xf4a273, 1.55);
+  // A narrow studio strip gives the upright forged blade a readable,
+  // physically plausible highlight without another realtime light.
+  softbox(-1.25, .18, 3.6, .62, 4.25, 0xdbefff, 2.45);
   const generator = new T.PMREMGenerator(renderer);
   const map = generator.fromScene(room, .025, .1, 18);
   generator.dispose();
@@ -164,6 +167,11 @@ function makeAnvil() {
   const base = new T.Mesh(bevel([[-.67, 0], [.67, 0], [.58, .10], [.29, .17], [.22, .34], [.46, .42], [-.46, .42], [-.22, .34], [-.30, .16], [-.60, .09]], .55, .028), dark);
   const crown = new T.Mesh(bevel([[-1.35, .51], [-.62, .55], [-.53, .59], [.67, .59], [.74, .48], [.59, .38], [-.69, .38], [-.98, .43]], .62, .025), top);
   group.add(base, crown);
+  // Add machined lips and a warm contact edge, not expensive new shader passes.
+  const accent = new T.MeshStandardMaterial({ color: 0xaa8170, metalness: .80, roughness: .29 });
+  const lip = new T.Mesh(new T.BoxGeometry(1.43, .031, .69), accent);
+  lip.position.set(-.28, .47, 0);
+  group.add(lip);
   const foot = new T.Mesh(new T.CylinderGeometry(.72, .81, .12, 20), new T.MeshStandardMaterial({ color: 0x414455, roughness: .78 }));
   foot.position.y = -.07;
   group.add(foot);
@@ -203,6 +211,13 @@ function makeCrucible() {
   rim.rotation.x = Math.PI / 2;
   rim.position.y = .145;
   group.add(rim);
+  const meltFace = new T.Mesh(new T.CircleGeometry(.71, 32), new T.MeshBasicMaterial({
+    color: 0xf68844, transparent: true, opacity: .0, depthWrite: false, side: T.DoubleSide,
+  }));
+  meltFace.rotation.x = -Math.PI / 2;
+  meltFace.position.y = .127;
+  group.add(meltFace);
+  group.userData.meltFace = meltFace;
   return group;
 }
 
@@ -258,10 +273,10 @@ export class ForgeStage {
     this.camera.lookAt(0, -.07, 0);
     this.gripTarget = new T.Vector3();
     this.scene.environment = studio(this.renderer).texture;
-    this.ambient=new T.HemisphereLight(0xd7e4ff,0x453025,.93);
+    this.ambient=new T.HemisphereLight(0xd7e4ff,0x453025,.82);
     this.scene.add(this.ambient);
     this.key = light(0xffcfad, 2.9, -2.7, 3.1, 4.8, this.scene);
-    this.rimLight=light(0xb9d8ff,1.1,3.5,1.1,2.5,this.scene);
+    this.rimLight=light(0xc8e7ff,1.34,3.5,1.1,2.5,this.scene);
     this.sweep = light(0xe9fbff, 0, -2.7, 1.5, 1.5, this.scene);
     this.flash = new T.PointLight(0xff8b44, 0, 3, 1.8);
     this.scene.add(this.flash);
@@ -285,7 +300,15 @@ export class ForgeStage {
     this.trail = new T.Line(trailGeometry, new T.LineBasicMaterial({ color: 0xffcf9a, transparent: true, opacity: 0, depthWrite: false }));
     this.trail.frustumCulled = false;
     this.trail.visible = false;
-    this.scene.add(this.anvil, this.crucible, this.hammer, this.sparks.view, this.trail);
+    // Reuse one GPU draw call for each hammer-contact ring.
+    this.contact = new T.Mesh(new T.RingGeometry(.10, .15, 36), new T.MeshBasicMaterial({
+      color: 0xffc889, transparent: true, opacity: 0,
+      depthWrite: false, depthTest: false, side: T.DoubleSide,
+    }));
+    this.contact.renderOrder = 8;
+    this.contact.visible = false;
+    this.contactAt = -Infinity;
+    this.scene.add(this.anvil, this.crucible, this.hammer, this.sparks.view, this.trail, this.contact);
     this.warmed = new Set();
     this.warmQueue = [];
     this.warmQueued = new Set();
@@ -864,7 +887,7 @@ export class ForgeStage {
         const distance = Math.hypot(screen.x - clientX, screen.y - clientY);
         if (distance < best) { best = distance; local = guide.clone(); }
       }
-      if (best > (matchMedia('(pointer: coarse)').matches || this.aspect < 1.35 ? 26 : 18)) return null;
+      if (best > (matchMedia('(pointer: coarse)').matches || this.aspect < 1.35 ? 41 : 21)) return null;
     }
     const u = coords.along(local.x), v = coords.across(local.x, local.y);
     const zone = u > .86 ? 'tip' : v < .30 || (doubleEdge.has(this.shown) && v > .70) ? 'edge' : 'belly';
@@ -882,7 +905,7 @@ export class ForgeStage {
 
   swing(hit, event, onImpact, onReady) {
     const severe = event.type === 'break' || event.notable;
-    const stop = severe ? 65 : event.type === 'surge' ? 53 : event.type === 'scar' ? 38 : 24;
+    const stop = severe ? 70 : event.type === 'surge' ? 54 : event.type === 'scar' ? 41 : 31;
     if (hit.mesh === this.mesh) hit.world.copy(this.mesh.localToWorld(hit.local.clone()));
     this.blow = { hit, onImpact, onReady, start: performance.now(), landed: false, contact: 108, stop,
       end: severe ? 453 : event.type === 'surge' ? 382 : 348 };
@@ -900,6 +923,10 @@ export class ForgeStage {
     this.lastImpact = { local: hit.local.clone(), zone: hit.zone, large: high || broken, wave: high || Boolean(event.change), finish };
     this.bangPower = broken ? 1.6 : high ? 1.2 : .72;
     this.flash.position.copy(hit.world).add(new T.Vector3(0, .025, .18));
+    this.contact.position.copy(hit.world).add(new T.Vector3(0, 0, .18));
+    this.contact.material.color.set(broken ? '#ff735e' : high ? '#b8e8ff' : '#f8cb9d');
+    this.contactAt = performance.now();
+    this.contact.visible = !this.reduceMotion;
     this.flash.intensity = this.bangPower * 3.7;
     if (this.active?.uniforms.fHit) {
       this.active.uniforms.fHit.value.copy(hit.local);
@@ -1029,6 +1056,13 @@ export class ForgeStage {
     const impulse = Math.exp(-strikeAge / 116) * (this.bangPower || 0);
     const shake = this.reduceMotion ? 0 : impulse * (this.lastImpact?.zone === 'tip' ? .045 : .021) * Math.sin(strikeAge / 21);
     const compression = this.reduceMotion ? 0 : impulse * .035 * (1 - clamp(strikeAge / 105, 0, 1));
+    const contactAge = now - this.contactAt;
+    this.contact.visible = !this.reduceMotion && contactAge >= 0 && contactAge < 280;
+    if (this.contact.visible) {
+      const u = clamp(contactAge / 280, 0, 1);
+      this.contact.scale.setScalar(.38 + u * 2.9);
+      this.contact.material.opacity = (1 - u) * (1 - u) * .64;
+    }
     const narrow = this.aspect < 1.3;
     const upright = Boolean(this.active?.coords);
     const startTurn = mode === 'appraise' && !this.reduceMotion ? .34 * (1 - clamp(elapsed / 1480, 0, 1)) ** 2 : 0;
@@ -1064,14 +1098,20 @@ export class ForgeStage {
     this.anvil.position.set(.10, -.28 * (this.verticalSpan ?? 3.85) - .34 - compression * .35, -.42);
     this.anvil.rotation.z = .03;
     this.hammer.visible = mode === 'forge' || !!this.blow;
-    const revealFlash = mode === 'reveal' && !this.reduceMotion ? Math.exp(-Math.pow((elapsed - 630) / 185, 2)) : 0;
-    this.cutFill.intensity = mode === 'reveal' ? 2.5 + revealFlash * .25 : 0;
+    const revealFlash = mode === 'reveal' && !this.reduceMotion ? Math.exp(-Math.pow((elapsed - 670) / 215, 2)) : 0;
+    this.cutFill.intensity = mode === 'reveal' ? 2.4 + revealFlash * .55 : 0;
+    const meltFace = this.crucible.userData.meltFace;
+    if (meltFace) {
+      meltFace.visible = mode === 'refine' && this.refiningStep !== 'ore';
+      meltFace.material.opacity = meltFace.visible ? .16 + this.heat * .43 : 0;
+      meltFace.material.color.set(this.heat >= .75 ? '#ffcc7e' : '#df713e');
+    }
     const lampCheck=mode==='ore' && this.inspection==='lamp';
     this.oreUniforms.oreLamp.value=lampCheck ? 1 : 0;
-    this.scene.environmentIntensity=lampCheck ? .40 : 1;
-    this.ambient.intensity=lampCheck ? .34 : .93;
-    this.rimLight.intensity=lampCheck ? .40 : 1.1;
-    this.lampLight.intensity=lampCheck ? 34 : 0;
+    this.scene.environmentIntensity=lampCheck ? .47 : mode === 'fit' || mode === 'appraise' ? 1.20 : 1.05;
+    this.ambient.intensity=lampCheck ? .39 : mode === 'appraise' ? .98 : .84;
+    this.rimLight.intensity=lampCheck ? .58 : mode === 'fit' || mode === 'appraise' ? 1.52 : 1.22;
+    this.lampLight.intensity=lampCheck ? 12.5 : 0;
     this.flash.intensity = mode === 'reveal' ? revealFlash * 3.1 : impulse * (strikeAge < 33 ? 3.7 : 1.15);
     if (mode === 'reveal') this.flash.position.set(0, .1, .8);
     const cameraShake = !this.reduceMotion && this.lastImpact?.large ? Math.sin(strikeAge / 19) * impulse * .035 : 0;
@@ -1084,10 +1124,10 @@ export class ForgeStage {
       this.camera.translateY(target.y);
       this.camera.updateMatrixWorld();
     }
-    this.sweep.intensity = mode === 'reveal' ? revealFlash * 2.1 : inspect ? (mode === 'appraise' ? .50 + .62 * Math.exp(-elapsed / 520) : .61) : 0;
+    this.sweep.intensity = mode === 'reveal' ? revealFlash * 2.15 : inspect ? (mode === 'appraise' ? .70 + .72 * Math.exp(-elapsed / 580) : .78) : 0;
     this.sweep.position.x = mode === 'appraise' ? lerp(-2.8, 2.6, clamp(elapsed / 1500, 0, 1)) : .8;
     this.key.color.set(stone && mode !== 'refine' ? 0xe8efff : inspect ? 0xffead8 : 0xffcfad);
-    this.key.intensity = mode === 'ore' ? (this.inspection==='lamp' ? .42 : 2.65) : mode === 'refine' ? 2.25 : mode === 'appraise' ? 2.65 : mode === 'reveal' ? 2.45 + revealFlash * .65 : 2.9;
+    this.key.intensity = mode === 'ore' ? (this.inspection==='lamp' ? .53 : 2.65) : mode === 'refine' ? 2.4 : mode === 'appraise' ? 2.9 : mode === 'reveal' ? 2.5 + revealFlash * .75 : 2.85;
     const blow = this.blow;
     this.trail.visible = false;
     if (blow) {
