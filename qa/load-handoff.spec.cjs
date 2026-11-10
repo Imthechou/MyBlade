@@ -40,13 +40,22 @@ async function snap(page,name){
         projectedCenter:globalThis.__testStage.mesh.geometry.boundingBox?.getCenter(new globalThis.THREE.Vector3()).applyMatrix4(globalThis.__testStage.mesh.matrixWorld).project(globalThis.__testStage.camera).toArray(),
       },
     },
-    resources:performance.getEntriesByType('resource').filter(r=>/three\\.bundle|three\\.addons|models\\/.test(r.name)).map(r=>({
+    resources:performance.getEntriesByType('resource').filter(r=>r.name.includes('three.bundle')||r.name.includes('three.addons')||r.name.includes('/models/')).map(r=>({
       path:new URL(r.name).pathname,duration:Math.round(r.duration),size:r.transferSize})),
   }));
   await page.screenshot({path:out+'/'+name+'.png',animations:'disabled'});
   console.log('CHECK',name,JSON.stringify(data));
   records.push({name,...data});
   if(data.horizontalOverflow)issues.push('horizontal overflow '+name);
+  if(['04_forge_ore_ready','04b_ore_after_wait','10_prepared_forged_blade','11b_appraisal_wait',
+    '12_home_owned_blade','14_fresh_ore_ready'].includes(name)) {
+    const st=data.stage;
+    if(!st?.contentVisible || !st?.meshVisible || !st?.mesh?.inContent ||
+      !st.mesh.projectedCenter?.every(Number.isFinite) ||
+      !st.mesh.worldPosition?.every(Number.isFinite)) {
+      issues.push('3D model not in a valid visible scene: '+name);
+    }
+  }
   return data;
 }
 (async()=>{
