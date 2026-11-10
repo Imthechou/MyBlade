@@ -101,6 +101,57 @@ jobs:
               console.log('ERRORS',label,JSON.stringify(errors.slice(0,25)));
               await context.close();
             }
+            for(const mode of ['FORGE_GAMEPLAY','ARENA_GAMEPLAY']){
+              const ctx=await browser.newContext({viewport:{width:390,height:844},deviceScaleFactor:1,isMobile:true,hasTouch:true});
+              const pg=await ctx.newPage();
+              const errs=[];
+              pg.on('pageerror',e=>errs.push(e.message));
+              const snapshot=async(name)=>{
+                console.log('GAME_'+name,JSON.stringify(await pg.evaluate(()=>({
+                  text:document.body.innerText.slice(0,2400),
+                  btns:Array.from(document.querySelectorAll('button')).filter(e=>e.getBoundingClientRect().width>0).map(e=>(e.innerText||e.ariaLabel||'').trim()).slice(0,35),
+                  canvases:Array.from(document.querySelectorAll('canvas')).map(e=>({w:e.width,h:e.height}))
+                }))));
+                const img=await pg.screenshot({type:'jpeg',quality:60});
+                console.log('SHOT_BEGIN_'+name);console.log(img.toString('base64'));console.log('SHOT_END_'+name);
+              };
+              try{
+                await pg.goto('http://127.0.0.1:4173/',{waitUntil:'domcontentloaded'});
+                await pg.waitForTimeout(1400);
+                if(mode==='FORGE_GAMEPLAY'){
+                  await pg.getByRole('button',{name:/开始锻刀/}).click();
+                  await pg.waitForTimeout(1800);
+                  await pg.getByRole('button',{name:'打灯'}).click({timeout:5000});
+                  await pg.waitForTimeout(700);
+                  await snapshot('ORE_LAMP');
+                  await pg.getByRole('button',{name:'敲石'}).click({timeout:5000});
+                  await pg.waitForTimeout(800);
+                  await snapshot('ORE_KNOCK');
+                  await pg.getByRole('button',{name:/开石/}).click({timeout:5000});
+                  await pg.waitForTimeout(2400);
+                  await snapshot('ORE_REVEAL');
+                }else{
+                  await pg.getByRole('button',{name:'赛事'}).last().click();
+                  await pg.waitForTimeout(800);
+                  await pg.getByRole('button',{name:/借刀开斩/}).click({timeout:6000});
+                  await pg.waitForTimeout(1400);
+                  await snapshot('ARENA_STARTED');
+                  const client=await ctx.newCDPSession(pg);
+                  for(let t=0;t<4;t++){
+                    await client.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x:65,y:360+t*35}]});
+                    for(let k=1;k<=7;k++){
+                      await client.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:65+k*37,y:360+t*35}]});
+                      await pg.waitForTimeout(20);
+                    }
+                    await client.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});
+                    await pg.waitForTimeout(200);
+                  }
+                  await snapshot('ARENA_SLICED');
+                }
+              }catch(e){console.log('GAME_FAILURE_'+mode,String(e))}
+              console.log('GAME_ERRORS_'+mode,JSON.stringify(errs));
+              await ctx.close();
+            }
             await browser.close()
           })().catch(e=>{console.error(e);process.exitCode=1});
           JS
