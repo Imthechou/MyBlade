@@ -10,13 +10,16 @@ let canvas;
 
 motion.subscribe(reduced => { if (stage) stage.reduceMotion = reduced; });
 
-export function attachForgeStage(next, initialModels) {
+export function attachForgeStage(next) {
   canvas ??= Object.assign(document.createElement('canvas'), { id: 'scene', tabIndex: 0 });
   canvas.className = 'v19-canvas';
   canvas.setAttribute('aria-label', '3D 预览，方向键旋转，刀具可用加减键缩放，Home 键复位');
+  // Clear the previously presented blade *before* reattaching the reused
+  // canvas. This also covers an in-flight GLB load on a route transition.
+  stage?.suspendPresentation();
   next.prepend(canvas);
   try {
-    stage ??= new ForgeStage(canvas, initialModels);
+    stage ??= new ForgeStage(canvas);
     stage.reduceMotion = motion.reduced();
     host = next;
     stage.setRendering(true);
@@ -30,6 +33,7 @@ export function attachForgeStage(next, initialModels) {
 
 export function releaseForgeStage(owner) {
   if (host !== owner) return;
+  stage.suspendPresentation();
   stage.setRendering(false);
   canvas.remove();
   host = null;
