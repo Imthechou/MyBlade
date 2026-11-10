@@ -1,0 +1,35 @@
+name: MyBlade cold load and stage handoff QA
+on:
+  push:
+    branches: [fix/forge-load-handoff-20261110]
+permissions:
+  contents: read
+jobs:
+  cold-load-qa:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 14
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check edited module syntax
+        run: |
+          node --check game/src/v19/threeRuntime.js
+          node --check game/src/v19/stage.js
+          node --check game/src/v19/forgeView.js
+          node --check game/src/v19/sharedStage.js
+          node --check game/src/ui/pages/home.js
+          node --check game/src/app/bootstrap.js
+      - name: Install browser for automated 3D UI audit
+        run: |
+          npm install --no-audit --no-fund --no-save playwright@1.56.1
+          npx playwright install chromium
+      - name: Run cold load, stage handoff, and return-loop tests
+        run: |
+          python3 -m http.server 4173 --bind 127.0.0.1 --directory game >/tmp/myblade-server.log 2>&1 &
+          sleep 2
+          timeout --signal=TERM --kill-after=7s 110s node qa/load-handoff.spec.cjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: load-handoff-screenshots
+          path: audit-load/
+          if-no-files-found: ignore
