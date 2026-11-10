@@ -71,6 +71,67 @@ async function snap(page,name){
   await snap(page,'08_reveal');
   await page.getByRole('button',{name:/去精炼/}).click();
   await snap(page,'09_refine');
+
+  // Finish an actual saved blade, then launch a *new* furnace from the
+  // collection showcase. This reproduces the reported "old knife flashes".
+  const savedBlade=await page.evaluate(async()=>{
+    const {forgeSession,commitFurnace}=await import('/src/core/v19Progress.js');
+    const {strike}=await import('/src/v19/forge.js');
+    const current=forgeSession().run;
+    return commitFurnace(current,({run})=>{
+      if(run.phase!=='refine')return false;
+      run.purity=Math.min(98,(run.ore?.purity||67)+17);
+      run.stability=91;
+      run.refinement={result:'good',quality:75,damage:4,stable:8,purity:run.purity,stability:91,bonus:3};
+      run.refining=null;
+      run.phase='forge';
+      for(let n=0;n<7;n++){
+        const zone=['belly','edge','tip'][n%3];
+        strike(run,zone,{u:.35+n*.06,v:zone==='edge'?.13:.46});
+        if(run.phase==='broken')return false;
+      }
+      return true;
+    });
+  });
+  if(!savedBlade?.ok)issues.push('Could not prepare saved-blade regression');
+  else {
+    await page.getByRole('button',{name:/返回首页/}).click();
+    await page.getByRole('button',{name:/继续锻刀|开始锻刀/}).click();
+    await page.waitForTimeout(1000);
+    await snap(page,'10_prepared_forged_blade');
+    await page.getByRole('button',{name:/收锤/}).click();
+    await page.locator('[data-action="select-fit"]').first().click();
+    await page.getByRole('button',{name:/确认并鉴定/}).click();
+    await page.waitForTimeout(750);
+    await snap(page,'11_saved_blade_appraisal');
+    await page.getByRole('button',{name:/返回首页/}).click();
+    await page.waitForTimeout(1050);
+    await snap(page,'12_home_owned_blade');
+    await page.evaluate(async()=>{
+      const {ForgeStage}=await import('/src/v19/stage.js');
+      if(ForgeStage.prototype.__handoffInstrumented)return;
+      const old=ForgeStage.prototype.suspendPresentation;
+      ForgeStage.prototype.suspendPresentation=function(...args){
+        old.apply(this,args);
+        (globalThis.__handoffReports ||= []).push({
+          shown:this.shown,mode:this.mode,
+          contentVisible:this.content.visible,
+          meshVisible:this.mesh?.visible,
+        });
+      };
+      ForgeStage.prototype.__handoffInstrumented=true;
+      globalThis.__handoffReports=[];
+    });
+    await page.getByRole('button',{name:/开始锻刀/}).click();
+    await page.waitForFunction(()=>document.querySelector('#v19-forge')?.dataset.phase==='ore');
+    await snap(page,'13_fresh_forge_after_owned_blade');
+    await page.waitForTimeout(750);
+    await snap(page,'14_fresh_ore_ready');
+    const handoffs=await page.evaluate(()=>globalThis.__handoffReports||[]);
+    console.log('OWNED_BLADE_HANDOFF',JSON.stringify(handoffs));
+    if(!handoffs.length||handoffs.some(x=>x.contentVisible||x.meshVisible))
+      issues.push('Old knife remained visible during reattachment');
+  }
   await context.close();
   // The first UI should still be responsive with simulated slow engine.
   const desktop=await browser.newContext({viewport:{width:1366,height:768}});
@@ -78,7 +139,7 @@ async function snap(page,name){
   pc.on('pageerror',e=>issues.push('PC JS '+e.message));
   await pc.goto('http://127.0.0.1:4173/',{waitUntil:'domcontentloaded'});
   await pc.locator('.home-start').waitFor();
-  await snap(pc,'10_desktop');
+  await snap(pc,'15_desktop');
   await desktop.close();
  } finally {await browser.close();}
  fs.writeFileSync(out+'/result.json',JSON.stringify({records,issues},null,2));
