@@ -5,6 +5,7 @@ import * as Progress from '../../core/progress.js';
 import router from '../router.js';
 import { freshRun, offers } from '../../v19/forge.js';
 import { hasLiveFurnace, openFurnace } from '../../core/v19Progress.js';
+import { ensureThreeRuntime } from '../../v19/threeRuntime.js';
 
 let root, body, stageHost, legacy, hero, heroSequence = 0;
 /* ★ 首页鉴赏控制（图标版，与锻造页共用 stageControls 模块）。
@@ -13,8 +14,8 @@ let root, body, stageHost, legacy, hero, heroSequence = 0;
 let inspectCtl = null;
 const ENTRIES = [
   { label: '赛事', icon: 'arena', go: () => router.go('arena') },
-  { label: '藏刀阁', icon: 'collection', go: () => import('./workshop.js').then(m => m.openTab('collection')) },
-  { label: '工坊', icon: 'workshop', go: () => import('./workshop.js').then(m => m.openTab(legacy ? 'bonuses' : null)) },
+  { label: '藏刀阁', icon: 'collection', go: async () => { await ensureThreeRuntime(); return import('./workshop.js').then(m => m.openTab('collection')); } },
+  { label: '工坊', icon: 'workshop', go: async () => { await ensureThreeRuntime(); return import('./workshop.js').then(m => m.openTab(legacy ? 'bonuses' : null)); } },
 ];
 
 export function create({ legacy: old = null } = {}) {
@@ -130,11 +131,15 @@ async function showHero(record) {
   stageHost.classList.toggle('v19-ghost', !record);
   try {
     if (!record || record.v19Visual) {
+      await ensureThreeRuntime();
+      if (!current()) return;
       const { showForgedBlade } = await import('../../v19/sharedStage.js');
       if (!current()) return;
       const ghost = freshRun(135);
       hero = showForgedBlade(stageHost, record?.v19Visual || { ...ghost, model: 'tangdao', ore: offers(ghost)[0] });
     } else {
+      await ensureThreeRuntime();
+      if (!current()) return;
       const [{ default: game }, { getStage }, { createStageInspect }] = await Promise.all([
         import('../../app/game.js'), import('../../render/index.js'), import('../stageControls.js'),
       ]);
