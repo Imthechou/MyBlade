@@ -1,0 +1,1334 @@
+/* V19 mobile layouts. One visual stage, one decision area, one action dock. */
+.v19-surface {
+  width: 100%;
+  padding: 10px 12px 8px;
+  color: var(--face);
+}
+.v19-surface [hidden] { display: none !important; }
+.v19-surface button, .v19-surface a, .v19-surface summary { touch-action: manipulation; }
+.v19-surface button { cursor: pointer; color: inherit; font: inherit; }
+.v19-surface button:disabled { cursor: default; opacity: .48; }
+.v19-surface :is(button, select, a, summary):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.v19-surface :is(.primary, .secondary) {
+  display: grid;
+  place-items: center;
+  min-height: 48px;
+  width: 100%;
+  padding: 7px 10px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  text-align: center;
+  font-size: 14px;
+  font-weight: 750;
+}
+.v19-surface .primary {
+  color: white;
+  background: var(--metal-grad);
+  border-color: transparent;
+  box-shadow: var(--shadow-cta), inset 0 1px #ffffff32;
+}
+.v19-surface .primary:disabled {
+  opacity: 1;
+  color: var(--face-3);
+  background: var(--surface-inset);
+  border-color: var(--line);
+  box-shadow: none;
+}
+.v19-surface .secondary { background: var(--control-face); color: var(--face-2); }
+.v19-surface button { transition: transform .09s var(--ease), filter .09s ease, background-color .09s ease, border-color .09s ease; }
+.v19-surface :is(.primary, .secondary):active:not(:disabled) { transform: translateY(1px); }
+.v19-surface :is(button, [role="button"]):active:not(:disabled) { filter: brightness(.93); transform: scale(.982); }
+.v19-surface :is(.ore-card, .fit-card, .heritage-preview, .arena-shortcut, .arena-choice):active:not(:disabled) {
+  border-color: var(--accent-line);
+  box-shadow: inset 0 0 0 1px var(--accent-line);
+}
+.v19-surface .sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.v19-canvas { position: absolute; z-index: 1; inset: 0; width: 100%; height: 100%; display: block; touch-action: pan-y; }
+#homeStage .stage-inspect[hidden] { display: none; }
+.home-showcase.v19-ghost .v19-canvas { opacity: .94; }
+[data-preview="blade"] { position: relative; isolation: isolate; background: var(--showcase-surface); }
+[data-preview="blade"] .v19-canvas { touch-action: none; cursor: grab; }
+[data-preview="blade"] .v19-canvas:active { cursor: grabbing; }
+[data-preview="blade"] .v19-canvas:focus-visible { outline: 2px solid var(--accent); outline-offset: -3px; }
+#homeStage[data-preview="blade"] {
+  border-color: var(--stage-frame);
+  border-radius: 25px;
+  box-shadow: var(--shadow-2);
+  background: radial-gradient(ellipse 46% 8% at 50% 86%, var(--stage-shadow), transparent 100%), var(--showcase-surface);
+}
+#homeStage[data-preview="blade"]::before {
+  content: '';
+  position: absolute;
+  inset: auto 16% 13%;
+  height: min(7%, 34px);
+  border: 1px solid var(--stage-grid);
+  border-radius: 50%;
+  box-shadow: 0 0 0 8px color-mix(in srgb, var(--stage-grid) 32%, transparent), inset 0 0 18px var(--stage-shadow);
+  pointer-events: none;
+}
+:is(#homeStage[data-preview="blade"], #v19-arena .arena-hero)::after {
+  content: '';
+  position: absolute;
+  inset: 13% 9% auto auto;
+  width: 48px;
+  height: 44px;
+  background: var(--stage-ink);
+  opacity: .6;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 58 52'%3E%3Cpath d='M22 4q1 15 15 17-14 1-15 16-1-15-15-16Q21 19 22 4ZM45 28q0 8 8 9-8 0-8 8-1-7-8-8 7-1 8-9ZM45 8l5-5M7 39l-4 6' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / contain no-repeat;
+  pointer-events: none;
+}
+[data-theme] .home-showcase .showcase-label { background: var(--surface-inset); color: var(--face-2); border: 1px solid var(--line); }
+[data-theme] .home-dashboard { gap: 8px; padding: 4px 12px; }
+[data-theme] .home-start { min-height: 54px; border-radius: 16px; }
+[data-theme] .home-start-title { font-weight: 780; }
+[data-theme] .home-start .hex .ring { stroke: #FFFFFFA8; }
+[data-theme] .home-start .hex .core { fill: #FFFFFF; }
+[data-theme] .home-entry-btn { flex-direction: row; gap: 5px; min-height: 51px; border-color: var(--line-2); border-radius: 13px; box-shadow: none; }
+[data-theme] .home-entry-btn .hex { width: 24px; height: 24px; }
+[data-theme] .home-stats { padding-top: 4px; }
+[data-theme] .home-stats b { font-size: 18px; }
+.blade-view-controls, #v19-forge .stage-footer {
+  position: absolute;
+  inset: auto 12px 10px;
+  z-index: 3;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  pointer-events: none;
+}
+.blade-view-controls > span, #v19-forge #stage-hint:not(:empty) {
+  padding-inline: 4px;
+  color: var(--face-3);
+  text-shadow: 0 1px 8px var(--base-0);
+  font-size: 11px;
+  font-weight: 600;
+}
+.blade-view-tools {
+  display: flex;
+  margin-inline-start: auto;
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  background: var(--glass-bg);
+  box-shadow: var(--shadow-1);
+}
+.blade-view-tools[data-zoom="false"] .blade-zoom { display: none; }
+.blade-view-tools button {
+  display: grid;
+  place-items: center;
+  width: var(--tap);
+  height: var(--tap);
+  padding: 0;
+  border: 0;
+  border-radius: 11px;
+  background: transparent;
+  color: var(--face-2);
+  pointer-events: auto;
+  touch-action: manipulation;
+  cursor: pointer;
+}
+.blade-view-tools :is(button:hover, button:active) { background: var(--control-face); color: var(--face); }
+.blade-view-tools button:focus-visible { outline: 2px solid var(--accent); outline-offset: -3px; }
+.blade-view-tools .blade-zoom + button { border-inline-start: 1px solid var(--line-2); }
+.blade-view-tools[data-zoom="false"] .blade-reset { border-inline-start: 0; }
+.blade-view-tools svg { width: 18px; height: 18px; pointer-events: none; }
+.blade-detail-hero:has([data-preview="blade"]) { background: var(--showcase-base); }
+
+/* Workshop */
+#v19-forge { display: flex; flex-direction: column; gap: 9px; min-height: 100%; }
+#v19-forge .workspace { display: flex; flex: 1 0 auto; flex-direction: column; gap: 10px; }
+#v19-forge .forge-progress {
+  min-width: 110px;
+  padding: 6px 9px 7px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--glass-bg);
+}
+#v19-forge .forge-progress span { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+#v19-forge .forge-progress b { font-size: 12px; }
+#v19-forge .forge-progress small { color: var(--face-3); font: 650 11px var(--v19-mono); }
+#v19-forge .forge-progress i {
+  display: block;
+  height: 3px;
+  margin-top: 4px;
+  border-radius: 3px;
+  background: linear-gradient(90deg, var(--accent) var(--step-progress), var(--line-firm) var(--step-progress));
+  mask: repeating-linear-gradient(90deg, #000 0 calc(20% - 2px), transparent calc(20% - 2px) 20%);
+}
+
+#v19-forge .v19-stage {
+  position: relative;
+  isolation: isolate;
+  contain: paint;
+  overflow: hidden;
+  min-width: 0;
+  height: clamp(205px, 45dvh, 410px);
+  flex: 1 0 auto;
+  border: 1px solid var(--stage-frame);
+  border-radius: 24px;
+  color: var(--face);
+  background: radial-gradient(ellipse 42% 7% at 50% 83%, var(--stage-shadow), transparent 98%), var(--showcase-surface);
+  box-shadow: var(--shadow-2);
+}
+#v19-forge .v19-stage::after {
+  content: "";
+  position: absolute;
+  inset: auto 16% 13%;
+  height: 9%;
+  border-radius: 50%;
+  box-shadow: 0 0 18px var(--stage-shadow);
+  pointer-events: none;
+}
+#v19-forge .v19-stage[data-mode="ore"][data-inspection="lamp"] {
+  background: var(--stage-lamp);
+}
+#v19-forge .v19-stage[data-mode="refine"] {
+  height: clamp(174px, 39dvh, 355px);
+  background: var(--stage-warm);
+}
+#v19-forge .v19-stage[data-mode="refine"][data-danger="true"] { border-color: #e48069; }
+#v19-forge .v19-stage[data-mode="forge"] {
+  height: clamp(245px, 48dvh, 435px);
+  background:
+    radial-gradient(ellipse 46% 32% at 22% 76%, rgba(255, 122, 44, .20), transparent 72%),
+    radial-gradient(ellipse 72% 62% at 50% 22%, rgba(0, 0, 0, .22), transparent 74%),
+    var(--showcase-surface);
+  box-shadow: var(--shadow-2), inset 0 0 74px rgba(8, 10, 14, .46);
+}
+#v19-forge .v19-stage[data-mode="refine"] {
+  box-shadow: var(--shadow-2), inset 0 0 74px rgba(28, 10, 4, .38);
+}
+#v19-forge .v19-stage.is-phase-in .v19-canvas { animation: v19-phase-in .5s cubic-bezier(.2, .8, .3, 1) both; }
+@keyframes v19-phase-in {
+  from { filter: brightness(1.45) saturate(.55); transform: scale(1.015); }
+  to { filter: none; transform: none; }
+}
+#v19-forge .v19-stage[data-mode="broken"] {
+  background: var(--stage-warm);
+}
+#v19-forge #scene { outline: none; cursor: grab; }
+#v19-forge #scene:focus-visible { box-shadow: inset 0 0 0 2px #d4caff; }
+#v19-forge :is([data-mode="forge"], [data-mode="fit"], [data-mode="appraise"], [data-mode="reveal"]) #scene { touch-action: none; }
+#v19-forge [data-mode="forge"] #scene { cursor: crosshair; }
+#v19-forge #scene:active { cursor: grabbing; }
+#v19-forge .stage-top {
+  position: absolute;
+  inset-inline: 13px;
+  z-index: 2;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  pointer-events: none;
+}
+#v19-forge .stage-top { top: 12px; }
+#v19-forge .stage-top .live {
+  padding: 4px 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--control-face);
+  color: var(--face-2);
+  font-size: 11px;
+  font-weight: 650;
+}
+#v19-forge .stage-footer span:empty { display: none; }
+#v19-forge .stage-message {
+  position: absolute;
+  z-index: 3;
+  inset: auto 9% 16%;
+  opacity: 0;
+  pointer-events: none;
+  color: var(--stage-flare);
+  text-align: center;
+  font-size: clamp(17px, 4vw, 24px);
+  font-weight: 850;
+  text-shadow: 0 1px 1px var(--base-1), 0 0 12px var(--base-1), 0 0 8px var(--base-1);
+}
+#v19-forge .stage-message.show { animation: v19-announce .83s ease both; }
+#v19-forge .stage-message.surge { color: var(--accent-deep); }
+#v19-forge .stage-message.rare {
+  color: #f2c46d;
+  text-shadow: 0 0 5px #5b3b12, 0 0 20px #e7a94d66, 0 0 34px #e7a94d33;
+}
+#v19-forge .stage-message.rare::before { content: '✦'; margin-right: .28em; }
+#v19-forge .stage-message:is(.scar, .break) { color: var(--risk-danger); }
+#v19-forge .stage-message.surge::before { content: '✧'; margin-right: .3em; }
+#v19-forge .stage-message.surge::after { content: '✦'; margin-left: .3em; font-size: .65em; vertical-align: super; }
+#v19-forge .stage-message.show.is-static {
+  animation: none !important;
+  opacity: 1;
+  transform: translateY(-3px);
+}
+
+/* 命中浮字：只标“这一锤留下了什么”，不常驻。 */
+#v19-forge .stage-float { position: absolute; z-index: 5; inset: 0; pointer-events: none; }
+#v19-forge .stage-float-word {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  color: #ffe2b8;
+  font: 800 15px / 1 var(--v19-mono, monospace);
+  letter-spacing: .04em;
+  text-shadow: 0 1px 0 #2a1c10, 0 0 12px #ff9d4d66;
+  animation: v19-float-rise .78s cubic-bezier(.2, .8, .3, 1) both;
+}
+#v19-forge .stage-float-word[data-tone="scar"] { color: #ffb08a; }
+#v19-forge .stage-float-word[data-tone="break"] { color: #ff7a63; font-size: 17px; }
+@keyframes v19-float-rise {
+  0% { opacity: 0; transform: translate(-50%, -30%) scale(.8); }
+  22% { opacity: 1; transform: translate(-50%, -58%) scale(1.06); }
+  100% { opacity: 0; transform: translate(-50%, -128%) scale(1); }
+}
+
+/* 锻打三区：贴在刀身上的可点热区，替代“刀腹塑纹·刃侧上色·刀尖生光”那一行说明。 */
+#v19-forge .stage-zones {
+  position: absolute;
+  z-index: 4;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity .42s var(--ease, ease);
+}
+#v19-forge .stage-zones.show { opacity: 1; }
+#v19-forge .zone-hot {
+  position: absolute;
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  translate: -50% -50%;
+  border-radius: 50%;
+  border: 1px solid #ffc48a99;
+  background: radial-gradient(circle, #ffb0663d, transparent 70%);
+  box-shadow: 0 0 0 3px #ff9d4d16, 0 0 18px #ff9d4d38;
+  color: #ffdcb4;
+  font: 700 13px / 1 var(--v19-mono, monospace);
+  text-shadow: 0 1px 3px #1a0d04;
+  animation: v19-zone-ping 1.5s cubic-bezier(.2, .8, .3, 1) both;
+}
+#v19-forge .zone-hot[data-zone="edge"] { animation-delay: .11s; }
+#v19-forge .zone-hot[data-zone="tip"] { animation-delay: .22s; }
+@keyframes v19-zone-ping {
+  0% { opacity: 0; scale: .35; }
+  28% { opacity: 1; scale: 1.1; }
+  44% { scale: 1; }
+  72% { opacity: 1; }
+  100% { opacity: .5; scale: 1; }
+}
+[data-motion="reduced"] #v19-forge .zone-hot { animation: none; opacity: .9; }
+
+/* 收锤按钮：进度直接画在按钮底边，替代“第 6 锤后可收锤”整条规则说明。 */
+#v19-forge .finish-btn { position: relative; overflow: hidden; }
+#v19-forge .finish-btn .finish-gauge {
+  position: absolute;
+  inset: auto 0 0;
+  height: 4px;
+  background: #ffffff2e;
+}
+#v19-forge .finish-btn .finish-gauge::before {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: var(--v, 0%);
+  background: var(--accent);
+  transition: width .3s var(--ease, ease);
+}
+#v19-forge .finish-btn:disabled .finish-gauge::before { background: var(--accent-deep); }
+
+#v19-forge .stage-loading {
+  position: absolute;
+  z-index: 3;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  padding: 6px 11px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--glass-bg);
+  color: var(--face-2);
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: .04em;
+  box-shadow: var(--shadow-1);
+  pointer-events: none;
+}
+#v19-forge .v19-stage[data-loading="true"] .v19-canvas { opacity: .34; filter: saturate(.55); }
+#v19-forge .v19-canvas { transition: opacity .24s ease, filter .24s ease; }
+#v19-forge .v19-stage[data-loading="true"] .stage-loading { animation: stage-pulse 1.1s ease-in-out infinite; }
+@keyframes stage-pulse { 50% { opacity: .46; } }
+#v19-forge .v19-stage.is-miss .v19-canvas { animation: stage-miss .2s ease-out; }
+#v19-forge #stage-hint.is-alert { color: var(--risk-warn); font-weight: 700; }
+@keyframes stage-miss {
+  25% { transform: translateX(-2px) scale(.995); filter: saturate(.7); }
+  55% { transform: translateX(2px) scale(.995); }
+  100% { transform: none; }
+}
+@keyframes v19-announce {
+  0% { transform: translateY(8px) scale(.97); opacity: 0; }
+  16%, 68% { transform: none; opacity: 1; }
+  100% { transform: translateY(-5px); opacity: 0; }
+}
+
+#v19-forge .ore-tools {
+  position: absolute;
+  z-index: 4;
+  inset: auto 10px 10px;
+  display: grid;
+  justify-items: center;
+  gap: 5px;
+  pointer-events: none;
+}
+#v19-forge #inspection-note {
+  display: grid;
+  gap: 4px;
+  justify-items: center;
+  max-width: 100%;
+  color: var(--face-2);
+  text-align: center;
+  font-size: 11px;
+  text-shadow: 0 0 5px var(--base-1), 0 0 8px var(--base-1);
+}
+/* 四条线索：脉打灯、裂与密靠敲石递进、纯要擦窗。未探明显示「—」。 */
+#v19-forge .ore-clues { display: flex; flex-wrap: wrap; justify-content: center; gap: 5px; }
+#v19-forge .ore-clue {
+  display: inline-flex; align-items: center; gap: 3px;
+  padding: 2px 7px; border: 1px solid var(--line); border-radius: 999px;
+  background: var(--control-face); color: var(--face-3); font-size: 11px;
+}
+#v19-forge .ore-clue b { font-weight: 650; }
+#v19-forge .ore-clue i { font-style: normal; font-family: var(--v19-mono); letter-spacing: 0; }
+/* 只有满格才用强调色：探明 ≠ 好，弱信号保持中性，避免把「已查到」误读成「品质好」。 */
+#v19-forge .ore-clue.is-on { border-color: var(--line); background: var(--control-face); color: var(--face-2); }
+#v19-forge .ore-clue.is-on[data-level="2"] { color: var(--face); border-color: var(--line-firm, var(--line)); }
+#v19-forge .ore-clue.is-on[data-level="3"] { border-color: var(--accent-line); background: var(--accent-soft); color: var(--accent); }
+#v19-forge .inspection-tools {
+  display: flex;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  background: var(--control-face);
+  pointer-events: auto;
+}
+#v19-forge .inspection-tools button, #v19-forge .grip-focus {
+  min-width: 65px;
+  min-height: 44px;
+  padding: 4px 7px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 4px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--face-2);
+  font-size: 12px;
+}
+#v19-forge :is(.inspection-tools button, .grip-focus)[aria-pressed="true"] {
+  background: var(--accent-soft);
+  color: var(--accent-deep);
+  border-color: var(--accent-line);
+}
+#v19-forge :is(.inspection-tools, .grip-focus) svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.55;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+#v19-forge .grip-focus {
+  border-color: var(--line);
+  background: var(--glass-bg);
+  pointer-events: auto;
+}
+#v19-forge .ore-echo {
+  position: absolute;
+  z-index: 3;
+  left: 50%;
+  top: 43%;
+  width: 80px;
+  height: 80px;
+  border: 1px solid #c3edf4;
+  border-radius: 50%;
+  opacity: 0;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+#v19-forge .ore-echo.is-echoing { animation: v19-echo var(--ring, 1s) ease-out both; }
+@keyframes v19-echo {
+  from { opacity: .9; transform: translate(-50%, -50%) scale(.65); }
+  to { opacity: 0; transform: translate(-50%, -50%) scale(2.2); }
+}
+
+#v19-forge .panel {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  padding: 4px 2px 5px;
+}
+#v19-forge[data-phase="refine"] .panel { contain: paint; }
+#v19-forge .forge-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 7px; }
+#v19-forge h1 { min-width: 0; margin: 0; font-size: 23px; font-weight: 800; line-height: 1.24; overflow-wrap: anywhere; }
+#v19-forge #bench-meta { flex-shrink: 0; color: var(--accent-deep); font-size: 11px; font-weight: 700; }
+#v19-forge #description { margin: 3px 0 0; color: var(--face-3); font-size: 11px; }
+#v19-forge :is(#description, #bench-meta, .tray, #readout):empty { display: none; }
+#v19-forge :is(.ore-grid, .fit-grid) { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+#v19-forge :is(.ore-card, .fit-card) {
+  display: grid;
+  align-content: start;
+  gap: 3px;
+  min-width: 0;
+  padding: 6px 6px 7px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--control-face);
+  text-align: left;
+}
+#v19-forge :is(.ore-card, .fit-card, .heritage-preview)[aria-pressed="true"] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  box-shadow: inset 0 0 0 1px var(--accent-soft);
+}
+#v19-forge .ore-thumbnail { position: relative; display: block; height: 61px; border-radius: 8px; background: var(--showcase-surface); }
+#v19-forge .ore-thumbnail img { display: block; width: 100%; height: 100%; object-fit: contain; opacity: 0; }
+#v19-forge .ore-thumbnail.is-loaded img { opacity: 1; }
+#v19-forge .ore-thumbnail i {
+  position: absolute;
+  inset: 27% 33%;
+  background: var(--ore-color, #a6b2c5);
+  opacity: .65;
+  clip-path: polygon(11% 32%, 43% 7%, 85% 21%, 97% 59%, 74% 94%, 20% 82%, 2% 60%);
+}
+#v19-forge .ore-thumbnail.is-loaded i { display: none; }
+#v19-forge :is(.ore-card-name, .fit-card b) { font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#v19-forge .ore-card-footer { display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; column-gap: 3px; line-height: 1.25; }
+#v19-forge .ore-card-footer strong { color: var(--accent-deep); font: 750 11px var(--v19-mono); }
+#v19-forge :is(.ore-card-footer span, .fit-card small) { color: var(--face-2); font-size: 11px; }
+
+/* 矿质三档：1/2/3 颗矿芯，比“稀质 12%”一行小字更快比较三块石头。 */
+#v19-forge .ore-tier { display: inline-flex; align-items: center; gap: 3px; }
+#v19-forge .ore-tier i {
+  width: 6px;
+  height: 6px;
+  rotate: 45deg;
+  border-radius: 1px;
+  background: #ffffff24;
+  box-shadow: inset 0 0 0 1px #ffffff1a;
+}
+#v19-forge .ore-tier[data-tier="0"] i:first-child { background: #93a0b8; }
+#v19-forge .ore-tier[data-tier="1"] i:nth-child(-n+2) { background: #7fc8e8; }
+#v19-forge .ore-tier[data-tier="2"] i { background: #e0a81c; box-shadow: 0 0 6px #e0a81c55; }
+/* 擦过窗的矿：缩略图描一圈已探明的边，不再用文字标注状态。 */
+#v19-forge .ore-card.is-windowed .ore-thumbnail { box-shadow: inset 0 0 0 1px var(--accent-line); }
+#v19-forge .fit-card { gap: 5px; min-height: 66px; padding: 8px; }
+#v19-forge .fit-colors { display: flex; gap: 3px; }
+#v19-forge .fit-colors i { width: 24px; height: 6px; border-radius: 5px; background: var(--sample); box-shadow: inset 0 1px #ffffff46; }
+#v19-forge .fit-detail { margin: 0; color: var(--face-3); font-size: 11px; line-height: 1.45; }
+#v19-forge .mineral-meters { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+#v19-forge .mineral-meters > div { display: grid; grid-template-columns: 1fr auto; align-items: baseline; gap: 4px; }
+#v19-forge .mineral-meters span { color: var(--face-3); font-size: 11px; }
+#v19-forge .mineral-meters b { font-size: 13px; }
+#v19-forge .mineral-meters i { grid-column: 1 / -1; height: 4px; border-radius: 4px; background: linear-gradient(90deg, var(--accent-cool) var(--value), var(--line) var(--value)); }
+#v19-forge .heritage-preview {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 44px;
+  margin-top: 8px;
+  padding: 5px 8px;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: var(--control-face);
+  text-align: left;
+  font-size: 12px;
+}
+#v19-forge .heritage-preview strong { margin-left: auto; color: var(--accent-deep); white-space: nowrap; font-size: 11px; }
+#v19-forge .heritage-swatch {
+  width: 31px;
+  height: 31px;
+  border-radius: 7px;
+  flex-shrink: 0;
+  background: repeating-linear-gradient(153deg, transparent 0 5px, #21292d77 6px 7px, transparent 8px 12px), linear-gradient(120deg, var(--core), var(--steel));
+}
+#v19-forge .ore-suspense-track { height: 4px; border-radius: 4px; overflow: hidden; background: var(--line); }
+#v19-forge .ore-suspense-track i { display: block; height: 100%; background: var(--accent); transform-origin: left; animation: v19-reveal 1s ease-out both; animation-duration: var(--reveal, 1s); }
+@keyframes v19-reveal { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+
+/* 开石分级揭晓：切面打开时的光幕 + 矿质落章。 */
+#v19-forge .ore-reveal {
+  position: absolute;
+  z-index: 4;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 7px;
+  pointer-events: none;
+  background: radial-gradient(circle at 50% 52%, rgba(255, 255, 255, .30), transparent 62%);
+  animation: v19-reveal-veil .62s ease-out both;
+}
+#v19-forge .ore-reveal[hidden] { display: none; }
+#v19-forge .ore-reveal b {
+  color: var(--face);
+  font-size: clamp(20px, 5.4vw, 30px);
+  font-weight: 800;
+  letter-spacing: .06em;
+  text-shadow: 0 1px 0 #fff, 0 8px 22px rgba(20, 26, 40, .26);
+  animation: v19-stamp-in .5s cubic-bezier(.16, 1, .3, 1) both;
+}
+#v19-forge .ore-reveal span {
+  color: var(--face-2);
+  font-size: 12px;
+  letter-spacing: .08em;
+  animation: v19-stamp-in .5s cubic-bezier(.16, 1, .3, 1) .08s both;
+}
+#v19-forge .ore-reveal[data-grade="1"] b { color: var(--accent-deep); }
+#v19-forge .ore-reveal[data-grade="2"] {
+  background: radial-gradient(circle at 50% 52%, rgba(242, 196, 109, .34), transparent 64%);
+}
+#v19-forge .ore-reveal[data-grade="2"] b {
+  color: #b8791f;
+  text-shadow: 0 0 12px #f2c46d66, 0 0 30px #e7a94d33, 0 1px 0 #fff;
+}
+#v19-forge .mineral-meters[data-grade="2"] b { color: #b8791f; }
+#v19-forge .mineral-meters[data-grade="2"] i {
+  background: linear-gradient(90deg, #e0a81c var(--value), var(--line) var(--value));
+}
+@keyframes v19-reveal-veil { from { opacity: 0; } 38% { opacity: 1; } to { opacity: 1; } }
+@keyframes v19-stamp-in {
+  0% { opacity: 0; transform: scale(1.55); filter: blur(6px); }
+  62% { opacity: 1; transform: scale(.98); filter: blur(0); }
+  100% { opacity: 1; transform: none; filter: none; }
+}
+
+#v19-forge .heat-display { display: grid; gap: 5px; }
+#v19-forge .heat-display-top, #v19-forge .heat-caption, #v19-forge .heat-metrics > div > div:first-child {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+#v19-forge .heat-display-top strong { font-size: 13px; }
+#v19-forge .heat-clock { margin-left: auto; color: var(--face-3); font: 650 11px var(--v19-mono); }
+#v19-forge #heat-number { min-width: 2.1em; color: var(--face); text-align: right; font: 800 23px / 1 var(--v19-mono); }
+#v19-forge .thermo { position: relative; height: 14px; border: 1px solid #455068; border-radius: 5px; overflow: hidden; background: #212936; }
+#v19-forge .thermo-fill { position: absolute; inset: 0; transform: scaleX(.35); transform-origin: left; background: linear-gradient(90deg, #945163, #e58d63 60%, #f8c899); }
+#v19-forge :is(.thermo-range, .thermo-needle) { position: absolute; inset: 0; width: 100%; will-change: transform; pointer-events: none; }
+/* 目标区间是这一屏唯一要盯的东西：加亮加光，替掉“保持在绿区”那句说明。 */
+#v19-forge .thermo-range::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 7%;
+  background: #72dca5b8;
+  border-inline: 1px solid #d7ffe6;
+  box-shadow: 0 0 10px #72dca588, inset 0 0 6px #d7ffe655;
+}
+#v19-forge .thermo-needle::before { content: ""; position: absolute; inset: 0 auto 0 -1px; width: 2px; background: #fff9ee; box-shadow: 0 0 5px #fff9ee; }
+#v19-forge .thermo-danger { position: absolute; inset: 0 0 0 86%; background: #fb76512b; border-left: 1px solid #f28576; }
+#v19-forge .heat-caption { justify-content: space-between; color: var(--face-3); font-size: 11px; }
+#v19-forge .heat-caption b { color: var(--accent-cool-deep); font-weight: 700; }
+#v19-forge .heat-metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 13px; margin-top: 4px; }
+#v19-forge .heat-metrics > div > div:first-child { justify-content: space-between; color: var(--face-3); font-size: 11px; }
+#v19-forge .heat-metrics b { color: var(--face); font: 750 13px var(--v19-mono); }
+#v19-forge #heat-rank { color: var(--accent-cool-deep); }
+#v19-forge :is(.heat-progress, .risk-bar, .stat-track) { position: relative; height: 4px; border-radius: 4px; background: var(--line); overflow: hidden; }
+#v19-forge :is(.heat-progress, .heat-damage) { margin-top: 3px; }
+#v19-forge :is(.heat-progress, .heat-damage) > span { display: block; width: 100%; height: 100%; transform: scaleX(0); transform-origin: left; }
+#v19-forge .heat-progress span { background: #64aa99; }
+#v19-forge .heat-progress > i { position: absolute; inset: 0 auto 0 0; inset-inline-start: auto; width: 1px; background: #f5f8ff; }
+#v19-forge .heat-damage > span { background: #dd7968; }
+#v19-forge #heat-button { touch-action: none; user-select: none; }
+#v19-forge #heat-button.heating { background: var(--metal-mid); box-shadow: inset 0 1px 8px #1d1a5f50; }
+
+#v19-forge .forge-meters { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
+#v19-forge .forge-meters > div {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: baseline;
+  gap: 3px;
+  min-height: 47px;
+  padding: 6px 9px;
+  border-radius: 11px;
+  background: var(--surface-glass);
+}
+#v19-forge .forge-meters span { color: var(--face-3); font-size: 11px; }
+#v19-forge .forge-meters b { font: 750 18px var(--v19-mono); }
+#v19-forge .forge-meters .risk-bar { grid-column: 1 / -1; }
+#v19-forge .forge-meters .risk-bar span { display: block; height: 100%; background: linear-gradient(90deg, #62a997, #e58162); }
+#v19-forge .risk-value.alert { color: var(--v19-danger); }
+#v19-forge .look-list { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 7px; }
+#v19-forge .look-chip, #v19-forge .result-grade {
+  padding: 3px 6px;
+  border: 1px solid var(--accent-line);
+  border-radius: 7px;
+  background: var(--accent-soft);
+  color: var(--accent-deep);
+  font-size: 10px;
+}
+#v19-forge .look-chip.rarity { background: var(--accent-cool-soft); color: var(--accent-cool-deep); border-color: var(--accent-cool-line); }
+#v19-forge .forge-result { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+#v19-forge .forge-result b { color: var(--face); font: 800 26px / 1 var(--v19-mono); }
+#v19-forge .forge-result b small, #v19-forge .forge-result > span:last-child { color: var(--accent-deep); font-size: 11px; font-weight: 700; }
+#v19-forge .arcade-result { animation: v19-score-slam .62s cubic-bezier(.16,1,.3,1) both; }
+#v19-forge .arcade-result.is-rare {
+  position: relative;
+  overflow: hidden;
+  border-radius: 10px;
+  box-shadow: 0 0 0 1px #f2c46d55, 0 0 22px #e7a94d22;
+}
+#v19-forge .arcade-result.is-rare > * { position: relative; z-index: 1; }
+#v19-forge .arcade-result.is-rare::before {
+  content: '';
+  position: absolute;
+  z-index: 2;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(105deg, transparent 32%, rgba(255, 255, 255, .5) 50%, transparent 68%);
+  transform: translateX(-130%);
+  animation: v19-rare-sheen 1.15s ease-out .2s both;
+}
+/* 稀有刀鉴定：舞台右上角的“鉴定所”钢印。 */
+#v19-forge .appraise-seal {
+  position: absolute;
+  z-index: 4;
+  top: 62px;
+  right: 14px;
+  display: grid;
+  place-items: center;
+  gap: 1px;
+  width: 76px;
+  height: 76px;
+  border: 2px solid rgba(200, 150, 50, .72);
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(242, 196, 109, .2), rgba(0, 0, 0, 0) 72%);
+  box-shadow: inset 0 0 0 4px rgba(242, 196, 109, .15), 0 4px 16px rgba(120, 80, 16, .18);
+  color: #efc063;
+  transform: rotate(-12deg);
+  pointer-events: none;
+  animation: v19-seal-land .52s cubic-bezier(.2, 1.4, .4, 1) both;
+}
+#v19-forge .appraise-seal[hidden] { display: none; }
+#v19-forge .appraise-seal b { font-size: 17px; font-weight: 800; letter-spacing: .08em; }
+#v19-forge .appraise-seal span { font-size: 10px; letter-spacing: .22em; opacity: .82; }
+#v19-forge .appraise-seal[data-tier="legend"],
+#v19-forge .appraise-seal[data-tier="mythic"] { border-color: rgba(232, 178, 70, .92); color: #ffd97a; }
+@keyframes v19-seal-land {
+  0% { opacity: 0; transform: rotate(-32deg) scale(1.7); }
+  68% { opacity: 1; transform: rotate(-9deg) scale(.96); }
+  100% { opacity: 1; transform: rotate(-12deg) scale(1); }
+}
+/* ★ 减弱动效：入场动画被压成 0ms 时会停在首帧（opacity 0），
+   开石落章与鉴定钢印会直接看不见 —— 这里改成静态呈现。 */
+@media (prefers-reduced-motion: reduce) {
+  #v19-forge :is(.ore-reveal, .ore-reveal b, .ore-reveal span, .appraise-seal) {
+    animation: none !important;
+    opacity: 1;
+  }
+}
+[data-motion="reduced"] #v19-forge :is(.ore-reveal, .ore-reveal b, .ore-reveal span, .appraise-seal) {
+  animation: none !important;
+  opacity: 1;
+}
+#v19-forge .v19-stage[data-rarity] {
+  box-shadow: var(--shadow-2), inset 0 0 0 1px rgba(224, 168, 28, .46), 0 0 30px rgba(224, 168, 28, .18);
+}
+@keyframes v19-rare-sheen { from { transform: translateX(-130%); } to { transform: translateX(130%); } }
+#v19-forge .arcade-result .result-score { display: inline-flex; align-items: baseline; gap: 2px; }
+#v19-forge .arcade-result .result-score > span { min-width: 2ch; font: inherit; }
+@keyframes v19-score-slam {
+  0% { opacity: 0; transform: translateY(10px) scale(.94); filter: brightness(1.7); }
+  46% { opacity: 1; transform: translateY(-2px) scale(1.035); }
+  72% { transform: scale(.995); }
+  100% { opacity: 1; transform: none; filter: none; }
+}
+#v19-forge .stat-list { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 5px 9px; margin-top: 9px; }
+#v19-forge .stat { display: grid; grid-template-columns: 1fr auto; align-items: baseline; gap: 2px 4px; color: var(--face-3); font-size: 11px; animation: v19-stat-in .38s var(--ease) both; animation-delay: calc(.16s + var(--i) * .055s); }
+#v19-forge .stat b { color: var(--face); font: 700 11px var(--v19-mono); }
+#v19-forge .stat-track { grid-column: 1 / -1; height: 3px; }
+#v19-forge .stat-track i { display: block; height: 100%; background: #856ed6; transform-origin: left; animation: v19-stat-fill .55s var(--ease) both; animation-delay: calc(.26s + var(--i) * .055s); }
+
+/* 六维专属色：数值与条同色，六项一眼区分，不再是一片同色紫线。 */
+#v19-forge .stat:nth-child(1) { --stat: #d65a2e; }
+#v19-forge .stat:nth-child(2) { --stat: #0a8a99; }
+#v19-forge .stat:nth-child(3) { --stat: #2fc9ee; }
+#v19-forge .stat:nth-child(4) { --stat: #e0a81c; }
+#v19-forge .stat:nth-child(5) { --stat: #8b6bf2; }
+#v19-forge .stat:nth-child(6) { --stat: #14c39a; }
+#v19-forge .stat { --stat: #856ed6; }
+#v19-forge .stat-track { height: 5px; }
+#v19-forge .stat-track i { background: var(--stat); }
+#v19-forge .stat b { color: var(--stat); font-size: 12px; }
+#v19-forge .stat span:first-child::before {
+  content: '';
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  margin-right: 4px;
+  border-radius: 50%;
+  background: var(--stat);
+  vertical-align: 1px;
+}
+#v19-forge .result-perk { animation: v19-stat-in .4s var(--ease) .52s both; }
+@keyframes v19-stat-in { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: none; } }
+@keyframes v19-stat-fill { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+#v19-forge .stat-list + .fit-detail { margin-top: 6px; }
+
+/* 失败复盘：两条刻度代替“钢料烧损，无法成坯”这类整句说明。 */
+#v19-forge .fail-review { display: grid; gap: 9px; }
+#v19-forge .fail-review > div {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: baseline;
+  gap: 3px 6px;
+  color: var(--face-3);
+  font-size: 11px;
+}
+#v19-forge .fail-review b { color: var(--face); font: 700 12px var(--v19-mono); }
+#v19-forge .fail-review i { grid-column: 1 / -1; position: relative; height: 4px; border-radius: 4px; background: var(--line); overflow: hidden; }
+#v19-forge .fail-review i::before {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: var(--v, 0%);
+  background: var(--accent-deep);
+}
+#v19-forge .fail-review > div[data-tone="danger"] b { color: #f28576; }
+#v19-forge .fail-review > div[data-tone="danger"] i::before { background: #f28576; }
+
+#v19-forge .forge-dock {
+  position: sticky;
+  z-index: 5;
+  bottom: var(--safe-b);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 7px;
+  margin-top: auto;
+  padding: 6px 0 3px;
+  background: linear-gradient(0deg, var(--base-0) 75%, transparent);
+}
+#v19-forge .forge-dock:has(.secondary) { grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr); }
+#v19-forge .forge-dock:has(.v19-zones) { grid-template-columns: 1fr; }
+#v19-forge .v19-zones { display: flex; gap: 4px; }
+#v19-forge[data-phase="appraise"] .forge-dock { grid-template-columns: 1fr 1fr; }
+#v19-forge[data-phase="appraise"] .forge-dock .primary { grid-column: 1 / -1; }
+#v19-forge[data-phase="appraise"] .forge-dock .secondary { min-height: 44px; }
+#v19-forge .v19-save-notice {
+  position: sticky;
+  z-index: 6;
+  bottom: var(--safe-b);
+  min-height: 44px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--stage-warm);
+  color: var(--v19-danger);
+  font-size: 12px;
+}
+
+
+/* Arena menus and results */
+#v19-arena :is(h1, h2):focus { outline: none; }
+#v19-arena :is(.arena-home, .arena-detail, .arena-report) { display: grid; gap: 10px; }
+#v19-arena .arena-hero {
+  position: relative;
+  isolation: isolate;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  min-height: clamp(245px, 39dvh, 342px);
+  padding: 15px 16px;
+  overflow: hidden;
+  border: 1px solid var(--stage-frame);
+  border-radius: 24px;
+  background: radial-gradient(ellipse 58% 78% at 65% 62%, var(--arena-glow), transparent), linear-gradient(160deg, var(--arena-wall), var(--arena-floor));
+  color: var(--face);
+  box-shadow: var(--shadow-2);
+}
+#v19-arena .arena-hero::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  inset: 66% 10% 8%;
+  border: 1px solid var(--stage-grid);
+  border-radius: 50%;
+  box-shadow: 0 9px 22px var(--stage-shadow), 0 0 0 7px color-mix(in srgb, var(--arena-glow) 55%, transparent);
+}
+#v19-arena .arena-hero::after { inset: 10% 9% auto auto; transform: rotate(13deg); }
+#v19-arena .arena-hero-heading { position: relative; z-index: 1; display: flex; flex-wrap: wrap; gap: 5px; }
+#v19-arena .arena-chip {
+  padding: 3px 7px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-pill);
+  background: var(--control-face);
+  color: var(--accent-cool-deep);
+  font-size: 12px;
+  font-weight: 700;
+}
+#v19-arena .arena-hero h1 { flex-basis: 100%; margin: 2px 0 0; font-size: clamp(31px, 10vw, 43px); line-height: 1.14; font-weight: 850; letter-spacing: -.04em; }
+#v19-arena .arena-hero-art { position: absolute; inset: 32% 4% 4%; pointer-events: none; }
+#v19-arena .arena-hero-art img {
+  position: absolute;
+  top: 3%;
+  width: 45%;
+  height: 96%;
+  object-fit: contain;
+  filter: drop-shadow(0 10px 8px var(--stage-shadow));
+}
+#v19-arena .arena-hero-art img:first-child { left: 1%; transform: rotate(-19deg) translateY(8%); }
+#v19-arena .arena-hero-art img:nth-child(2) { z-index: 1; left: 26%; width: 49%; transform: rotate(-4deg) scale(1.09); }
+#v19-arena .arena-hero-art img:last-child { right: 1%; transform: rotate(15deg) translateY(6%); }
+/* 赛事评级：一条能看的成长线，替掉“只有最高分”的单一数字。 */
+#v19-arena .arena-rank {
+  display: grid;
+  gap: 5px;
+  padding: 9px 12px 10px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface-glass);
+}
+#v19-arena .arena-rank-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+#v19-arena .arena-rank-head b { color: var(--face); font-size: 15px; font-weight: 800; letter-spacing: .02em; }
+#v19-arena .arena-rank-head span { color: var(--face-3); font-size: 11px; }
+#v19-arena .arena-rank-track {
+  position: relative;
+  height: 6px;
+  border-radius: 6px;
+  background: var(--line);
+  overflow: hidden;
+}
+#v19-arena .arena-rank-track i {
+  display: block;
+  height: 100%;
+  width: var(--v, 0%);
+  border-radius: inherit;
+  background: linear-gradient(90deg, #8f7ae6, var(--accent));
+  transition: width .5s var(--ease, ease);
+}
+#v19-arena .arena-rank-foot { display: flex; justify-content: space-between; align-items: baseline; color: var(--face-3); font-size: 11px; }
+#v19-arena .arena-rank-foot b { color: var(--face-2); font: 700 11px var(--v19-mono); }
+/* 五段阶梯：圆点在文字上方排成一条路径，当前位置实心并带光晕。 */
+#v19-arena .arena-rank-steps { display: flex; gap: 4px; margin-top: 8px; }
+#v19-arena .arena-rank-steps span { position: relative; flex: 1; min-width: 0; padding-top: 9px; color: var(--face-3); font-size: 11px; text-align: center; }
+#v19-arena .arena-rank-steps span::before { content: ''; position: absolute; top: 0; left: 50%; width: 5px; height: 5px; margin-left: -2.5px; border-radius: 50%; background: var(--line); }
+#v19-arena .arena-rank-steps span.is-done { color: var(--face-2); }
+#v19-arena .arena-rank-steps span.is-done::before { background: var(--accent); opacity: .45; }
+#v19-arena .arena-rank-steps span.is-now { color: var(--accent); font-weight: 700; }
+#v19-arena .arena-rank-steps span.is-now::before { background: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+#v19-arena .arena-rank[data-tier="0"] .arena-rank-track i { background: linear-gradient(90deg, #6d7688, #9aa5b8); }
+#v19-arena .arena-rank[data-tier="1"] .arena-rank-track i { background: linear-gradient(90deg, #7d8ea8, #bcc9de); }
+#v19-arena .arena-rank[data-tier="2"] .arena-rank-track i { background: linear-gradient(90deg, #5d8fd4, #8fcbf2); }
+#v19-arena .arena-rank[data-tier="3"] .arena-rank-track i { background: linear-gradient(90deg, #b58f36, #e6ca86); }
+#v19-arena .arena-rank[data-tier="4"] .arena-rank-track i { background: linear-gradient(90deg, #c07a2e, #ffd79a); box-shadow: 0 0 12px #ffb46a55; }
+
+/* 下一目标：把段位、流派阶位、全国赛、巅峰赛串成一条可见的线。 */
+#v19-arena .arena-goal {
+  display: grid;
+  gap: 4px;
+  padding: 9px 12px 10px;
+  border: 1px solid var(--accent-line);
+  border-radius: 14px;
+  background: linear-gradient(120deg, #ff7a2f0f, transparent 62%), var(--surface-glass);
+  text-align: left;
+}
+#v19-arena .arena-goal-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+#v19-arena .arena-goal-head span { color: var(--accent-deep); font-size: 11px; font-weight: 700; letter-spacing: .06em; }
+#v19-arena .arena-goal-head b { color: var(--face-2); font: 700 11px var(--v19-mono); }
+#v19-arena .arena-goal-title { color: var(--face); font-size: 14px; font-weight: 800; }
+
+/* 战报里的评级变化：升段时整块亮一下。 */
+#v19-arena .arena-rank-gain {
+  display: grid;
+  gap: 5px;
+  padding: 8px 10px 9px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface-glass);
+}
+#v19-arena .arena-rank-gain-head { display: flex; align-items: baseline; gap: 5px; }
+#v19-arena .arena-rank-gain-head span { margin-right: auto; color: var(--face-3); font-size: 11px; }
+#v19-arena .arena-rank-gain-head b { color: var(--face); font: 700 13px var(--v19-mono); }
+#v19-arena .arena-rank-gain-head i { color: var(--face-3); font-style: normal; }
+#v19-arena .arena-rank-gain-head em { color: var(--accent); font: 750 12px var(--v19-mono); font-style: normal; }
+#v19-arena .arena-rank-gain.is-up {
+  border-color: #e0c07088;
+  box-shadow: 0 0 0 1px #e0c07033, 0 0 22px #e0c07026;
+  animation: rank-up-pop .62s cubic-bezier(.2, 1.3, .4, 1) both;
+}
+@keyframes rank-up-pop {
+  0% { opacity: .5; scale: .95; }
+  58% { opacity: 1; scale: 1.018; }
+  100% { opacity: 1; scale: 1; }
+}
+#v19-arena .arena-rank-gain.is-up .arena-rank-foot span { color: #e9c37a; font-weight: 700; }
+
+/* 出战刀：真实刀模卡，替代只有一行字的原生下拉框。 */
+#v19-arena .arena-blades { display: grid; gap: 6px; }
+#v19-arena .arena-blades-head { display: flex; align-items: baseline; justify-content: space-between; }
+#v19-arena .arena-blades-head span { color: var(--face-3); font-size: 11px; }
+#v19-arena .arena-blades-head b { color: var(--accent-deep); font: 700 11px var(--v19-mono); }
+#v19-arena .arena-blade-row {
+  display: flex;
+  gap: 7px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+  scroll-snap-type: x proximity;
+  scrollbar-width: none;
+}
+#v19-arena .arena-blade-row::-webkit-scrollbar { display: none; }
+#v19-arena .arena-blade-card {
+  flex: 0 0 auto;
+  display: grid;
+  gap: 3px;
+  width: 96px;
+  padding: 5px 5px 7px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--control-face);
+  text-align: center;
+  scroll-snap-align: start;
+}
+#v19-arena .arena-blade-card.is-picked {
+  border-color: var(--accent-line);
+  background: #ff7a2f0f;
+  box-shadow: 0 0 0 1px var(--accent-line), 0 0 16px #ff7a2f22;
+}
+#v19-arena .arena-blade-art {
+  position: relative;
+  display: grid;
+  place-items: center;
+  height: 58px;
+  overflow: hidden;
+  border-radius: 8px;
+  background: radial-gradient(ellipse 60% 20% at 50% 86%, #8fa3d022, transparent 75%), linear-gradient(160deg, #242b3b, #171c26);
+}
+#v19-arena .arena-blade-art .v19-thumb-image { width: 100%; height: 100%; object-fit: contain; }
+#v19-arena .arena-blade-fallback { width: 24px; height: 24px; border-radius: 50%; border: 1px solid var(--line); }
+#v19-arena .arena-blade-art[data-state="pending"] .arena-blade-fallback { animation: arena-thumb-pulse 1.15s ease-in-out infinite; }
+@keyframes arena-thumb-pulse { 50% { opacity: .3; } }
+#v19-arena .arena-blade-card b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--face); font-size: 11px; font-weight: 700; }
+#v19-arena .arena-blade-card .arena-blade-meta { color: var(--face-3); font-size: 11px; }
+#v19-arena .arena-blade-card:disabled { opacity: .42; }
+/* 磨合等级：角上一个点代表这把刀打过多少场（银 2 场 / 金 5 场）。 */
+#v19-arena .arena-blade-card[data-mastery] .arena-blade-art::after {
+  content: '';
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--mastery);
+  box-shadow: 0 0 7px var(--mastery);
+}
+#v19-arena .arena-blade-card[data-mastery="1"] { --mastery: #b8c6dc; }
+#v19-arena .arena-blade-card[data-mastery="2"] { --mastery: #e6c478; }
+
+#v19-arena :is(.arena-launch, .arena-event) { display: grid; gap: 8px; min-width: 0; }
+#v19-arena .arena-shortcuts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+#v19-arena :is(.arena-shortcut, .arena-series-entry, .arena-choice, .arena-details, .arena-event, .arena-active, .arena-report) {
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface-glass);
+}
+#v19-arena .arena-shortcut {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  min-height: 49px;
+  padding: 6px 10px;
+}
+#v19-arena .arena-shortcut b { color: var(--face); font-size: 14px; }
+#v19-arena .arena-shortcut span { color: var(--accent); }
+#v19-arena .arena-shortcut[data-done] span { color: #72dca5; }
+#v19-arena .arena-series { display: grid; gap: 9px; }
+#v19-arena .arena-series-entry { display: grid; grid-template-columns: 65px 1fr auto; align-items: center; min-height: 72px; padding: 3px 14px 3px 8px; text-align: left; }
+#v19-arena .arena-series-entry img { width: 58px; height: 61px; object-fit: contain; filter: drop-shadow(0 5px 5px var(--stage-shadow)); }
+#v19-arena .arena-series-entry span { color: var(--accent); font-size: 21px; }
+#v19-arena .arena-text {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  width: fit-content;
+  padding: 4px 8px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--accent-deep);
+  font-size: 12px;
+  font-weight: 700;
+  text-decoration: none;
+}
+#v19-arena .arena-active { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 6px; align-items: center; padding: 7px 8px; }
+#v19-arena .arena-active > div:first-child { display: grid; gap: 1px; }
+#v19-arena .arena-active > div:first-child b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
+#v19-arena .arena-active span { color: var(--face-3); font-size: 11px; }
+#v19-arena .arena-active .primary { min-height: 44px; font-size: 12px; }
+#v19-arena .arena-confirm { grid-column: 1 / -1; display: flex; align-items: center; justify-content: space-between; }
+#v19-arena .arena-detail-head { display: flex; align-items: center; gap: 7px; }
+#v19-arena .arena-detail-head h1 { margin: 0; font-size: 24px; line-height: 1.2; }
+#v19-arena .arena-choices { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 5px; }
+#v19-arena .arena-choice { min-height: 44px; padding: 5px 2px; color: var(--face-2); font-size: 12px; font-weight: 650; }
+#v19-arena .arena-choice[aria-pressed="true"] { color: var(--accent-deep); border-color: var(--accent); background: var(--accent-soft); }
+#v19-arena .arena-school-fields { display: grid; grid-template-columns: 1.3fr 1fr; gap: 8px; }
+#v19-arena .arena-event { padding: 11px; }
+#v19-arena .arena-event-title { display: flex; align-items: baseline; justify-content: space-between; gap: 5px; }
+#v19-arena .arena-event-title h2 { margin: 0; font-size: 19px; }
+#v19-arena .arena-event-title:has(.arena-course-art) { align-items: center; }
+#v19-arena .arena-course-art {
+  display: flex;
+  justify-content: center;
+  flex: 0 0 89px;
+  height: 44px;
+  border-radius: 9px;
+  background: var(--showcase-surface);
+}
+#v19-arena .arena-course-art img { width: 31px; height: 44px; object-fit: contain; margin-inline: -2px; }
+#v19-arena .arena-course-art img:first-child { transform: rotate(-13deg); }
+#v19-arena .arena-course-art img:last-child { transform: rotate(13deg); }
+#v19-arena :is(.arena-course-meta, .arena-event-title span) { color: var(--face-3); font-size: 12px; }
+#v19-arena :is(.arena-blades, .arena-detail .arena-blades) { display: grid; gap: 5px; min-width: 0; }
+#v19-arena :is(.blade-field, .arena-select) { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 5px 8px; align-items: center; color: var(--face-2); font-size: 12px; }
+#v19-arena .blade-field small { grid-column: 2; color: var(--accent-cool-deep); font-size: 11px; }
+#v19-arena select {
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  padding: 4px 7px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--control-face);
+  color: var(--face);
+  font-family: inherit;
+  font-size: 16px;
+}
+#v19-arena .arena-anchor { text-decoration: none; }
+#v19-arena :is(.arena-lock, .arena-alert) {
+  margin: 0;
+  padding: 8px 9px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--stage-warm);
+  color: var(--stage-flare);
+  font-size: 12px;
+}
+#v19-arena .arena-alert { margin-bottom: 8px; }
+#v19-arena .arena-details { padding: 0 9px; min-width: 0; color: var(--face-2); }
+#v19-arena .arena-details summary { min-height: 44px; padding: 10px 1px; cursor: pointer; font-size: 12px; font-weight: 700; }
+#v19-arena { padding-bottom: calc(8px + var(--safe-b)); }
+#v19-arena .arena-details ol { margin: 0 0 6px; padding-left: 23px; font-size: 12px; }
+#v19-arena .arena-details > small { display: block; margin-bottom: 8px; }
+#v19-arena .arena-target-picker { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; padding-bottom: 8px; }
+#v19-arena .arena-target-picker .arena-choice { display: grid; justify-items: center; gap: 2px; }
+#v19-arena .arena-target-picker img { width: 42px; height: 44px; object-fit: contain; }
+#v19-arena :is(.arena-history-row, .arena-round-result) {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 6px;
+  min-height: 44px;
+  width: 100%;
+  padding: 5px 3px;
+  border: 0;
+  border-top: 1px solid var(--line);
+  background: transparent;
+  font-size: 12px;
+}
+#v19-arena .arena-report { padding: 13px; }
+#v19-arena .arena-report > * { animation: arena-rise .34s var(--ease) both; }
+#v19-arena .arena-report > *:nth-child(2) { animation-delay: .06s; }
+#v19-arena .arena-report > *:nth-child(3) { animation-delay: .12s; }
+#v19-arena .arena-report > *:nth-child(4) { animation-delay: .18s; }
+#v19-arena .arena-report header strong span[data-report-score] { display: inline-block; min-width: 2.2ch; color: inherit; font: inherit; }
+#v19-arena .arena-report header strong { text-shadow: 0 0 24px var(--accent-soft); }
+@keyframes arena-rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+#v19-arena .arena-report header {
+  display: grid;
+  justify-items: center;
+  gap: 2px;
+  padding: 20px 9px 16px;
+  border-radius: 16px;
+  background: var(--showcase-surface);
+}
+#v19-arena .arena-report header :is(span, small, p) { color: var(--face-3); font-size: 11px; }
+#v19-arena .arena-report header p { margin: 3px 0 0; }
+#v19-arena .arena-report header p.arena-best { margin-top: 4px; }
+#v19-arena .arena-report header p.arena-best b { color: var(--face-2); font: 700 11px var(--v19-mono); }
+#v19-arena .arena-report header p.arena-best.is-new { color: var(--accent); font-weight: 650; }
+#v19-arena .arena-report header h2 { margin: 0; font-size: 23px; line-height: 1.25; }
+#v19-arena .arena-report header strong { color: var(--accent-deep); font: 850 53px / 1.12 var(--v19-mono); }
+#v19-arena .arena-result-metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; }
+#v19-arena .arena-result-metrics div { display: grid; justify-items: center; padding: 5px; border: 1px solid var(--line); border-radius: 11px; }
+#v19-arena .arena-result-metrics b { font: 800 20px var(--v19-mono); }
+#v19-arena .arena-result-metrics span { font-size: 11px; color: var(--face-3); }
+#v19-arena .report-rewards { display: flex; justify-content: center; align-items: baseline; flex-wrap: wrap; gap: 6px; font-size: 11px; color: var(--face-3); }
+#v19-arena .report-rewards b { padding: 4px 7px; border-radius: 7px; background: var(--accent-cool-soft); color: var(--accent-cool-deep); font: 750 13px var(--v19-mono); }
+#v19-arena .report-rewards .is-hot { color: #ffcf8a; font-weight: 750; }
+#v19-arena .arena-chip[data-hot] {
+  border-color: #ffb46a66;
+  background: #ff7a2f1f;
+  color: #ffcf8a;
+  font-weight: 750;
+}
+#v19-arena .report-actions { display: grid; gap: 6px; }
+
+/* Live cutting canvas and compact touch HUD */
+#v19-arena[data-screen="play"] { padding-top: 4px; }
+#v19-arena .arena-round-head { display: flex; align-items: center; gap: 6px; min-height: 44px; margin-bottom: 5px; }
+#v19-arena .arena-round-head h2 { margin: 0; font-size: 17px; line-height: 1.25; }
+#v19-arena .arena-round-index { color: var(--face-3); font: 650 11px var(--v19-mono); }
+#v19-arena .round-pause { margin-left: auto; min-height: 44px; padding: 3px 11px; border: 1px solid var(--line); border-radius: 11px; background: var(--control-face); font-size: 12px; font-weight: 700; }
+#v19-arena .trial-frame {
+  position: relative;
+  isolation: isolate;
+  contain: paint;
+  height: clamp(270px, calc(100dvh - var(--topbar-h) - var(--safe-t) - var(--safe-b) - 70px), 720px);
+  overflow: hidden;
+  border: 1px solid var(--stage-frame);
+  border-radius: 19px;
+  background: var(--arena-wall);
+  color: var(--face);
+  box-shadow: var(--shadow-2);
+}
+#v19-arena .trial-frame canvas { position: absolute; display: block; inset: 0; width: 100%; height: 100%; outline: none; touch-action: none; cursor: crosshair; }
+#v19-arena .trial-frame canvas:focus-visible { box-shadow: inset 0 0 0 2px #bbd9e7; }
+#v19-arena :is(.trial-hud, .trial-target, .trial-bottom, .trial-verdict) { position: absolute; pointer-events: none; }
+#v19-arena .trial-hud {
+  inset: 10px 10px auto;
+  display: grid;
+  grid-template-columns: 1.18fr 1fr 1fr;
+  align-items: center;
+  padding: 7px 6px;
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  background: var(--glass-bg);
+  box-shadow: var(--shadow-1);
+}
+#v19-arena .trial-hud div { position: relative; display: grid; justify-items: center; gap: 2px; }
+#v19-arena .trial-hud div:first-child { justify-items: start; padding-inline-start: 10px; }
+#v19-arena .trial-hud div + div { border-left: 1px solid var(--line); }
+#v19-arena .trial-hud small, #v19-arena .trial-bottom span { color: var(--face-3); font-size: 11px; }
+#v19-arena .trial-hud b { font: 800 22px / 1 var(--v19-mono); }
+#v19-arena .trial-hud [data-trial="score"] { color: var(--accent-cool-deep); font-size: 26px; }
+#v19-arena .trial-hud [data-trial="combo"] { color: var(--accent-deep); }
+#v19-arena .trial-hud b.urgent { color: var(--risk-danger); }
+#v19-arena .trial-hud em { position: absolute; bottom: -22px; color: var(--arena-positive); font: 750 12px var(--v19-mono); }
+#v19-arena .trial-hud em.is-pop { animation: trial-delta .38s cubic-bezier(.16,1,.3,1); }
+@keyframes trial-delta { 0% { opacity: 0; transform: translateY(6px) scale(.7); } 55% { opacity: 1; transform: translateY(-2px) scale(1.14); } 100% { transform: none; } }
+#v19-arena .trial-hud [data-trial="combo"].is-live { animation: trial-combo .3s cubic-bezier(.16,1,.3,1); }
+@keyframes trial-combo { 0% { transform: scale(.78); color: var(--stage-flare); } 60% { transform: scale(1.18); } 100% { transform: none; } }
+#v19-arena .trial-target { inset: 22% 5% auto; text-align: center; color: var(--face-2); text-shadow: 0 0 7px var(--base-1); }
+#v19-arena .trial-target b { font-size: 12px; font-weight: 750; letter-spacing: .04em; }
+#v19-arena .trial-target b.is-new { animation: trial-wave .36s var(--ease) both; }
+@keyframes trial-wave { from { opacity: 0; transform: translateY(-5px); letter-spacing: .18em; } to { opacity: 1; transform: none; letter-spacing: .04em; } }
+#v19-arena .trial-ready {
+  position: absolute;
+  z-index: 2;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 3px;
+  background: radial-gradient(ellipse 44% 30% at 50% 50%, color-mix(in srgb, var(--stage-flare) 13%, transparent), transparent 74%);
+  text-align: center;
+  pointer-events: none;
+}
+#v19-arena .trial-ready[hidden] { display: none; }
+#v19-arena .trial-ready b { color: var(--stage-flare); font-size: clamp(31px, 9vw, 48px); font-weight: 900; letter-spacing: .22em; text-indent: .22em; text-shadow: 0 2px 0 var(--base-1), 0 0 24px var(--accent-soft); }
+#v19-arena .trial-ready span { color: var(--face-2); font-size: 12px; font-weight: 700; letter-spacing: .14em; }
+#v19-arena .trial-ready.is-on { animation: trial-ready .82s cubic-bezier(.16,1,.3,1) both; }
+@keyframes trial-ready {
+  0% { opacity: 0; transform: scale(1.08); filter: blur(4px); }
+  22%, 63% { opacity: 1; transform: none; filter: none; }
+  100% { opacity: 0; transform: scale(.97); }
+}
+#v19-arena .trial-verdict { inset: 15% 5% auto; text-align: center; }
+#v19-arena .cut-callout { color: var(--stage-flare); opacity: 0; display: inline-block; font-size: clamp(20px, 5vw, 35px); font-weight: 900; text-shadow: 0 0 7px var(--base-1), 0 0 2px var(--base-1); }
+#v19-arena .cut-callout.combo { color: var(--accent-deep); }
+#v19-arena .cut-callout.combo::before { content: '✧'; margin-right: .25em; }
+#v19-arena .cut-callout.combo::after { content: '✦'; margin-left: .25em; font-size: .66em; vertical-align: super; }
+#v19-arena .trial-bottom {
+  inset: auto 8px 8px;
+  display: grid;
+  grid-template-columns: minmax(94px, 1.2fr) minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: var(--glass-bg);
+}
+#v19-arena .trial-bottom span { display: flex; justify-content: space-between; gap: 4px; white-space: nowrap; }
+#v19-arena .trial-bottom b { color: var(--arena-positive); font: 750 11px var(--v19-mono); }
+#v19-arena .trial-bottom p { margin: 0; color: var(--face-3); text-align: center; font-size: 11px; line-height: 1.3; }
+#v19-arena .trial-bottom progress { display: block; width: 100%; height: 5px; margin-top: 2px; accent-color: var(--arena-positive); }
+#v19-arena .trial-bottom progress.low { accent-color: var(--risk-danger); }
+#v19-arena .trial-cover { position: absolute; z-index: 2; inset: 0; display: grid; place-items: center; padding: 12px; background: var(--dialog-scrim); }
+#v19-arena .trial-card {
+  display: grid;
+  gap: 8px;
+  width: min(100%, 290px);
+  padding: 13px;
+  border: 1px solid var(--glass-border);
+  border-radius: 17px;
+  background: var(--dialog-glass);
+  color: var(--face);
+  text-align: center;
+  box-shadow: var(--shadow-3);
+}
+#v19-arena .trial-card :is(h3, p) { margin: 0; }
+#v19-arena .trial-card h3 { font-size: 18px; }
+#v19-arena .trial-card p { font-size: 12px; }
+
+@media (max-height: 650px) {
+  #v19-forge .v19-stage { height: clamp(172px, 34dvh, 225px); }
+  #v19-forge .v19-stage[data-mode="refine"] { height: clamp(150px, 31dvh, 208px); }
+  #v19-forge .v19-stage[data-mode="forge"] { height: clamp(190px, 39dvh, 255px); }
+  #v19-forge .ore-thumbnail { height: 47px; }
+  #v19-arena .arena-hero { min-height: 222px; }
+}
+@container app (max-width: 350px) {
+  .v19-surface { padding-inline: 8px; }
+  #v19-forge .panel { padding-inline: 0; }
+  #v19-forge .ore-card-footer span { font-size: 9px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .v19-surface *, .v19-surface *::before, .v19-surface *::after { scroll-behavior: auto; animation-duration: .01ms; transition-duration: .01ms; }
+}
+[data-motion="reduced"] .v19-surface *, [data-motion="reduced"] .v19-surface *::before {
+  animation-duration: .01ms;
+  transition-duration: .01ms;
+}
+
+.v19-collection-art {
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 5px;
+  min-height: 56px;
+  background: radial-gradient(ellipse at center, color-mix(in srgb, var(--mineral-color) 34%, transparent), transparent 72%);
+  color: var(--face-2);
+}
+.v19-collection-art svg { width: 24px; height: 24px; }
+.v19-collection-art span { font-size: 10px; }
+.page[data-load-error]::before { content: attr(data-load-error); padding: 16px; color: var(--v19-danger); }
+/* 卡片上的探明指示：四点代表脉 / 裂 / 密 / 纯，三块石头同一位置可直接横比已查过什么。 */
+#v19-forge .ore-probes { display: flex; gap: 4px; justify-content: center; padding-top: 1px; }
+#v19-forge .ore-probes i { width: 5px; height: 5px; border-radius: 50%; border: 1px solid var(--line); background: transparent; }
+#v19-forge .ore-probes i.is-on { border-color: var(--accent); background: var(--accent); }
+/* 探测工具整局各一次：用掉就锁死，用虚线框与压暗和「可用但未按」区分开。 */
+#v19-forge .inspection-tools button[data-spent="true"] {
+  color: var(--face-3);
+  border-color: var(--line);
+  border-style: dashed;
+  opacity: .55;
+}

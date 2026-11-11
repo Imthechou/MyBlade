@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="theme-color" content="#F1F3FC" />
+<meta name="description" content="锻刀大赛：选矿锻刀，带上亲手打出的刀征战斩试场。" />
+<meta name="application-version" content="4.0.4" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="default" />
+<link rel="icon" href="data:," />
+<title>锻刀大赛 · 旧版界面</title>
+
+<!--
+  ⚠ 旧版（V4 工艺卡流程）独立入口，故意不设 data-theme，启动后回落到
+     tokens.css 的浅色 token。主入口 index.html 永远是暗色，两者不要互相串。
+  访问方式：http://127.0.0.1:8123/legacy.html
+-->
+
+<!--
+  ══ 样式分层 ══════════════════════════════════════════
+  ① tokens.css      设计令牌（**唯一**声明 :root 的地方）
+  ② base.css        reset + 排版 + 页面骨架 + 基础件
+  ③ components.css  跨页面组件（风险条 / 六维 / 稀有度 / 刀卡 / 决策卡）
+  ④ pages/*.css     各页面私有样式
+  ⑤ numeric.css     数字等宽修正（**必须最后**，见文件头注释）
+  ⚠ 页面样式只允许读 token，不允许再声明 :root。
+-->
+<link rel="stylesheet" href="/__styles.css" />
+<!-- 数字等宽：必须在所有页面样式之后加载。
+     原因：多处数字规则用 `font:` 简写，简写会把 font-variant-numeric 重置为
+     normal；靠“最后加载”覆盖，而不是靠 !important 或改 20 多处简写。 -->
+
+</head>
+<body>
+
+<!-- 装填屏：纯静态，早于所有脚本出现，避免首屏全白 -->
+<div class="boot" id="boot" role="status" aria-live="polite" aria-label="正在装填">
+  <div class="boot-mark">锻</div>
+  <div class="boot-title">锻刀大赛</div>
+  <div class="boot-bar"><i></i></div>
+  <div class="boot-note" id="bootNote">正在装填锻造台…</div>
+</div>
+
+<div id="app">
+  <!-- 顶栏由 ui/shell.js 填充 -->
+  <header class="topbar" id="topbar"></header>
+
+  <div class="pages" id="pages">
+    <!-- ① 首页：导航 + 状态摘要（★ 导航职责收归首页，故不设底部标签栏） -->
+    <section class="page" data-page="home"></section>
+    <!-- ② 锻刀 FORGE -->
+    <section class="page" data-page="forge"><div class="v19-surface" id="v19-forge"></div></section>
+    <!-- ③ 鉴定 APPRAISAL（S10，由锻刀页跳转） -->
+    <section class="page" data-page="appraise"></section>
+    <!-- ④ 赛事 CIRCUIT -->
+    <section class="page" data-page="arena"><div class="v19-surface" id="v19-arena"></div></section>
+    <section class="page" data-page="legacy-arena"></section>
+    <!-- ⑤ 工坊 WORKSHOP（藏刀阁 / 成就 / 锻造加成 / 图鉴） -->
+    <section class="page" data-page="workshop"></section>
+    <!-- ⑥ 每日挑战 DAILY CHALLENGE -->
+    <section class="page" data-page="daily"></section>
+  </div>
+
+  <!--
+    ★ 底部标签栏已于 UI 整改 B2 移除（与原项目 2026-10-03 的决定一致）。
+      导航全部收归首页：首页主 CTA + 一行快捷导航；子页靠顶栏返回键回首页。
+      收益：底部腾出约 56px 给 3D 舞台（390×844 上占 6.6%）。
+      ⚠ 若要恢复，必须同时恢复 .page 的 padding-bottom 与 #app 的 flex 分配，
+        否则底部会留下一条死区（比不做更糟）。
+  -->
+</div>
+
+<!--
+  ══ Three.js（经典脚本）════════════════════════════════
+  必须是**经典脚本**且排在 module 之前：
+  src/render/legacy/** 在模块求值时读 `global.THREE`，
+  而 ESM 是 deferred 的 —— 经典脚本先执行完，THREE 一定已就位。
+  （换成 ESM 版 three 需要改 legacy 内核，暂不做。）
+-->
+<script src="src/render/legacy/three.bundle.js"></script>
+<script src="src/render/legacy/three.addons.js"></script>
+
+<!-- 应用层入口（ESM）。⚠ ES Module 需经 HTTP 访问，file:// 会被 CORS 拦截。 -->
+<script type="module" src="src/app/bootstrap.js"></script>
+
+</body>
+</html>

@@ -1,0 +1,39 @@
+/* 仅正式多类型测试；沿用现有 quick-match / report / button 视觉组件。 */
+.formal-suite-note{font-size:12px;line-height:1.65;color:var(--text-muted,#a8bbc8);margin:8px 0}
+.formal-suite-steps{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0 12px;padding:0;list-style:none}
+.formal-suite-steps li{border:1px solid rgba(159,190,207,.25);border-radius:8px;padding:7px 10px;font-size:12px}
+.formal-suite-steps li[aria-current="step"]{border-color:#c7a466;color:#ecd7ad}
+.formal-suite-steps li.is-complete{border-style:double;color:#a4d5cf}
+.formal-suite-intro,.formal-operation-result{padding:16px}
+.formal-suite-intro h2,.formal-operation-result h2{margin:8px 0;font-size:21px}
+.formal-suite-instructions{margin:10px 0;padding-left:20px;line-height:1.75;font-size:13px}
+.formal-operation-feedback{padding:9px 14px;min-height:48px;font-size:13px;line-height:1.55;border-top:1px solid rgba(159,190,207,.15)}
+.formal-operation-metrics{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0;font-variant-numeric:tabular-nums}
+.formal-operation-metrics span{padding:5px 8px;border:1px solid rgba(159,190,207,.2);border-radius:6px;font-size:12px}
+.formal-operation-canvas{touch-action:none;user-select:none;display:block;width:100%;height:clamp(260px,42vh,410px)}
+.formal-suite-actions{display:flex;gap:10px;flex-wrap:wrap;padding:10px 0}
+.formal-suite-actions .btn{flex:1;min-width:120px}
+.formal-suite-diagnostics{padding:12px;margin:10px 0;border:1px solid rgba(159,190,207,.22);border-radius:10px}
+.formal-suite-diagnostics h3{font-size:15px;margin:5px 0 8px}
+.formal-suite-diagnostics p{font-size:13px;line-height:1.65;margin:6px 0}
+.formal-suite-diagnostics details{font-size:12px;line-height:1.65}
+.formal-suite-diagnostics ul{padding-left:18px;max-height:200px;overflow:auto}
+.formal-operation-meter{padding:5px 14px;font-size:12px;color:#b6d9df}
+@media(max-width:420px){.formal-suite-intro,.formal-operation-result{padding:12px}.formal-suite-steps{gap:5px}.formal-suite-steps li{padding:6px 7px}.formal-operation-canvas{height:290px}}
+
+/* 原 quick-match 是固定切割网格；仅为新增内容调整布局，不改旧舞台样式。 */
+.quick-match.formal-suite-intro,.quick-match.formal-operation-result{display:block;overflow-y:auto;overscroll-behavior:contain}
+.quick-match.formal-operation{display:flex;flex-direction:column;overflow-y:auto;overflow-x:hidden;min-width:0;padding:calc(8px + var(--safe-t,0px)) 12px calc(8px + var(--safe-b,0px));overscroll-behavior:contain}
+.formal-operation>*{min-width:0;flex-shrink:0;max-width:100%;overflow-wrap:anywhere}
+.formal-operation .formal-operation-canvas{flex:1 1 0;min-height:160px;height:auto;max-height:410px;min-width:0}
+.formal-operation .formal-field-intro{padding:4px 0 10px}
+.formal-operation .formal-suite-steps{margin:4px 0 8px}
+.formal-operation .formal-operation-feedback{padding:7px 0;min-height:54px}
+.formal-operation .formal-operation-meter{padding:4px 0;font-variant-numeric:tabular-nums}
+.formal-operation .quick-footer{padding:6px 0;flex-wrap:wrap}
+.formal-operation .quick-footer .quick-pause{flex:1;min-width:0}
+.formal-operation>.formal-suite-note{margin:4px 0 0;font-size:11px;line-height:1.45}
+.formal-field-match:has(.formal-operation-feedback){grid-template-rows:auto auto auto minmax(0,1fr) auto auto}
+.formal-suite-note{color:var(--face-3,#617481)}
+.quick-match .formal-suite-note{color:#b4c6d3}
+@media(max-height:600px){.formal-operation .formal-field-intro{padding-bottom:4px}.formal-operation .formal-suite-steps{gap:4px;margin-bottom:6px}.formal-operation .formal-suite-steps li{padding:4px 5px;font-size:11px}.formal-operation .formal-operation-feedback{font-size:12px;line-height:1.45;min-height:49px}.formal-operation .formal-operation-meter{font-size:11px}}
