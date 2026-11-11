@@ -123,6 +123,9 @@ async function run() {
  const big=await desktop.newPage();
  big.on('pageerror',e=>errors.push('DESKTOP '+e.message));
  await big.goto('http://127.0.0.1:4173/',{waitUntil:'domcontentloaded'});
+ await big.waitForTimeout(650);
+ const desktopIntro=big.getByRole('button',{name:/知道了，开始第一把刀/}).first();
+ if(await desktopIntro.count()&&await desktopIntro.isVisible())await desktopIntro.click();
  await big.getByRole('button',{name:/继续锻刀|开始锻刀/}).click();
  await big.waitForTimeout(1000);
  const desktopLayout=await big.evaluate(()=>({xscroll:document.documentElement.scrollWidth>innerWidth,heading:document.querySelector('#title')?.innerText}));
