@@ -28,6 +28,11 @@ async function snapshot(page,name){
   await snapshot(page,label+'-home');
   const start=page.getByRole('button',{name:/开始锻刀|继续锻刀/}).first();
   if(await start.count()){
+   const onboarding=page.getByRole('button',{name:/知道了，开始第一把刀|我知道了|跳过引导/}).first();
+   if(await onboarding.count()&&await onboarding.isVisible()){
+     console.log('DISMISS_ONBOARDING',label);
+     await onboarding.click();await snapshot(page,label+'-onboarding-dismissed');
+   }
    await start.click();await snapshot(page,label+'-forge');
    if(label==='mobile'){
     for(const [name,regex] of [['lamp',/打灯/],['knock',/敲石/],['reveal',/开石/],['refine',/去精炼/]]){
