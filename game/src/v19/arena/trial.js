@@ -3,7 +3,7 @@ import { PROJECTS } from '../tournament.js';
 import { signaturePerk } from '../forge.js';
 /* Adapted from Blade Trial v0.19. See LICENSE. */
 import { BladeAudio } from './audio.js';
-import { ART_BOUNDS, targetSprite, warmTargets } from './targets.js';
+import { ART_BOUNDS, targetSprite, warmTargets, targetAlphaAt } from './targets.js';
 
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 const lerp = (a, b, t) => a + (b - a) * t;
@@ -21,7 +21,7 @@ const MATERIALS = {
   steel:  {name:'金属桶',short:'钢桶',eng:'金属',class:'耐久试炼',color:'#a9c6d0',chip:'#aebeca',hardness:1.95,hp:275,heavyHP:820,score:95,wear:4.3,glint:'#f5e0ae',particles:'sparks',sound:'metal'},
   shield: {name:'复合盾牌',short:'盾牌',eng:'盾牌',class:'终极试炼',color:'#a7b6c2',chip:'#abb9c4',hardness:2.55,hp:330,heavyHP:1120,score:132,wear:5.35,glint:'#d6e8ef',particles:'sparks',sound:'shield'}
 };
-const FEEL = { hitstop: { hit: 17, fracture: 29, break: 49 }, slowScale: .74 };
+const FEEL = { hitstop: { hit: 19, fracture: 33, break: 54 }, slowScale: .76 };
 function grad(c,x0,y0,x1,y1,stops){const g=c.createLinearGradient(x0,y0,x1,y1);stops.forEach(a=>g.addColorStop(a[0],a[1]));return g;}
 function radial(c,x,y,r,stops){const g=c.createRadialGradient(x,y,0,x,y,r);stops.forEach(a=>g.addColorStop(a[0],a[1]));return g;}
 function roundRect(c, x, y, w, h, radius) {
@@ -92,6 +92,10 @@ export function createTrial(frame, course, blade, { muted, volume, onPause, onFi
     penetration: .65 + edge * .92, force: .67 + power * .85, stability: .77 + craft * .25,
     wearMitigation: .55 + toughness * .84, combo: 1 + design * .4, critChance: .025 + spirit * .18,
   };
+  // The swipe itself inherits a restrained signature tint from the forged blade's strongest stat.
+  // Keep target break particles material-colored so the blade and the material remain distinct.
+  const strongestStat = stats.indexOf(Math.max(...stats));
+  const bladeAccent = ['#f7bd86', '#a8d0e7', '#c8f2e7', '#a6dfda', '#cdb9f6', '#f4d7a0'][strongestStat] || '#c8f2e7';
   const state = {
     screen: 'ready', score: 0, bestCombo: 0, durability: 100, time: 0,
     round: 0, waves: 0, cut: 0, hits: 0, damage: 0, targets: [], pieces: [], particles: [], rings: [],
@@ -333,8 +337,10 @@ export function createTrial(frame, course, blade, { muted, volume, onPause, onFi
     const crackNames = { steel: '桶身凹陷', shield: '盾甲破损', ice: '冰面开裂', pineapple: '果肉裂开', gel: '凝胶撕裂' };
     target.statusText = broken ? '斩断' : fracture ? (crackNames[target.key] || '裂痕扩大') : '切入';
     target.statusUntil = state.time + .68;
-    const len = Math.hypot(dx, dy);
-    Object.assign(target, { hitGlow: 1, recoil: 1, recoilTime: 0, impulseX: dx / len * 12, impulseY: dy / len * 8 });
+    const len = Math.max(0.001, Math.hypot(dx, dy));
+    const force = clamp(speed / 900, .72, 1.36);
+    const kick = (target.heavy ? 8 : 11) + force * 4;
+    Object.assign(target, { hitGlow: 1, recoil: 1, recoilTime: 0, impulseX: dx / len * kick, impulseY: dy / len * kick * .72 });
     target.tilt += clamp(dx / len * rand(-.04, .09), -.15, .15);
     target.strikes.push({ angle: Math.atan2(dy, dx), time: state.time, offset: rand(-10, 10) });
     if (target.strikes.length > 16) target.strikes.shift();
@@ -342,14 +348,15 @@ export function createTrial(frame, course, blade, { muted, volume, onPause, onFi
     const wear = target.m.wear * (target.heavy ? 1.9 : 1.15) * (.6 + damage / 200) / derived.wearMitigation;
     state.durability = Math.max(0, state.durability - wear * course.wearScale);
     if (!state.reducedMotion) {
-      state.hitstop = Math.max(state.hitstop, FEEL.hitstop[phase] * (target.heavy ? 1 : .82));
+      state.hitstop = Math.max(state.hitstop, FEEL.hitstop[phase] * (target.heavy ? 1.18 : .82) * clamp(.82 + force * .16, .90, 1.06));
       state.slowRemaining = Math.max(state.slowRemaining, broken ? 50 : 35);
-      state.flash = Math.max(state.flash, broken ? .15 : fracture ? .11 : .065);
+      state.flash = Math.max(state.flash, broken ? .23 : fracture ? .14 : .08);
       applyCameraKick(dx, dy, phase);
     }
     addSlash(target.x, target.y, dx, dy, target.m, target.heavy);
     burst(target.x, target.y, target.m, broken ? 14 : fracture ? 9 : 4);
-    audio.playHit({ material: target.key, stage: phase, force: 1.05, pan: (target.x / W - .5) * 1.1, delayMs: delay, groupSize });
+    audio.playHit({ material: target.key, stage: phase, force, pan: (target.x / W - .5) * 1.1, delayMs: delay, groupSize });
+    if (broken) haptics.vibrate(target.heavy ? 24 : 10);
     if (broken) {
       splitTarget(target, dx, dy, crit);
       pointer.kills++;
@@ -377,7 +384,7 @@ export function createTrial(frame, course, blade, { muted, volume, onPause, onFi
       updateHUD();
       if (state.targets.every(target => !target.alive)) {
         state.waves++;
-        state.nextWaveAt = state.time + .55;
+        state.nextWaveAt = state.time + (currentWave.heavy ? .45 : .31);
         if (!course.timedLoop && state.waves === waves.length) {
           timeLeftAtClear = Math.max(0, deadline - performance.now());
         }
@@ -534,7 +541,19 @@ export function createTrial(frame, course, blade, { muted, volume, onPause, onFi
       if(p<0){if(r>maxT)return false;minT=Math.max(minT,r);}
       else {if(r<minT)return false;maxT=Math.min(maxT,r);}
     }
-    return minT<=maxT;
+    if (minT > maxT) return false;
+    // First intersect the coarse visible-art bounds; then test actual opacity.
+    // A missing/unreadable sprite deliberately preserves the old forgiving hitbox.
+    const length = Math.hypot(dx, dy) * (maxT - minT);
+    const samples = Math.min(70, Math.max(2, Math.ceil(length / 4)));
+    for (let i = 0; i <= samples; i++) {
+      const ratio = minT + (maxT - minT) * i / samples;
+      const px = (ax + dx * ratio - t.x) / (200 * t.scale) + .5;
+      const py = (ay + dy * ratio - t.y) / (232 * t.scale) + .5;
+      const inside = targetAlphaAt(t.key, px, py);
+      if (inside === null || inside) return true;
+    }
+    return false;
   }
 
   function makeCrack(t,dx,dy,power){
@@ -781,14 +800,14 @@ export function createTrial(frame, course, blade, { muted, volume, onPause, onFi
         const len=Math.hypot(cur.x-prev.x,cur.y-prev.y);
         if(len<1.5)continue;
         const glow=(state.feel?.7:.3)*alpha;
-        ctx.save();ctx.lineCap='round';ctx.strokeStyle=`rgba(90,243,219,${glow*.42})`;ctx.lineWidth=16*unit*alpha;ctx.shadowColor='#5cf3e3';ctx.shadowBlur=state.feel?20*unit:3;
+        ctx.save();ctx.lineCap='round';ctx.strokeStyle=bladeAccent;ctx.globalAlpha=glow*.42;ctx.lineWidth=16*unit*alpha;ctx.shadowColor=bladeAccent;ctx.shadowBlur=state.feel?20*unit:3;
         ctx.beginPath();ctx.moveTo(prev.x,prev.y);ctx.lineTo(cur.x,cur.y);ctx.stroke();
         ctx.shadowBlur=0;ctx.globalAlpha=glow*.85;ctx.strokeStyle=ink;ctx.lineWidth=Math.max(1,5*unit*alpha);ctx.stroke();
-        ctx.strokeStyle=`rgba(252,255,250,${glow})`;ctx.lineWidth=Math.max(.7,1.8*unit*alpha);ctx.stroke();ctx.restore();
+        ctx.strokeStyle='#f8fffc';ctx.globalAlpha=glow;ctx.lineWidth=Math.max(.7,1.8*unit*alpha);ctx.stroke();ctx.restore();
       }
     }
     if(state.pointer.down){
-      const p=state.pointer;ctx.save();ctx.globalAlpha=.9;ctx.strokeStyle='#b3f5e0';ctx.lineWidth=1.4;
+      const p=state.pointer;ctx.save();ctx.globalAlpha=.9;ctx.strokeStyle=bladeAccent;ctx.lineWidth=1.4;
       ctx.beginPath();ctx.arc(p.x,p.y,5,0,TAU);ctx.stroke();ctx.restore();
     }
   }
@@ -812,7 +831,7 @@ export function createTrial(frame, course, blade, { muted, volume, onPause, onFi
     renderRings();renderParticles();renderSlashes();renderTrail();
     ctx.restore();
     if(state.feel&&state.flash>.003){
-      ctx.fillStyle=`rgba(227,253,247,${state.flash*.16})`;ctx.fillRect(0,0,W,H);
+      ctx.fillStyle=`rgba(237,252,250,${state.flash*.30})`;ctx.fillRect(0,0,W,H);
     }
   }
   function update(realDt){
