@@ -160,7 +160,8 @@ export function createTrial(frame, course, blade, { muted, volume, onPause, onFi
     const scale = row ? Math.min(unit * 1.24, step / 144) : Math.min(1.4, Math.max(unit * 1.22, Math.min(W / 246, H / 368)));
     state.targets.forEach((target, i) => {
       target.x = W / 2 + (i - (count - 1) / 2) * step;
-      target.y = H * (row ? .49 : .465);
+      // Set target feet near the lit platform. The previous offset made props float in mid-air.
+      target.y = H * (row ? .56 : .50);
       target.scale = scale;
     });
   }
@@ -364,7 +365,8 @@ export function createTrial(frame, course, blade, { muted, volume, onPause, onFi
     target.statusUntil = state.time + .68;
     const len = Math.max(0.001, Math.hypot(dx, dy));
     const force = clamp(speed / 900, .72, 1.36);
-    const kick = (target.heavy ? 8 : 11) + force * 4;
+    const resistance = clamp(target.m.hardness / 2.55, 0, 1);
+    const kick = (target.heavy ? 6 : 10) + force * (1 - resistance * .48) * 5;
     Object.assign(target, { hitGlow: 1, recoil: 1, recoilTime: 0, impulseX: dx / len * kick, impulseY: dy / len * kick * .72 });
     target.tilt += clamp(dx / len * rand(-.04, .09), -.15, .15);
     target.strikes.push({ angle: Math.atan2(dy, dx), time: state.time, offset: rand(-10, 10) });
@@ -376,7 +378,7 @@ export function createTrial(frame, course, blade, { muted, volume, onPause, onFi
       state.hitstop = Math.max(state.hitstop, FEEL.hitstop[phase] * (target.heavy ? 1.18 : .82) * clamp(.82 + force * .16, .90, 1.06));
       state.slowRemaining = Math.max(state.slowRemaining, broken ? 50 : 35);
       state.flash = Math.max(state.flash, broken ? .18 : fracture ? .115 : .055);
-      applyCameraKick(dx, dy, phase);
+      applyCameraKick(dx, dy, phase, target.heavy);
     }
     addSlash(target.x, target.y, dx, dy, target.m, target.heavy, force);
     state.impacts.push({
@@ -507,9 +509,10 @@ export function createTrial(frame, course, blade, { muted, volume, onPause, onFi
     endStroke();
   }
 
-  function applyCameraKick(dx,dy,phase){
+  function applyCameraKick(dx,dy,phase,heavy=false){
     if(!state.feel||state.reducedMotion)return;
-    const mag=Math.max(1,Math.hypot(dx,dy)),power=phase==='break'?210:phase==='fracture'?130:71;
+    const mag=Math.max(1,Math.hypot(dx,dy));
+    const power=(phase==='break'?210:phase==='fracture'?130:71)*(heavy?1.3:1);
     state.shakeVX+=clamp(dx/mag*power*state.intensity,-270,270);
     state.shakeVY+=clamp(dy/mag*power*state.intensity,-270,270);
     state.shakeVX=clamp(state.shakeVX,-370,370);state.shakeVY=clamp(state.shakeVY,-370,370);
@@ -696,7 +699,7 @@ export function createTrial(frame, course, blade, { muted, volume, onPause, onFi
     const t = state.time;
     // Very few slow drifting dust motes, always behind the target art.
     for (let i = 0; i < ambientDots.length; i++) {
-      const p = ambientDots[i], a = .06 + .13 * (1 + Math.sin(t * p.s + p.phase)) * .5;
+      const p = ambientDots[i], a = .05 + .11 * (1 + Math.sin(t * p.s + p.phase)) * .5;
       ctx.fillStyle = 'rgba(208,235,235,' + a + ')';
       ctx.fillRect(p.x + Math.sin(t * .12 + p.phase) * 3,
         p.y + Math.cos(t * .18 + p.phase) * 5, p.r * .65, p.r * .65);
