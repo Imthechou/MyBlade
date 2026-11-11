@@ -1,7 +1,7 @@
-name: Publish MyBlade game to GitHub Pages
+name: Publish playable MyBlade to GitHub Pages
 on:
   push:
-    branches: [main]
+    branches: [main, fix/playable-from-archive-20261111]
   workflow_dispatch:
 permissions:
   contents: read
@@ -14,28 +14,16 @@ jobs:
   deploy:
     runs-on: ubuntu-24.04
     environment:
-      name: github-pages
+      name: ${{ github.ref_name == 'main' && 'github-pages' || 'myblade-preview' }}
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
-      - name: Unpack standalone game
+      - name: Build project-relative static Pages site
         run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          import zipfile, shutil
-          if Path('game/index.html').exists():
-              shutil.copytree('game', '_site', dirs_exist_ok=True)
-              source = 'editable game/'
-          else:
-              with zipfile.ZipFile('锻刀大赛.zip') as z:
-                  z.extractall('_unpacked')
-              files=sorted(Path('_unpacked').rglob('index.html'),key=lambda p:len(p.parts))
-              if not files: raise RuntimeError('Game index.html missing from ZIP')
-              shutil.copytree(files[0].parent, '_site', dirs_exist_ok=True)
-              source = str(files[0].parent)
-          Path('_site/.nojekyll').touch()
-          print('Prepared', len(list(Path('_site').rglob('*'))), 'items from', source)
-          PY
+          python3 scripts/build_static_site.py
+          test -s _site/index.html
+          test -s _site/__styles.css
+          test ! -e _site/serve.cjs
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v4
         with:

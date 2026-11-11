@@ -1,0 +1,75 @@
+/**
+ * 数字排印：等宽数字（tabular figures）
+ *
+ * ★ 为什么需要单独一个文件、且必须最后加载
+ *
+ *   1) 2026-10-24 数字字体从「静默落到 Segoe UI」换成 Bahnschrift（DIN 1451 血统，
+ *      Windows 自带、零下载）。但 Bahnschrift 的**默认数字是比例宽**
+ *      —— 实测 `1111111111` = 133.02px、`8888888888` = 225.00px（差 91.98px）。
+ *      等比数字会让信用点从 1111 变成 8888 时整块文字变宽，界面跟着抖。
+ *
+ *   2) 加 `font-variant-numeric: tabular-nums` 后完全等宽
+ *      —— 实测两者同为 212.89px。所以必须有这条声明。
+ *
+ *   3) **但**项目里大量数字规则用的是 `font:` 简写
+ *      （如 `.stage-badge b { font: 700 21px/1.3 var(--font-num); }`），
+ *      而 `font` 简写按规范会把 `font-variant-numeric` 重置为 `normal`
+ *      —— 在那些规则里inline 补一句会被简写吃掉。
+ *
+ *   4) 因此这里用**独立文件 + 统一选择器清单 + 最后加载**来解决：
+ *      不靠改 20 多处简写，也不靠 `!important`（会污染后续维护），
+ *      只靠加载顺序 —— 本文件在 index.html 里排在所有页面样式之后。
+ *
+ * ⚠ 维护约定：以后任何新增的、用 `var(--font-num)` 显示数字的规则，
+ *   都要把选择器补进下面这份清单，否则那个数字会悄悄变回比例宽。
+ */
+
+/* 顶层栏 · 信用点与设置 */
+.topbar-cr,
+.topbar-cr b,
+
+/* 首页 · 长期统计（原 `.home-mission-title > span` 随今日目标一并移除） */
+.home-stats b,
+
+/* 锻造页 · 阶段徽标 / 阶段过渡回执 / 卡面装饰字 / 锻打三数 / 成果行 */
+.stage-badge b,
+.stage-advance-toast b,
+.dcard-ornament span,
+.hammer-stat b,
+.hammer-gain,
+
+/* 锻造页 · 10 段阶段圆点 + 六维横排 */
+.sp-num,
+.stat-cell-val,
+
+/* 鉴定页 · 各统计值 / 倍率明细 / 明细展开号 */
+.ap-stat-v,
+.ap-bd-v,
+.ap-bd-src-row > b,
+.ap-details > summary::after,
+
+/* 赛事 · 参赛刀评分 / 五阶台阶 / 全国赛条 / VS 双方分 */
+.arena-loadout-score b,
+.hub-step b,
+.hub-national-strip b,
+.side-score,
+.arena-view-team .arena-team-score b,
+
+/* 赛事 · 快速挑战 HUD / 卡片权重 / 结算大数 */
+.quick-stat-strip b,
+.quick-hud b,
+.quick-choice-card strong,
+.quick-grade,
+.quick-total b,
+.quick-result-stats b,
+.quick-reward b,
+
+/* 赛事 · 战报比分与总评 */
+.circuit-scoreline b,
+.report-verdict-score,
+.circuit-report-stats b,
+
+/* 工坊 · 藏刀阁卡面个人纪录 */
+.bcv-record > b {
+  font-variant-numeric: tabular-nums;
+}

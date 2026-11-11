@@ -33,11 +33,14 @@ async function run() {
  page.on('console',m=>{if(m.type()==='error')errors.push('CONSOLE '+m.text())});
  page.on('response',r=>{if(r.status()>=400)errors.push('HTTP '+r.status()+' '+r.url())});
  await page.goto('http://127.0.0.1:4173/',{waitUntil:'domcontentloaded',timeout:30000});
+ await page.waitForTimeout(650); // first-run tutorial appears asynchronously
+ const intro=page.getByRole('button',{name:/知道了，开始第一把刀/}).first();
+ if(await intro.count()&&await intro.isVisible()) await intro.click();
  await page.getByRole('button',{name:/开始锻刀/}).click();
  await shot(page,'01_ore');
  await page.getByRole('button',{name:'打灯'}).click();
  await shot(page,'02_lamp');
- await page.getByRole('button',{name:'敲石'}).click();
+ await page.locator('[data-action="tap-ore"]').click();
  await shot(page,'03_knock');
  await page.getByRole('button',{name:/开石/}).click();
  await page.waitForTimeout(1200);
@@ -120,6 +123,9 @@ async function run() {
  const big=await desktop.newPage();
  big.on('pageerror',e=>errors.push('DESKTOP '+e.message));
  await big.goto('http://127.0.0.1:4173/',{waitUntil:'domcontentloaded'});
+ await big.waitForTimeout(650);
+ const desktopIntro=big.getByRole('button',{name:/知道了，开始第一把刀/}).first();
+ if(await desktopIntro.count()&&await desktopIntro.isVisible())await desktopIntro.click();
  await big.getByRole('button',{name:/继续锻刀|开始锻刀/}).click();
  await big.waitForTimeout(1000);
  const desktopLayout=await big.evaluate(()=>({xscroll:document.documentElement.scrollWidth>innerWidth,heading:document.querySelector('#title')?.innerText}));

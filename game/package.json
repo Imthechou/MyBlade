@@ -1,0 +1,18 @@
+{
+  "name": "blade-forge",
+  "version": "4.0.4",
+  "private": true,
+  "description": "锻刀大赛 4.0.4 高画质单套模型运行版（离线资源完整）",
+  "license": "UNLICENSED",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "node tools/launch.cjs",
+    "serve": "node serve.cjs 8123 127.0.0.1",
+    "test": "node --test tests/unit/*.test.mjs",
+    "test:refs": "node --test tests/unit/*.test.mjs",
+    "test:syntax": "node --check src/v19/forge.js && node --check src/v19/forgeView.js && node --check src/v19/stage.js && node --check src/v19/materials.js && node --check src/v19/tournament.js"
+  },
+  "type": "module"
+}
