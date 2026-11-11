@@ -77,7 +77,7 @@ export class BladeAudio {
   if(!this.ready||!this.enabled||!this.ctx||this.volume<=0||this.voices.size>=16)return false;
   const buffer=this.buffers.get(clip);if(!buffer)return false;
   const ctx=this.ctx,t=ctx.currentTime+clamp(delay,0,.8);
-  const speed=clamp(rate,.97,1.03),d=Math.min(duration||.4,buffer.duration/speed);
+  const speed=clamp(rate,.95,1.055),d=Math.min(duration||.4,buffer.duration/speed);
   if(d<=0)return false;
   const source=ctx.createBufferSource(),env=ctx.createGain();source.buffer=buffer;source.playbackRate.value=speed;
   const peak=clamp(volume,0,1.1);
@@ -113,11 +113,13 @@ export class BladeAudio {
   // Multi-cut retains direction and stagger; grouping trims peaks, not all the detail.
   const group=1/Math.pow(Math.max(1,groupSize),.36);
   const amount=clamp(force,.4,1.4);
-  const vol=(phase==='hit'?.64:phase==='fracture'?.77:.90)*(.87+amount*.13)*group*gainByMat[material];
+  // Map actual swipe speed to contact strength without layering artificial bass hits.
+  const vol=(phase==='hit'?.64:phase==='fracture'?.77:.90)*(.63+amount*.37)*group*gainByMat[material];
   const baseDuration=phase==='hit'?.155:phase==='fracture'?.195:.26;
   const materialTail={card:.78,rope:.9,bamboo:.87,pineapple:.90,gel:.82,wood:.94,ice:.97,steel:1.04,shield:1.06}[material]||1;
   const duration=(groupSize>1?Math.min(baseDuration,.17):baseDuration)*materialTail;
-  const played=this.sample(clip,{volume:vol,rate:.99+Math.random()*.02,pan,delay,
+  const rate=.975+(amount-.8)*.045+Math.random()*.016;
+  const played=this.sample(clip,{volume:vol,rate,pan,delay,
      highpass:cuts[material],duration});
   if(played)this.duckSwing(delay,phase);
  }
