@@ -5,7 +5,7 @@
 ## 试玩
 
 - 在线试玩： https://imthechou.github.io/MyBlade/ （以最新成功部署为准）
-- 本地试玩：运行 `python3 scripts/prepare_game.py` 恢复压缩包（如已存在 `game/` 会自动跳过）；再运行 `python3 -m http.server 4173 --directory game`，浏览器打开 `http://localhost:4173/`。
+- 本地试玩：运行 `python3 scripts/prepare_game.py` 恢复压缩包（如已存在 `game/` 会自动跳过）；再运行 `node game/serve.cjs 8123 127.0.0.1`，浏览器打开 `http://127.0.0.1:8123/`。
 - 不要直接双击 HTML 文件：Three.js / ES module 模型加载需要 HTTP 服务。
 
 ## 目录
@@ -19,3 +19,7 @@
 ## 测试范围
 
 Chromium 模拟手机触控不代表真机性能、音量、振动，仍需实机检查。Cocos/Godot 实验留在各自独立分支，不合入此工程。
+
+## 单元测试
+
+`cd game && npm test` — 核心流程/赛事配置；`npm run test:syntax` — 基础源码语法检查。浏览器实机自动试玩见 GitHub Actions 输出。
