@@ -56,6 +56,7 @@ const errors=[],records=[];
    }]});
  }
  await cdp.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});
+ await snap('02a-arena-first-touch');
  await page.waitForTimeout(110);
  const touchAfter=Number(await page.locator('[data-trial="hits"]').textContent())||0;
  if(touchAfter<=touchBefore)throw new Error('Real touchscreen swipe did not cut a target');
