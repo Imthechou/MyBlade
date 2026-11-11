@@ -33,6 +33,9 @@ async function run() {
  page.on('console',m=>{if(m.type()==='error')errors.push('CONSOLE '+m.text())});
  page.on('response',r=>{if(r.status()>=400)errors.push('HTTP '+r.status()+' '+r.url())});
  await page.goto('http://127.0.0.1:4173/',{waitUntil:'domcontentloaded',timeout:30000});
+ await page.waitForTimeout(650); // first-run tutorial appears asynchronously
+ const intro=page.getByRole('button',{name:/知道了，开始第一把刀/}).first();
+ if(await intro.count()&&await intro.isVisible()) await intro.click();
  await page.getByRole('button',{name:/开始锻刀/}).click();
  await shot(page,'01_ore');
  await page.getByRole('button',{name:'打灯'}).click();
