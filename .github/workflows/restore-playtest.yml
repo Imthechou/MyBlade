@@ -1,7 +1,7 @@
 name: Restore MyBlade and real-browser playtest
 on:
   push:
-    branches: [fix/playable-from-archive-20261111]
+    branches: [main, fix/playable-from-archive-20261111, feat/arena-impact-polish-20261112]
   workflow_dispatch:
 permissions:
   contents: write
