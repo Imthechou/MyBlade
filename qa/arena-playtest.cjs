@@ -54,9 +54,12 @@ const errors=[],records=[];
    await page.mouse.up();
    await page.waitForTimeout(175);
  }
- await snap('03-arena-after-swipes');
+ const after=await snap('03-arena-after-swipes');
+ if(Number(after.hit||0)<3)throw new Error('Touch swipes failed to cut enough visible targets: '+after.hit);
  await page.waitForTimeout(11100);
- await snap('04-arena-report');
+ const report=await snap('04-arena-report');
+ if(report.screen!=='report'||!report.overlay.includes('试刀结束'))throw new Error('Tournament did not complete with a visible report');
+ if(!report.overlay.includes('表现最佳'))throw new Error('Performance section missing from report');
  await context.close();
  }finally{await browser.close()}
  fs.writeFileSync(out+'/results.json',JSON.stringify({records,errors},null,2));
