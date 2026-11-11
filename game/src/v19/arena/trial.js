@@ -21,7 +21,8 @@ const MATERIALS = {
   steel:  {name:'金属桶',short:'钢桶',eng:'金属',class:'耐久试炼',color:'#a9c6d0',chip:'#aebeca',hardness:1.95,hp:275,heavyHP:820,score:95,wear:4.3,glint:'#f5e0ae',particles:'sparks',sound:'metal'},
   shield: {name:'复合盾牌',short:'盾牌',eng:'盾牌',class:'终极试炼',color:'#a7b6c2',chip:'#abb9c4',hardness:2.55,hp:330,heavyHP:1120,score:132,wear:5.35,glint:'#d6e8ef',particles:'sparks',sound:'shield'}
 };
-const FEEL = { hitstop: { hit: 19, fracture: 33, break: 54 }, slowScale: .76 };
+// Keep tactile pauses short: input continues while target animation briefly holds.
+const FEEL = { hitstop: { hit: 23, fracture: 39, break: 58 }, slowScale: .74 };
 function grad(c,x0,y0,x1,y1,stops){const g=c.createLinearGradient(x0,y0,x1,y1);stops.forEach(a=>g.addColorStop(a[0],a[1]));return g;}
 function radial(c,x,y,r,stops){const g=c.createRadialGradient(x,y,0,x,y,r);stops.forEach(a=>g.addColorStop(a[0],a[1]));return g;}
 function roundRect(c, x, y, w, h, radius) {
@@ -99,7 +100,8 @@ export function createTrial(frame, course, blade, { muted, volume, onPause, onFi
   const state = {
     screen: 'ready', score: 0, bestCombo: 0, durability: 100, time: 0,
     round: 0, waves: 0, cut: 0, hits: 0, damage: 0, targets: [], pieces: [], particles: [], rings: [],
-    slashes: [], trails: [], pointer: { down: false, points: [], hitTargets: new Set() },
+    slashes: [], trails: [], impacts: [], comboChain: 0, lastKillAt: -1e4,
+    pointer: { down: false, points: [], hitTargets: new Set() },
     feel: true, intensity: strength, reducedMotion: motion.reduced(), hitstop: 0, slowRemaining: 0,
     shakeX: 0, shakeY: 0, shakeVX: 0, shakeVY: 0, flash: 0, nextWaveAt: -1,
   };
@@ -158,7 +160,8 @@ export function createTrial(frame, course, blade, { muted, volume, onPause, onFi
     const scale = row ? Math.min(unit * 1.24, step / 144) : Math.min(1.4, Math.max(unit * 1.22, Math.min(W / 246, H / 368)));
     state.targets.forEach((target, i) => {
       target.x = W / 2 + (i - (count - 1) / 2) * step;
-      target.y = H * (row ? .49 : .465);
+      // Set target feet near the lit platform. The previous offset made props float in mid-air.
+      target.y = H * (row ? .58 : .50);
       target.scale = scale;
     });
   }
@@ -298,15 +301,38 @@ export function createTrial(frame, course, blade, { muted, volume, onPause, onFi
   function splitTarget(target, dx, dy, crit) {
     target.alive = false;
     const angle = Math.atan2(dy, dx);
-    const speed = target.heavy ? 170 : 210;
+    // Halves move apart along the normal of the actual cut, rather than flying randomly.
+    // Short lifetimes keep the next wave from filling the stage with old fragments.
+    const speed = target.heavy ? 146 : 172;
+    const lifetime = target.heavy ? .86 : .66;
     for (const side of [-1, 1]) state.pieces.push({
-      target, x: target.x, y: target.y, angle, life: 1.25, scale: target.scale, side,
-      vx: -Math.sin(angle) * speed * side + Math.cos(angle) * 70, vy: Math.cos(angle) * speed * side - 100,
-      spin: side * rand(1.2, 3.8),
+      target, x: target.x, y: target.y, angle, life: lifetime, maxLife: lifetime,
+      scale: target.scale, side,
+      vx: -Math.sin(angle) * speed * side + Math.cos(angle) * 22,
+      vy: Math.cos(angle) * speed * side - (target.heavy ? 64 : 52),
+      spin: side * rand(.8, 2.2),
     });
     state.cut++;
-    addScore(Math.round(target.m.score * (target.heavy ? 3.7 : 1.9) * (crit ? 1.3 : 1) * derived.combo));
-    burst(target.x, target.y, target.m, target.heavy ? 24 : 15, 1.15);
+    const now = performance.now();
+    state.comboChain = now - state.lastKillAt < 1300 ? Math.min(12, state.comboChain + 1) : 1;
+    state.lastKillAt = now;
+    state.bestCombo = Math.max(state.bestCombo, state.comboChain);
+    const chainBonus = state.comboChain > 1 ? Math.min(48, (state.comboChain - 1) * 8) : 0;
+    addScore(Math.round((target.m.score * (target.heavy ? 3.7 : 1.9) * (crit ? 1.3 : 1) + chainBonus) * derived.combo));
+    if (state.comboChain > 1) {
+      ui.combo.textContent = '×' + state.comboChain;
+      ui.combo.classList.remove('is-live');
+      void ui.combo.offsetWidth;
+      ui.combo.classList.add('is-live');
+    }
+    clearTimeout(comboTimer);
+    comboTimer = setTimeout(() => {
+      if (performance.now() - state.lastKillAt >= 1250) {
+        ui.combo.textContent = '—';
+        state.comboChain = 0;
+      }
+    }, 1340);
+    burst(target.x, target.y, target.m, target.heavy ? 22 : 13, target.heavy ? 1.18 : 1.08);
   }
 
   function hitTarget(target, dx, dy, speed, delay, groupSize) {
@@ -339,7 +365,8 @@ export function createTrial(frame, course, blade, { muted, volume, onPause, onFi
     target.statusUntil = state.time + .68;
     const len = Math.max(0.001, Math.hypot(dx, dy));
     const force = clamp(speed / 900, .72, 1.36);
-    const kick = (target.heavy ? 8 : 11) + force * 4;
+    const resistance = clamp(target.m.hardness / 2.55, 0, 1);
+    const kick = (target.heavy ? 6 : 10) + force * (1 - resistance * .48) * 5;
     Object.assign(target, { hitGlow: 1, recoil: 1, recoilTime: 0, impulseX: dx / len * kick, impulseY: dy / len * kick * .72 });
     target.tilt += clamp(dx / len * rand(-.04, .09), -.15, .15);
     target.strikes.push({ angle: Math.atan2(dy, dx), time: state.time, offset: rand(-10, 10) });
@@ -350,11 +377,19 @@ export function createTrial(frame, course, blade, { muted, volume, onPause, onFi
     if (!state.reducedMotion) {
       state.hitstop = Math.max(state.hitstop, FEEL.hitstop[phase] * (target.heavy ? 1.18 : .82) * clamp(.82 + force * .16, .90, 1.06));
       state.slowRemaining = Math.max(state.slowRemaining, broken ? 50 : 35);
-      state.flash = Math.max(state.flash, broken ? .23 : fracture ? .14 : .08);
-      applyCameraKick(dx, dy, phase);
+      state.flash = Math.max(state.flash, broken ? .18 : fracture ? .115 : .055);
+      applyCameraKick(dx, dy, phase, target.heavy);
     }
-    addSlash(target.x, target.y, dx, dy, target.m, target.heavy);
-    burst(target.x, target.y, target.m, broken ? 14 : fracture ? 9 : 4);
+    addSlash(target.x, target.y, dx, dy, target.m, target.heavy, force);
+    state.impacts.push({
+      x: target.x, y: target.y, color: target.m.glint,
+      life: broken ? .20 : .15, maxLife: broken ? .20 : .15,
+      radius: (target.heavy ? 75 : 49) * unit,
+      strength: broken ? 1 : fracture ? .68 : .42,
+      angle: Math.atan2(dy, dx),
+    });
+    if (state.impacts.length > 8) state.impacts.shift();
+    burst(target.x, target.y, target.m, broken ? 12 : fracture ? 7 : 3);
     audio.playHit({ material: target.key, stage: phase, force, pan: (target.x / W - .5) * 1.1, delayMs: delay, groupSize });
     if (broken) haptics.vibrate(target.heavy ? 24 : 10);
     if (broken) {
@@ -405,16 +440,18 @@ export function createTrial(frame, course, blade, { muted, volume, onPause, onFi
     if (!pointer.down) return;
     pointer.down = false;
     if (pointer.points.length > 1) state.trails.push({ points: pointer.points });
-    const hits = pointer.hitTargets.size;
-    if (hits < 2) return;
-    const bonus = Math.round((hits - 1) * 28 * derived.combo);
-    state.bestCombo = Math.max(state.bestCombo, hits);
-    addScore(bonus);
-    updateHUD();
-    ui.combo.textContent = '×' + hits;
-    clearTimeout(comboTimer);
-    comboTimer = setTimeout(() => { ui.combo.textContent = '—'; }, 1300);
-    if (pointer.kills >= 2) showVerdict(pointer.kills >= 3 ? '一气呵成' : '双靶齐断', 'combo');
+    // The chain rewards actual kills within 1.3 s, including across successive swipes.
+    // Passing over an already-damaged heavy target alone does not count as a combo.
+    if (pointer.swung && pointer.hitTargets.size === 0) {
+      state.comboChain = 0;
+      clearTimeout(comboTimer);
+      ui.combo.textContent = '—';
+    }
+    if (pointer.kills >= 2) {
+      showVerdict(pointer.kills >= 3 ? '一气呵成' : '双靶齐断', 'combo');
+    } else if (pointer.kills === 1 && state.comboChain >= 4) {
+      showVerdict('漂亮连斩', 'combo');
+    }
   }
 
   function pointFor(event, rect) {
@@ -431,6 +468,8 @@ export function createTrial(frame, course, blade, { muted, volume, onPause, onFi
     event.preventDefault();
     canvas.focus({ preventScroll: true });
     canvas.setPointerCapture(event.pointerId);
+    // iOS Safari requires a user-gesture AudioContext unlock. Preload alone is insufficient.
+    void audio.unlock();
     beginStroke(pointFor(event, canvas.getBoundingClientRect()), event.pointerId);
   }
 
@@ -442,7 +481,7 @@ export function createTrial(frame, course, blade, { muted, volume, onPause, onFi
     const rect = canvas.getBoundingClientRect();
     for (const sample of points?.length ? points : [event]) {
       const next = pointFor(sample, rect), prev = pointer.points.at(-1);
-      strokeSegment(prev, next, (next.t - prev.t) / 1000);
+      strokeSegment(prev, next, Math.max(.008, (next.t - prev.t) / 1000));
       pointer.points.push(next);
       if (pointer.points.length > 18) pointer.points.shift();
       pointer.x = next.x; pointer.y = next.y;
@@ -470,9 +509,10 @@ export function createTrial(frame, course, blade, { muted, volume, onPause, onFi
     endStroke();
   }
 
-  function applyCameraKick(dx,dy,phase){
+  function applyCameraKick(dx,dy,phase,heavy=false){
     if(!state.feel||state.reducedMotion)return;
-    const mag=Math.max(1,Math.hypot(dx,dy)),power=phase==='break'?210:phase==='fracture'?130:71;
+    const mag=Math.max(1,Math.hypot(dx,dy));
+    const power=(phase==='break'?210:phase==='fracture'?130:71)*(heavy?1.3:1);
     state.shakeVX+=clamp(dx/mag*power*state.intensity,-270,270);
     state.shakeVY+=clamp(dy/mag*power*state.intensity,-270,270);
     state.shakeVX=clamp(state.shakeVX,-370,370);state.shakeVY=clamp(state.shakeVY,-370,370);
@@ -518,11 +558,18 @@ export function createTrial(frame, course, blade, { muted, volume, onPause, onFi
       state.particles[state.particles.length-1].maxLife=state.particles[state.particles.length-1].life;
     }
   }
-  function addSlash(x,y,dx,dy,m,heavy){
-    if(!state.feel)return;
-    const r=heavy?145:98;
-    state.slashes.push({x,y,angle:Math.atan2(dy,dx),length:r*unit*(heavy?1.45:1),life:.2,maxLife:.2,color:m.glint});
-    state.rings.push({x,y,r:heavy?26:13,life:.36,maxLife:.36,color:m.color,scale:heavy?2.5:1.8});
+  function addSlash(x, y, dx, dy, m, heavy, force = 1) {
+    if (!state.feel) return;
+    const length = (heavy ? 150 : 102) * unit * clamp(force, .8, 1.24);
+    state.slashes.push({
+      x, y, angle: Math.atan2(dy, dx), length, life: .19, maxLife: .19,
+      // Only the blade glow changes with the forged knife. Fracture fragments remain material colored.
+      color: bladeAccent,
+    });
+    if (state.slashes.length > 12) state.slashes.shift();
+    state.rings.push({ x, y, r: heavy ? 23 : 12, life: .28, maxLife: .28,
+      color: m.glint, scale: heavy ? 2.0 : 1.45 });
+    if (state.rings.length > 16) state.rings.shift();
   }
   // Segment-vs-visible-art hitbox, unlike the old fixed circle which could miss tall targets
   // and falsely hit a wide empty halo. Uses the real transparent sprite alpha bounds.
@@ -567,47 +614,101 @@ export function createTrial(frame, course, blade, { muted, volume, onPause, onFi
   }
 
   function makeBackdrop() {
+    // One-time high-DPI paint. The arena should feel like a lit object studio,
+    // with the targets as the visual focal point—not a busy wireframe floor.
     const buffer = document.createElement('canvas');
     buffer.width = canvas.width;
     buffer.height = canvas.height;
     const c = buffer.getContext('2d');
     c.setTransform(DPR, 0, 0, DPR, 0, 0);
-    c.fillStyle = grad(c, 0, 0, 0, H, [[0, wall], [.66, horizon], [1, floor]]);
+    c.fillStyle = grad(c, 0, 0, 0, H, [
+      [0, '#0f1829'], [.52, '#1a3048'], [1, '#0e192a'],
+    ]);
     c.fillRect(0, 0, W, H);
-    c.fillStyle = radial(c, W * .50, H * .39, Math.max(W * .63, H * .54), [[0, glow], [1, glow.slice(0, 7) + '00']]);
+    const halo = c.createRadialGradient(W * .49, H * .43, 5,
+      W * .49, H * .43, Math.max(W * .8, H * .54));
+    halo.addColorStop(0, 'rgba(101,186,189,.28)');
+    halo.addColorStop(.36, 'rgba(66,130,158,.14)');
+    halo.addColorStop(1, 'rgba(9,28,49,0)');
+    c.fillStyle = halo;
+    c.fillRect(0, 0, W, H);
+    const warm = c.createRadialGradient(W * .83, H * .20, 0,
+      W * .83, H * .20, W * .74);
+    warm.addColorStop(0, 'rgba(232,172,119,.095)');
+    warm.addColorStop(1, 'rgba(232,172,119,0)');
+    c.fillStyle = warm;
     c.fillRect(0, 0, W, H);
 
-    const y = H * .70;
-    const rx = W * .43, ry = Math.min(H * .095, 78);
-    strokeLine(c, [0, y, W, y], grid);
-    for (let i = -4; i <= 4; i++) {
-      strokeLine(c, [W * (.5 + i * .057), y, W * (.5 + i * .21), H], grid);
+    // Frosted panel edges, a subtle top light bar, and two vertical stage seams.
+    c.strokeStyle = 'rgba(199,228,236,.08)';
+    c.lineWidth = 1;
+    for (const x of [W * .085, W * .915]) {
+      c.beginPath();
+      c.moveTo(x, H * .24);
+      c.lineTo(x, H * .76);
+      c.stroke();
     }
+    c.fillStyle = grad(c, W * .18, 0, W * .82, 0, [
+      [0, 'rgba(154,224,215,0)'], [.5, 'rgba(177,228,227,.24)'],
+      [1, 'rgba(154,224,215,0)'],
+    ]);
+    c.fillRect(W * .18, 1, W * .64, 2);
     c.beginPath();
-    c.ellipse(W / 2, y + 8, rx, ry, 0, 0, TAU);
-    c.fillStyle = shadow;
-    c.fill();
-    c.beginPath();
-    c.ellipse(W / 2, y, rx, ry, 0, 0, TAU);
-    c.fillStyle = grad(c, 0, y - ry, 0, y + ry, [[0, wall], [1, horizon]]);
-    c.fill();
-    c.strokeStyle = grid;
+    c.ellipse(W * .5, H * .34, W * .34, H * .25, 0, Math.PI * 1.07, Math.PI * 1.93);
+    c.strokeStyle = 'rgba(200,228,239,.075)';
     c.stroke();
-    strokeLine(c, [W * .08, H * .34, W * .08, H * .28, W * .15, H * .28], grid, 1.4);
-    strokeLine(c, [W * .92, H * .34, W * .92, H * .28, W * .85, H * .28], grid, 1.4);
+
+    // Floating display dais: layered beveled rings with gentle reflected light.
+    const py = H * .745;
+    const rx = Math.min(W * .415, 325), ry = Math.min(H * .079, 62);
+    const under = c.createRadialGradient(W * .5, py + ry * .7, 0,
+      W * .5, py + ry * .7, rx * 1.35);
+    under.addColorStop(0, 'rgba(4,12,24,.62)');
+    under.addColorStop(1, 'rgba(4,12,24,0)');
+    c.fillStyle = under;
+    c.beginPath(); c.ellipse(W * .5, py + 10, rx * 1.31, ry * 1.65, 0, 0, TAU); c.fill();
+
+    c.beginPath(); c.ellipse(W * .5, py + 12, rx, ry, 0, 0, TAU);
+    c.fillStyle = '#0b1422'; c.fill();
+    c.strokeStyle = 'rgba(4,11,20,.7)'; c.lineWidth = 2; c.stroke();
+    c.beginPath(); c.ellipse(W * .5, py + 3, rx, ry, 0, 0, TAU);
+    c.fillStyle = grad(c, 0, py - ry, 0, py + ry, [
+      [0, '#263e52'], [.36, '#1c3146'], [1, '#162537'],
+    ]); c.fill();
+    c.strokeStyle = 'rgba(158,204,210,.28)'; c.lineWidth = 1.25; c.stroke();
+    c.beginPath(); c.ellipse(W * .5, py, rx * .79, ry * .68, 0, 0, TAU);
+    c.strokeStyle = 'rgba(185,223,224,.10)'; c.lineWidth = 1; c.stroke();
+    // Two clean cinematic highlights on the forward rim.
+    c.beginPath();
+    c.ellipse(W * .5, py + 3, rx, ry, 0, .09 * Math.PI, .91 * Math.PI);
+    c.strokeStyle = 'rgba(119,207,203,.32)'; c.lineWidth = 1.7; c.stroke();
+    c.beginPath();
+    c.ellipse(W * .5, py + 3, rx, ry, 0, 1.18 * Math.PI, 1.69 * Math.PI);
+    c.strokeStyle = 'rgba(239,191,140,.24)'; c.lineWidth = 1.2; c.stroke();
+    // A fine separator communicates depth without dated perspective-grid lines.
+    c.fillStyle = grad(c, 0, py + ry * 1.5, W, py + ry * 1.5, [
+      [0, 'rgba(120,167,192,0)'], [.5, 'rgba(120,167,192,.13)'],
+      [1, 'rgba(120,167,192,0)'],
+    ]);
+    c.fillRect(0, py + ry * 1.5, W, 1);
     return buffer;
   }
-  function renderBackground(){
-    if(!backdrop)backdrop=makeBackdrop();
-    ctx.drawImage(backdrop,0,0,W,H);
-    const t=state.time;
-    for(let i=0;i<ambientDots.length;i++){
-      const p=ambientDots[i],v=.18+.18*Math.sin(t*p.s+p.phase);
-      ctx.fillStyle=`rgba(156,218,218,${v})`;ctx.fillRect(p.x+Math.sin(t*.15+p.phase)*4,p.y+Math.cos(t*.27+p.phase)*9,p.r,p.r);
+  function renderBackground() {
+    if (!backdrop) backdrop = makeBackdrop();
+    ctx.drawImage(backdrop, 0, 0, W, H);
+    const t = state.time;
+    // Very few slow drifting dust motes, always behind the target art.
+    for (let i = 0; i < ambientDots.length; i++) {
+      const p = ambientDots[i], a = .05 + .11 * (1 + Math.sin(t * p.s + p.phase)) * .5;
+      ctx.fillStyle = 'rgba(208,235,235,' + a + ')';
+      ctx.fillRect(p.x + Math.sin(t * .12 + p.phase) * 3,
+        p.y + Math.cos(t * .18 + p.phase) * 5, p.r * .65, p.r * .65);
     }
-    // Pulsed horizon highlights and a projection directly under each target.
-    ctx.fillStyle=`rgba(134,244,222,${.022+.016*Math.sin(t*.8)})`;
-    ctx.beginPath();ctx.ellipse(W*.5,H*.71,Math.min(W*.35,310),Math.min(H*.09,70),0,0,TAU);ctx.fill();
+    ctx.fillStyle = 'rgba(134,230,214,' + (.016 + .008 * Math.sin(t * .82)) + ')';
+    ctx.beginPath();
+    ctx.ellipse(W * .5, H * .745, Math.min(W * .3, 260),
+      Math.min(H * .055, 48), 0, 0, TAU);
+    ctx.fill();
   }
   function shadowForTarget(t){
     /* 阴影必须落在精灵脚底，否则会浮在下方 30px 处，目标看上去悬空。 */
@@ -720,8 +821,8 @@ export function createTrial(frame, course, blade, { muted, volume, onPause, onFi
 
   function drawPiece(p){
     const t=p.target,age=p.life;
-    ctx.save();ctx.globalAlpha=clamp(age*2,0,1);
-    ctx.translate(p.x,p.y);ctx.rotate(p.spin*(1.25-age)*.60);
+    ctx.save();ctx.globalAlpha=clamp(Math.min(age*5,1),0,1);
+    ctx.translate(p.x,p.y);ctx.rotate(p.spin*(p.maxLife-age)*.60);
     ctx.scale(p.scale,p.scale);
     const d=p.side,ang=p.angle,ux=Math.cos(ang),uy=Math.sin(ang),nx=-uy,ny=ux;
     const face=cutFaceStyle(t.key),faceW=face.w;
@@ -778,37 +879,121 @@ export function createTrial(frame, course, blade, { muted, volume, onPause, onFi
       ctx.beginPath();ctx.arc(ring.x,ring.y,r,0,TAU);ctx.stroke();ctx.restore();
     }
   }
-  function renderSlashes(){
-    if(!state.feel)return;
-    for(const s of state.slashes){
-      const a=clamp(s.life/s.maxLife,0,1),len=s.length*(1.22-.22*a);
-      ctx.save();ctx.translate(s.x,s.y);ctx.rotate(s.angle);
-      ctx.globalAlpha=a*.75;ctx.shadowBlur=(15+8*a)*unit;ctx.shadowColor=s.color;
-      ctx.strokeStyle=ink;ctx.lineWidth=6*unit*a;ctx.beginPath();ctx.moveTo(-len,0);ctx.quadraticCurveTo(0,-7*unit,len,0);ctx.stroke();
-      ctx.shadowBlur=0;ctx.strokeStyle='#ffffff';ctx.lineWidth=Math.max(.7,2.2*unit*a);ctx.stroke();ctx.restore();
+  // A restrained bright impact bloom behind the material particles.
+  // A single glow plus two intersecting strokes reads as a solid contact, not fireworks.
+  function renderImpacts() {
+    if (!state.feel) return;
+    for (const hit of state.impacts) {
+      const k = clamp(hit.life / hit.maxLife, 0, 1);
+      const r = hit.radius * (1.0 + (1 - k) * .44);
+      ctx.save();
+      ctx.translate(hit.x, hit.y);
+      ctx.globalCompositeOperation = 'screen';
+      ctx.globalAlpha = k * hit.strength * .44;
+      ctx.fillStyle = radial(ctx, 0, 0, r, [
+        [0, '#fffaf0'], [.13, hit.color], [1, 'rgba(210,232,245,0)'],
+      ]);
+      ctx.beginPath();
+      ctx.arc(0, 0, r, 0, TAU);
+      ctx.fill();
+      ctx.rotate(hit.angle);
+      ctx.globalAlpha = k * hit.strength * .8;
+      ctx.strokeStyle = '#fffaf2';
+      ctx.lineCap = 'round';
+      ctx.lineWidth = Math.max(.8, 1.7 * unit * k);
+      ctx.beginPath();
+      ctx.moveTo(-r * .64, 0);
+      ctx.lineTo(r * .64, 0);
+      ctx.stroke();
+      ctx.globalAlpha *= .22;
+      ctx.beginPath();
+      ctx.moveTo(0, -r * .25);
+      ctx.lineTo(0, r * .25);
+      ctx.stroke();
+      ctx.restore();
     }
   }
-  function renderTrail(){
-    const now=performance.now(),arr=state.pointer.down?state.pointer.points:[];
-    const all=state.trails.map(t=>t.points);
-    if(arr.length>1)all.push(arr);
-    for(const points of all){
-      const recent=points.filter(p=>now-p.t<175);
-      if(recent.length<2)continue;
-      for(let i=1;i<recent.length;i++){
-        const prev=recent[i-1],cur=recent[i],age=now-cur.t,alpha=clamp(1-age/175,0,1);
-        const len=Math.hypot(cur.x-prev.x,cur.y-prev.y);
-        if(len<1.5)continue;
-        const glow=(state.feel?.7:.3)*alpha;
-        ctx.save();ctx.lineCap='round';ctx.strokeStyle=bladeAccent;ctx.globalAlpha=glow*.42;ctx.lineWidth=16*unit*alpha;ctx.shadowColor=bladeAccent;ctx.shadowBlur=state.feel?20*unit:3;
-        ctx.beginPath();ctx.moveTo(prev.x,prev.y);ctx.lineTo(cur.x,cur.y);ctx.stroke();
-        ctx.shadowBlur=0;ctx.globalAlpha=glow*.85;ctx.strokeStyle=ink;ctx.lineWidth=Math.max(1,5*unit*alpha);ctx.stroke();
-        ctx.strokeStyle='#f8fffc';ctx.globalAlpha=glow;ctx.lineWidth=Math.max(.7,1.8*unit*alpha);ctx.stroke();ctx.restore();
-      }
+  function renderSlashes() {
+    if (!state.feel) return;
+    for (const s of state.slashes) {
+      const a = clamp(s.life / s.maxLife, 0, 1);
+      const len = s.length * (1.26 - .26 * a);
+      ctx.save();
+      ctx.translate(s.x, s.y);
+      ctx.rotate(s.angle);
+      ctx.lineCap = 'round';
+      ctx.globalAlpha = a * .72;
+      ctx.shadowBlur = (10 + 7 * a) * unit;
+      ctx.shadowColor = s.color;
+      ctx.strokeStyle = s.color;
+      ctx.lineWidth = Math.max(1, 7 * unit * a);
+      ctx.beginPath();
+      ctx.moveTo(-len, 0);
+      ctx.quadraticCurveTo(0, -5 * unit, len, 0);
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+      ctx.strokeStyle = '#f8fffe';
+      ctx.lineWidth = Math.max(.7, 1.7 * unit * a);
+      ctx.stroke();
+      ctx.restore();
     }
-    if(state.pointer.down){
-      const p=state.pointer;ctx.save();ctx.globalAlpha=.9;ctx.strokeStyle=bladeAccent;ctx.lineWidth=1.4;
-      ctx.beginPath();ctx.arc(p.x,p.y,5,0,TAU);ctx.stroke();ctx.restore();
+  }
+  // Render each swipe as a continuous ribbon. Three canvas strokes per ribbon
+  // instead of repeated wide shadow blurs per raw pointer sample.
+  function renderTrail() {
+    const now = performance.now();
+    const current = state.pointer.down ? state.pointer.points : [];
+    const paths = state.trails.map(t => t.points);
+    if (current.length > 1) paths.push(current);
+    for (const points of paths) {
+      const recent = points.filter(p => now - p.t < 180);
+      if (recent.length < 2) continue;
+      const latest = recent[recent.length - 1];
+      const opacity = clamp(1 - (now - latest.t) / 180, 0, 1);
+      if (opacity <= 0) continue;
+      const first = recent[0];
+      const last = recent[recent.length - 1];
+      const total = Math.hypot(last.x - first.x, last.y - first.y);
+      if (total < 4) continue;
+      ctx.save();
+      ctx.lineJoin = 'round';
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(first.x, first.y);
+      for (let i = 1; i < recent.length - 1; i++) {
+        const p = recent[i], q = recent[i + 1];
+        ctx.quadraticCurveTo(p.x, p.y, (p.x + q.x) * .5, (p.y + q.y) * .5);
+      }
+      ctx.lineTo(last.x, last.y);
+      ctx.shadowColor = bladeAccent;
+      ctx.shadowBlur = state.feel ? 15 * unit : 3;
+      ctx.strokeStyle = bladeAccent;
+      ctx.globalAlpha = opacity * .36;
+      ctx.lineWidth = Math.max(4, 19 * unit * opacity);
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+      ctx.strokeStyle = bladeAccent;
+      ctx.globalAlpha = opacity * .88;
+      ctx.lineWidth = Math.max(2, 4.6 * unit * opacity);
+      ctx.stroke();
+      ctx.strokeStyle = '#fafffe';
+      ctx.globalAlpha = opacity;
+      ctx.lineWidth = Math.max(.8, 1.35 * unit * opacity);
+      ctx.stroke();
+      ctx.restore();
+    }
+    // A subtle touch marker, no circular reticle floating over the art.
+    if (state.pointer.down) {
+      const p = state.pointer;
+      ctx.save();
+      ctx.fillStyle = '#faffff';
+      ctx.shadowColor = bladeAccent;
+      ctx.shadowBlur = 7 * unit;
+      ctx.globalAlpha = .85;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, 2.2 * unit, 0, TAU);
+      ctx.fill();
+      ctx.restore();
     }
   }
   function renderCrosshair(){
@@ -828,7 +1013,7 @@ export function createTrial(frame, course, blade, { muted, volume, onPause, onFi
     for(const t of state.targets)if(t.alive)shadowForTarget(t);
     for(const p of state.pieces)drawPiece(p);
     for(const t of state.targets)if(t.alive)drawTarget(t);
-    renderRings();renderParticles();renderSlashes();renderTrail();
+    renderImpacts();renderRings();renderParticles();renderSlashes();renderTrail();
     ctx.restore();
     if(state.feel&&state.flash>.003){
       ctx.fillStyle=`rgba(237,252,250,${state.flash*.30})`;ctx.fillRect(0,0,W,H);
@@ -861,10 +1046,12 @@ export function createTrial(frame, course, blade, { muted, volume, onPause, onFi
       if(p.life<=0){state.particles.splice(i,1);continue;}p.x+=p.vx*seconds;p.y+=p.vy*seconds;p.vy+=330*seconds;p.vx*=.985;p.rotation+=p.spin*seconds;
     }
     for(let i=state.pieces.length-1;i>=0;i--){const p=state.pieces[i];p.life-=seconds;
-      if(p.life<=0){state.pieces.splice(i,1);continue;}p.x+=p.vx*seconds;p.y+=p.vy*seconds;p.vy+=440*seconds;
+      if(p.life<=0){state.pieces.splice(i,1);continue;}p.x+=p.vx*seconds;p.y+=p.vy*seconds;
+      p.vy+=540*seconds;p.vx*=Math.exp(-1.45*seconds);
     }
     for(let i=state.rings.length-1;i>=0;i--){state.rings[i].life-=seconds;if(state.rings[i].life<=0)state.rings.splice(i,1);}
     for(let i=state.slashes.length-1;i>=0;i--){state.slashes[i].life-=seconds;if(state.slashes[i].life<=0)state.slashes.splice(i,1);}
+    for(let i=state.impacts.length-1;i>=0;i--){state.impacts[i].life-=seconds;if(state.impacts[i].life<=0)state.impacts.splice(i,1);}
     const now=performance.now();for(let i=state.trails.length-1;i>=0;i--){if(now-state.trails[i].points.at(-1).t>180)state.trails.splice(i,1);}
   }
 
