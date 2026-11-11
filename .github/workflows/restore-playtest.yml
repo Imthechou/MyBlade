@@ -42,6 +42,13 @@ jobs:
           node game/serve.cjs 4173 127.0.0.1 >/tmp/myblade-http.log 2>&1 &
           sleep 2
           timeout --signal=TERM --kill-after=10s 125s node qa/archive-playtest.cjs
+      - name: Verify static GitHub Pages under /MyBlade/ subpath
+        run: |
+          mkdir -p pages-root
+          ln -s ../_site pages-root/MyBlade
+          python3 -m http.server 4174 --bind 127.0.0.1 --directory pages-root >/tmp/myblade-pages.log 2>&1 &
+          sleep 2
+          PLAYTEST_TARGET=pages PLAYTEST_BASE_URL=http://127.0.0.1:4174/MyBlade/ timeout --signal=TERM --kill-after=10s 125s node qa/archive-playtest.cjs
       - name: Five-phase forging regression
         if: success()
         run: timeout --signal=TERM --kill-after=10s 155s node qa/forge-visual.spec.cjs
