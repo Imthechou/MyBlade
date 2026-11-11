@@ -61,18 +61,22 @@ const errors=[],records=[];
  const touchAfter=Number(await page.locator('[data-trial="hits"]').textContent())||0;
  if(touchAfter<=touchBefore)throw new Error('Real touchscreen swipe did not cut a target');
  console.log('ARENA_TOUCH',JSON.stringify({before:touchBefore,after:touchAfter}));
- for(let i=0;i<14;i++){
+ for(let i=0;i<10;i++){
    const yy=r.y+r.height*(.28+(i%5)*.11);
    const left=r.x+r.width*.12,right=r.x+r.width*.88;
    await page.mouse.move(i%2?right:left,yy);
    await page.mouse.down();
    for(let step=1;step<=8;step++)await page.mouse.move((i%2?right:left)+(i%2?-1:1)*(right-left)*step/8, yy+(step-4)*2,{steps:1});
    await page.mouse.up();
-   await page.waitForTimeout(175);
+   await page.waitForTimeout(90);
  }
  const after=await snap('03-arena-after-swipes');
- if(Number(after.hit||0)<3)throw new Error('Touch swipes failed to cut enough visible targets: '+after.hit);
- await page.waitForTimeout(11100);
+ // The extra first-touch screenshot may push a 12s training match into results.
+ // Validate completed cuts from either HUD or report, without requiring a live canvas.
+ const completedCuts=after.trial ? Number(after.hit||0)
+   : Number((await page.locator('#v19-arena .arena-result-metrics div').first().locator('b').textContent())||0);
+ if(completedCuts<3)throw new Error('Real swipes failed to cut enough visible targets: '+completedCuts);
+ if(after.screen!=='report')await page.waitForTimeout(11100);
  const report=await snap('04-arena-report');
  if(report.screen!=='report'||!report.overlay.includes('试刀结束'))throw new Error('Tournament did not complete with a visible report');
  if(!report.overlay.includes('表现最佳'))throw new Error('Performance section missing from report');
