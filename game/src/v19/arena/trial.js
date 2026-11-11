@@ -555,11 +555,18 @@ export function createTrial(frame, course, blade, { muted, volume, onPause, onFi
       state.particles[state.particles.length-1].maxLife=state.particles[state.particles.length-1].life;
     }
   }
-  function addSlash(x,y,dx,dy,m,heavy){
-    if(!state.feel)return;
-    const r=heavy?145:98;
-    state.slashes.push({x,y,angle:Math.atan2(dy,dx),length:r*unit*(heavy?1.45:1),life:.2,maxLife:.2,color:m.glint});
-    state.rings.push({x,y,r:heavy?26:13,life:.36,maxLife:.36,color:m.color,scale:heavy?2.5:1.8});
+  function addSlash(x, y, dx, dy, m, heavy, force = 1) {
+    if (!state.feel) return;
+    const length = (heavy ? 150 : 102) * unit * clamp(force, .8, 1.24);
+    state.slashes.push({
+      x, y, angle: Math.atan2(dy, dx), length, life: .19, maxLife: .19,
+      // Only the blade glow changes with the forged knife. Fracture fragments remain material colored.
+      color: bladeAccent,
+    });
+    if (state.slashes.length > 12) state.slashes.shift();
+    state.rings.push({ x, y, r: heavy ? 23 : 12, life: .28, maxLife: .28,
+      color: m.glint, scale: heavy ? 2.0 : 1.45 });
+    if (state.rings.length > 16) state.rings.shift();
   }
   // Segment-vs-visible-art hitbox, unlike the old fixed circle which could miss tall targets
   // and falsely hit a wide empty halo. Uses the real transparent sprite alpha bounds.
@@ -757,8 +764,8 @@ export function createTrial(frame, course, blade, { muted, volume, onPause, onFi
 
   function drawPiece(p){
     const t=p.target,age=p.life;
-    ctx.save();ctx.globalAlpha=clamp(age*2,0,1);
-    ctx.translate(p.x,p.y);ctx.rotate(p.spin*(1.25-age)*.60);
+    ctx.save();ctx.globalAlpha=clamp(Math.min(age*5,1),0,1);
+    ctx.translate(p.x,p.y);ctx.rotate(p.spin*(p.maxLife-age)*.60);
     ctx.scale(p.scale,p.scale);
     const d=p.side,ang=p.angle,ux=Math.cos(ang),uy=Math.sin(ang),nx=-uy,ny=ux;
     const face=cutFaceStyle(t.key),faceW=face.w;
@@ -815,37 +822,121 @@ export function createTrial(frame, course, blade, { muted, volume, onPause, onFi
       ctx.beginPath();ctx.arc(ring.x,ring.y,r,0,TAU);ctx.stroke();ctx.restore();
     }
   }
-  function renderSlashes(){
-    if(!state.feel)return;
-    for(const s of state.slashes){
-      const a=clamp(s.life/s.maxLife,0,1),len=s.length*(1.22-.22*a);
-      ctx.save();ctx.translate(s.x,s.y);ctx.rotate(s.angle);
-      ctx.globalAlpha=a*.75;ctx.shadowBlur=(15+8*a)*unit;ctx.shadowColor=s.color;
-      ctx.strokeStyle=ink;ctx.lineWidth=6*unit*a;ctx.beginPath();ctx.moveTo(-len,0);ctx.quadraticCurveTo(0,-7*unit,len,0);ctx.stroke();
-      ctx.shadowBlur=0;ctx.strokeStyle='#ffffff';ctx.lineWidth=Math.max(.7,2.2*unit*a);ctx.stroke();ctx.restore();
+  // A restrained bright impact bloom behind the material particles.
+  // A single glow plus two intersecting strokes reads as a solid contact, not fireworks.
+  function renderImpacts() {
+    if (!state.feel) return;
+    for (const hit of state.impacts) {
+      const k = clamp(hit.life / hit.maxLife, 0, 1);
+      const r = hit.radius * (1.0 + (1 - k) * .44);
+      ctx.save();
+      ctx.translate(hit.x, hit.y);
+      ctx.globalCompositeOperation = 'screen';
+      ctx.globalAlpha = k * hit.strength * .44;
+      ctx.fillStyle = radial(ctx, 0, 0, r, [
+        [0, '#fffaf0'], [.13, hit.color], [1, 'rgba(210,232,245,0)'],
+      ]);
+      ctx.beginPath();
+      ctx.arc(0, 0, r, 0, TAU);
+      ctx.fill();
+      ctx.rotate(hit.angle);
+      ctx.globalAlpha = k * hit.strength * .8;
+      ctx.strokeStyle = '#fffaf2';
+      ctx.lineCap = 'round';
+      ctx.lineWidth = Math.max(.8, 1.7 * unit * k);
+      ctx.beginPath();
+      ctx.moveTo(-r * .64, 0);
+      ctx.lineTo(r * .64, 0);
+      ctx.stroke();
+      ctx.globalAlpha *= .22;
+      ctx.beginPath();
+      ctx.moveTo(0, -r * .25);
+      ctx.lineTo(0, r * .25);
+      ctx.stroke();
+      ctx.restore();
     }
   }
-  function renderTrail(){
-    const now=performance.now(),arr=state.pointer.down?state.pointer.points:[];
-    const all=state.trails.map(t=>t.points);
-    if(arr.length>1)all.push(arr);
-    for(const points of all){
-      const recent=points.filter(p=>now-p.t<175);
-      if(recent.length<2)continue;
-      for(let i=1;i<recent.length;i++){
-        const prev=recent[i-1],cur=recent[i],age=now-cur.t,alpha=clamp(1-age/175,0,1);
-        const len=Math.hypot(cur.x-prev.x,cur.y-prev.y);
-        if(len<1.5)continue;
-        const glow=(state.feel?.7:.3)*alpha;
-        ctx.save();ctx.lineCap='round';ctx.strokeStyle=bladeAccent;ctx.globalAlpha=glow*.42;ctx.lineWidth=16*unit*alpha;ctx.shadowColor=bladeAccent;ctx.shadowBlur=state.feel?20*unit:3;
-        ctx.beginPath();ctx.moveTo(prev.x,prev.y);ctx.lineTo(cur.x,cur.y);ctx.stroke();
-        ctx.shadowBlur=0;ctx.globalAlpha=glow*.85;ctx.strokeStyle=ink;ctx.lineWidth=Math.max(1,5*unit*alpha);ctx.stroke();
-        ctx.strokeStyle='#f8fffc';ctx.globalAlpha=glow;ctx.lineWidth=Math.max(.7,1.8*unit*alpha);ctx.stroke();ctx.restore();
-      }
+  function renderSlashes() {
+    if (!state.feel) return;
+    for (const s of state.slashes) {
+      const a = clamp(s.life / s.maxLife, 0, 1);
+      const len = s.length * (1.26 - .26 * a);
+      ctx.save();
+      ctx.translate(s.x, s.y);
+      ctx.rotate(s.angle);
+      ctx.lineCap = 'round';
+      ctx.globalAlpha = a * .72;
+      ctx.shadowBlur = (10 + 7 * a) * unit;
+      ctx.shadowColor = s.color;
+      ctx.strokeStyle = s.color;
+      ctx.lineWidth = Math.max(1, 7 * unit * a);
+      ctx.beginPath();
+      ctx.moveTo(-len, 0);
+      ctx.quadraticCurveTo(0, -5 * unit, len, 0);
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+      ctx.strokeStyle = '#f8fffe';
+      ctx.lineWidth = Math.max(.7, 1.7 * unit * a);
+      ctx.stroke();
+      ctx.restore();
     }
-    if(state.pointer.down){
-      const p=state.pointer;ctx.save();ctx.globalAlpha=.9;ctx.strokeStyle=bladeAccent;ctx.lineWidth=1.4;
-      ctx.beginPath();ctx.arc(p.x,p.y,5,0,TAU);ctx.stroke();ctx.restore();
+  }
+  // Render each swipe as a continuous ribbon. Three canvas strokes per ribbon
+  // instead of repeated wide shadow blurs per raw pointer sample.
+  function renderTrail() {
+    const now = performance.now();
+    const current = state.pointer.down ? state.pointer.points : [];
+    const paths = state.trails.map(t => t.points);
+    if (current.length > 1) paths.push(current);
+    for (const points of paths) {
+      const recent = points.filter(p => now - p.t < 180);
+      if (recent.length < 2) continue;
+      const latest = recent[recent.length - 1];
+      const opacity = clamp(1 - (now - latest.t) / 180, 0, 1);
+      if (opacity <= 0) continue;
+      const first = recent[0];
+      const last = recent[recent.length - 1];
+      const total = Math.hypot(last.x - first.x, last.y - first.y);
+      if (total < 4) continue;
+      ctx.save();
+      ctx.lineJoin = 'round';
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(first.x, first.y);
+      for (let i = 1; i < recent.length - 1; i++) {
+        const p = recent[i], q = recent[i + 1];
+        ctx.quadraticCurveTo(p.x, p.y, (p.x + q.x) * .5, (p.y + q.y) * .5);
+      }
+      ctx.lineTo(last.x, last.y);
+      ctx.shadowColor = bladeAccent;
+      ctx.shadowBlur = state.feel ? 15 * unit : 3;
+      ctx.strokeStyle = bladeAccent;
+      ctx.globalAlpha = opacity * .36;
+      ctx.lineWidth = Math.max(4, 19 * unit * opacity);
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+      ctx.strokeStyle = bladeAccent;
+      ctx.globalAlpha = opacity * .88;
+      ctx.lineWidth = Math.max(2, 4.6 * unit * opacity);
+      ctx.stroke();
+      ctx.strokeStyle = '#fafffe';
+      ctx.globalAlpha = opacity;
+      ctx.lineWidth = Math.max(.8, 1.35 * unit * opacity);
+      ctx.stroke();
+      ctx.restore();
+    }
+    // A subtle touch marker, no circular reticle floating over the art.
+    if (state.pointer.down) {
+      const p = state.pointer;
+      ctx.save();
+      ctx.fillStyle = '#faffff';
+      ctx.shadowColor = bladeAccent;
+      ctx.shadowBlur = 7 * unit;
+      ctx.globalAlpha = .85;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, 2.2 * unit, 0, TAU);
+      ctx.fill();
+      ctx.restore();
     }
   }
   function renderCrosshair(){
@@ -865,7 +956,7 @@ export function createTrial(frame, course, blade, { muted, volume, onPause, onFi
     for(const t of state.targets)if(t.alive)shadowForTarget(t);
     for(const p of state.pieces)drawPiece(p);
     for(const t of state.targets)if(t.alive)drawTarget(t);
-    renderRings();renderParticles();renderSlashes();renderTrail();
+    renderImpacts();renderRings();renderParticles();renderSlashes();renderTrail();
     ctx.restore();
     if(state.feel&&state.flash>.003){
       ctx.fillStyle=`rgba(237,252,250,${state.flash*.30})`;ctx.fillRect(0,0,W,H);
@@ -898,10 +989,12 @@ export function createTrial(frame, course, blade, { muted, volume, onPause, onFi
       if(p.life<=0){state.particles.splice(i,1);continue;}p.x+=p.vx*seconds;p.y+=p.vy*seconds;p.vy+=330*seconds;p.vx*=.985;p.rotation+=p.spin*seconds;
     }
     for(let i=state.pieces.length-1;i>=0;i--){const p=state.pieces[i];p.life-=seconds;
-      if(p.life<=0){state.pieces.splice(i,1);continue;}p.x+=p.vx*seconds;p.y+=p.vy*seconds;p.vy+=440*seconds;
+      if(p.life<=0){state.pieces.splice(i,1);continue;}p.x+=p.vx*seconds;p.y+=p.vy*seconds;
+      p.vy+=540*seconds;p.vx*=Math.exp(-1.45*seconds);
     }
     for(let i=state.rings.length-1;i>=0;i--){state.rings[i].life-=seconds;if(state.rings[i].life<=0)state.rings.splice(i,1);}
     for(let i=state.slashes.length-1;i>=0;i--){state.slashes[i].life-=seconds;if(state.slashes[i].life<=0)state.slashes.splice(i,1);}
+    for(let i=state.impacts.length-1;i>=0;i--){state.impacts[i].life-=seconds;if(state.impacts[i].life<=0)state.impacts.splice(i,1);}
     const now=performance.now();for(let i=state.trails.length-1;i>=0;i--){if(now-state.trails[i].points.at(-1).t>180)state.trails.splice(i,1);}
   }
 
