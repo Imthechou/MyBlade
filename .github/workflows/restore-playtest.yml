@@ -21,6 +21,11 @@ jobs:
           done
           python3 scripts/build_static_site.py
           test -s _site/__styles.css
+      - name: Run actual Node unit and syntax tests
+        run: |
+          cd game
+          npm test
+          npm run test:syntax
       - name: Commit restored sources, remove compressed duplicate
         run: |
           git config user.name "github-actions[bot]"
