@@ -11,31 +11,35 @@ jobs:
     timeout-minutes: 22
     steps:
       - uses: actions/checkout@v4
-      - name: Restore editable game source from latest archive
+      - name: Restore editable game source
         run: python3 scripts/prepare_game.py
-      - name: Validate entry and basic module syntax
+      - name: Validate syntax and static site packaging
         run: |
           test -s game/index.html
           for f in game/src/v19/forgeView.js game/src/v19/stage.js game/src/v19/materials.js game/src/app/bootstrap.js; do
             test ! -f "$f" || node --check "$f"
           done
-      - name: Commit editable source and remove duplicate archive
+          python3 scripts/build_static_site.py
+          test -s _site/__styles.css
+      - name: Commit restored sources, remove compressed duplicate
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add game/
-          git rm -f -- '*.zip' || true
+          for archive in *.zip; do
+            if test -f "$archive"; then git rm -f -- "$archive"; fi
+          done
           if ! git diff --cached --quiet; then
             git commit -m "chore: restore editable latest game and remove compressed duplicate"
-            git push origin "HEAD:$GITHUB_REF_NAME" || echo "WARNING: action token cannot push; restored source retained in run"
+            git push origin "HEAD:$GITHUB_REF_NAME" || echo "WARNING: push rejected, CI still has restored source"
           fi
       - name: Install real Chromium
         run: |
           npm install --no-audit --no-fund --no-save playwright@1.56.1
           npx playwright install chromium
-      - name: Browser UI smoke and clickable forging
+      - name: Browser UI playtest, mobile and desktop
         run: |
-          python3 -m http.server 4173 --bind 127.0.0.1 --directory game >/tmp/myblade-http.log 2>&1 &
+          node game/serve.cjs 4173 127.0.0.1 >/tmp/myblade-http.log 2>&1 &
           sleep 2
           timeout --signal=TERM --kill-after=10s 125s node qa/archive-playtest.cjs
       - name: Five-phase forging regression
