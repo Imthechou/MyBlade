@@ -21,7 +21,8 @@ const MATERIALS = {
   steel:  {name:'金属桶',short:'钢桶',eng:'金属',class:'耐久试炼',color:'#a9c6d0',chip:'#aebeca',hardness:1.95,hp:275,heavyHP:820,score:95,wear:4.3,glint:'#f5e0ae',particles:'sparks',sound:'metal'},
   shield: {name:'复合盾牌',short:'盾牌',eng:'盾牌',class:'终极试炼',color:'#a7b6c2',chip:'#abb9c4',hardness:2.55,hp:330,heavyHP:1120,score:132,wear:5.35,glint:'#d6e8ef',particles:'sparks',sound:'shield'}
 };
-const FEEL = { hitstop: { hit: 19, fracture: 33, break: 54 }, slowScale: .76 };
+// Keep tactile pauses short: input continues while target animation briefly holds.
+const FEEL = { hitstop: { hit: 23, fracture: 39, break: 58 }, slowScale: .74 };
 function grad(c,x0,y0,x1,y1,stops){const g=c.createLinearGradient(x0,y0,x1,y1);stops.forEach(a=>g.addColorStop(a[0],a[1]));return g;}
 function radial(c,x,y,r,stops){const g=c.createRadialGradient(x,y,0,x,y,r);stops.forEach(a=>g.addColorStop(a[0],a[1]));return g;}
 function roundRect(c, x, y, w, h, radius) {
@@ -99,7 +100,8 @@ export function createTrial(frame, course, blade, { muted, volume, onPause, onFi
   const state = {
     screen: 'ready', score: 0, bestCombo: 0, durability: 100, time: 0,
     round: 0, waves: 0, cut: 0, hits: 0, damage: 0, targets: [], pieces: [], particles: [], rings: [],
-    slashes: [], trails: [], pointer: { down: false, points: [], hitTargets: new Set() },
+    slashes: [], trails: [], impacts: [], comboChain: 0, lastKillAt: -1e4,
+    pointer: { down: false, points: [], hitTargets: new Set() },
     feel: true, intensity: strength, reducedMotion: motion.reduced(), hitstop: 0, slowRemaining: 0,
     shakeX: 0, shakeY: 0, shakeVX: 0, shakeVY: 0, flash: 0, nextWaveAt: -1,
   };
@@ -298,15 +300,38 @@ export function createTrial(frame, course, blade, { muted, volume, onPause, onFi
   function splitTarget(target, dx, dy, crit) {
     target.alive = false;
     const angle = Math.atan2(dy, dx);
-    const speed = target.heavy ? 170 : 210;
+    // Halves move apart along the normal of the actual cut, rather than flying randomly.
+    // Short lifetimes keep the next wave from filling the stage with old fragments.
+    const speed = target.heavy ? 146 : 172;
+    const lifetime = target.heavy ? .86 : .66;
     for (const side of [-1, 1]) state.pieces.push({
-      target, x: target.x, y: target.y, angle, life: 1.25, scale: target.scale, side,
-      vx: -Math.sin(angle) * speed * side + Math.cos(angle) * 70, vy: Math.cos(angle) * speed * side - 100,
-      spin: side * rand(1.2, 3.8),
+      target, x: target.x, y: target.y, angle, life: lifetime, maxLife: lifetime,
+      scale: target.scale, side,
+      vx: -Math.sin(angle) * speed * side + Math.cos(angle) * 22,
+      vy: Math.cos(angle) * speed * side - (target.heavy ? 64 : 52),
+      spin: side * rand(.8, 2.2),
     });
     state.cut++;
-    addScore(Math.round(target.m.score * (target.heavy ? 3.7 : 1.9) * (crit ? 1.3 : 1) * derived.combo));
-    burst(target.x, target.y, target.m, target.heavy ? 24 : 15, 1.15);
+    const now = performance.now();
+    state.comboChain = now - state.lastKillAt < 1300 ? Math.min(12, state.comboChain + 1) : 1;
+    state.lastKillAt = now;
+    state.bestCombo = Math.max(state.bestCombo, state.comboChain);
+    const chainBonus = state.comboChain > 1 ? Math.min(48, (state.comboChain - 1) * 8) : 0;
+    addScore(Math.round((target.m.score * (target.heavy ? 3.7 : 1.9) * (crit ? 1.3 : 1) + chainBonus) * derived.combo));
+    if (state.comboChain > 1) {
+      ui.combo.textContent = '×' + state.comboChain;
+      ui.combo.classList.remove('is-live');
+      void ui.combo.offsetWidth;
+      ui.combo.classList.add('is-live');
+    }
+    clearTimeout(comboTimer);
+    comboTimer = setTimeout(() => {
+      if (performance.now() - state.lastKillAt >= 1250) {
+        ui.combo.textContent = '—';
+        state.comboChain = 0;
+      }
+    }, 1340);
+    burst(target.x, target.y, target.m, target.heavy ? 22 : 13, target.heavy ? 1.18 : 1.08);
   }
 
   function hitTarget(target, dx, dy, speed, delay, groupSize) {
@@ -350,11 +375,19 @@ export function createTrial(frame, course, blade, { muted, volume, onPause, onFi
     if (!state.reducedMotion) {
       state.hitstop = Math.max(state.hitstop, FEEL.hitstop[phase] * (target.heavy ? 1.18 : .82) * clamp(.82 + force * .16, .90, 1.06));
       state.slowRemaining = Math.max(state.slowRemaining, broken ? 50 : 35);
-      state.flash = Math.max(state.flash, broken ? .23 : fracture ? .14 : .08);
+      state.flash = Math.max(state.flash, broken ? .18 : fracture ? .115 : .055);
       applyCameraKick(dx, dy, phase);
     }
-    addSlash(target.x, target.y, dx, dy, target.m, target.heavy);
-    burst(target.x, target.y, target.m, broken ? 14 : fracture ? 9 : 4);
+    addSlash(target.x, target.y, dx, dy, target.m, target.heavy, force);
+    state.impacts.push({
+      x: target.x, y: target.y, color: target.m.glint,
+      life: broken ? .20 : .15, maxLife: broken ? .20 : .15,
+      radius: (target.heavy ? 75 : 49) * unit,
+      strength: broken ? 1 : fracture ? .68 : .42,
+      angle: Math.atan2(dy, dx),
+    });
+    if (state.impacts.length > 8) state.impacts.shift();
+    burst(target.x, target.y, target.m, broken ? 12 : fracture ? 7 : 3);
     audio.playHit({ material: target.key, stage: phase, force, pan: (target.x / W - .5) * 1.1, delayMs: delay, groupSize });
     if (broken) haptics.vibrate(target.heavy ? 24 : 10);
     if (broken) {
@@ -405,16 +438,18 @@ export function createTrial(frame, course, blade, { muted, volume, onPause, onFi
     if (!pointer.down) return;
     pointer.down = false;
     if (pointer.points.length > 1) state.trails.push({ points: pointer.points });
-    const hits = pointer.hitTargets.size;
-    if (hits < 2) return;
-    const bonus = Math.round((hits - 1) * 28 * derived.combo);
-    state.bestCombo = Math.max(state.bestCombo, hits);
-    addScore(bonus);
-    updateHUD();
-    ui.combo.textContent = '×' + hits;
-    clearTimeout(comboTimer);
-    comboTimer = setTimeout(() => { ui.combo.textContent = '—'; }, 1300);
-    if (pointer.kills >= 2) showVerdict(pointer.kills >= 3 ? '一气呵成' : '双靶齐断', 'combo');
+    // The chain rewards actual kills within 1.3 s, including across successive swipes.
+    // Passing over an already-damaged heavy target alone does not count as a combo.
+    if (pointer.swung && pointer.hitTargets.size === 0) {
+      state.comboChain = 0;
+      clearTimeout(comboTimer);
+      ui.combo.textContent = '—';
+    }
+    if (pointer.kills >= 2) {
+      showVerdict(pointer.kills >= 3 ? '一气呵成' : '双靶齐断', 'combo');
+    } else if (pointer.kills === 1 && state.comboChain >= 4) {
+      showVerdict('漂亮连斩', 'combo');
+    }
   }
 
   function pointFor(event, rect) {
@@ -431,6 +466,8 @@ export function createTrial(frame, course, blade, { muted, volume, onPause, onFi
     event.preventDefault();
     canvas.focus({ preventScroll: true });
     canvas.setPointerCapture(event.pointerId);
+    // iOS Safari requires a user-gesture AudioContext unlock. Preload alone is insufficient.
+    void audio.unlock();
     beginStroke(pointFor(event, canvas.getBoundingClientRect()), event.pointerId);
   }
 
@@ -442,7 +479,7 @@ export function createTrial(frame, course, blade, { muted, volume, onPause, onFi
     const rect = canvas.getBoundingClientRect();
     for (const sample of points?.length ? points : [event]) {
       const next = pointFor(sample, rect), prev = pointer.points.at(-1);
-      strokeSegment(prev, next, (next.t - prev.t) / 1000);
+      strokeSegment(prev, next, Math.max(.008, (next.t - prev.t) / 1000));
       pointer.points.push(next);
       if (pointer.points.length > 18) pointer.points.shift();
       pointer.x = next.x; pointer.y = next.y;
