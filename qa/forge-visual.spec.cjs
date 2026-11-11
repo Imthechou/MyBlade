@@ -40,7 +40,7 @@ async function run() {
  await shot(page,'01_ore');
  await page.getByRole('button',{name:'打灯'}).click();
  await shot(page,'02_lamp');
- await page.getByRole('button',{name:/敲石/}).click();
+ await page.locator('[data-action="tap-ore"]').click();
  await shot(page,'03_knock');
  await page.getByRole('button',{name:/开石/}).click();
  await page.waitForTimeout(1200);
