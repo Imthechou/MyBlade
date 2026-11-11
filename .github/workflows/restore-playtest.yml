@@ -50,8 +50,11 @@ jobs:
           python3 -m http.server 4174 --bind 127.0.0.1 --directory pages-root >/tmp/myblade-pages.log 2>&1 &
           sleep 2
           PLAYTEST_TARGET=pages PLAYTEST_BASE_URL=http://127.0.0.1:4174/MyBlade/ timeout --signal=TERM --kill-after=10s 125s node qa/archive-playtest.cjs
-      - name: Five-phase forging regression
+      - name: Real borrowed-blade tournament swipe and report
         if: success()
+        run: timeout --signal=TERM --kill-after=10s 90s node qa/arena-playtest.cjs
+      - name: Five-phase forging regression
+        if: always()
         run: timeout --signal=TERM --kill-after=10s 155s node qa/forge-visual.spec.cjs
       - uses: actions/upload-artifact@v4
         if: always()
@@ -60,4 +63,5 @@ jobs:
           path: |
             audit-playtest/
             audit/
+            audit-arena/
           if-no-files-found: ignore
