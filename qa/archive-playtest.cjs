@@ -1,5 +1,8 @@
 const {chromium}=require('playwright');
-const fs=require('node:fs'); fs.mkdirSync('audit-playtest',{recursive:true});
+const fs=require('node:fs');
+const target=process.env.PLAYTEST_TARGET||'runtime';
+const out='audit-playtest/'+target;
+fs.mkdirSync(out,{recursive:true});
 const issues=[],scenes=[];
 async function snapshot(page,name){
   await page.waitForTimeout(600);
@@ -10,7 +13,7 @@ async function snapshot(page,name){
     buttons:[...document.querySelectorAll('button')].filter(b=>b.getClientRects().length).map(b=>b.innerText.trim()).filter(Boolean).slice(0,24),
     canvases:[...document.querySelectorAll('canvas')].filter(c=>c.getClientRects().length).map(c=>[c.clientWidth,c.clientHeight])
   }));
-  await page.screenshot({path:'audit-playtest/'+name+'.png',animations:'disabled'});
+  await page.screenshot({path:out+'/'+name+'.png',animations:'disabled'});
   console.log('STAGE',name,JSON.stringify(state));scenes.push({name,...state});
   if(state.scrollWidth>state.viewport[0]+1)issues.push('Horizontal overflow '+name);
   return state;
@@ -24,7 +27,7 @@ async function snapshot(page,name){
   page.on('pageerror',e=>issues.push(label+' JS '+e.message));
   page.on('console',m=>{if(m.type()==='error')issues.push(label+' CONSOLE '+m.text().slice(0,250))});
   page.on('response',r=>{if(r.status()>=400)issues.push(label+' HTTP '+r.status()+' '+r.url())});
-  await page.goto('http://127.0.0.1:4173/',{waitUntil:'domcontentloaded'});
+  await page.goto(process.env.PLAYTEST_BASE_URL||'http://127.0.0.1:4173/',{waitUntil:'domcontentloaded'});
   await snapshot(page,label+'-home');
   const start=page.getByRole('button',{name:/开始锻刀|继续锻刀/}).first();
   if(await start.count()){
@@ -47,7 +50,7 @@ async function snapshot(page,name){
   await context.close();
  }
  }finally{await browser.close()}
- fs.writeFileSync('audit-playtest/results.json',JSON.stringify({scenes,issues},null,2));
+ fs.writeFileSync(out+'/results.json',JSON.stringify({scenes,issues},null,2));
  console.log('FINAL_ISSUES',JSON.stringify(issues));
  if(issues.length)process.exitCode=1;
 })().catch(e=>{console.error('PLAYTEST_FATAL',e.stack||e);process.exitCode=1});
