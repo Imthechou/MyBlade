@@ -1,7 +1,7 @@
-name: Publish MyBlade game to GitHub Pages
+name: Publish playable MyBlade to GitHub Pages
 on:
   push:
-    branches: [main]
+    branches: [main, fix/playable-from-archive-20261111]
   workflow_dispatch:
 permissions:
   contents: read
@@ -18,28 +18,18 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
-      - name: Unpack standalone game
+      - name: Prepare exactly one playable site
         run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          import zipfile, shutil
-          if Path('game/index.html').exists():
-              shutil.copytree('game', '_site', dirs_exist_ok=True)
-              source = 'editable game/'
-          else:
-              with zipfile.ZipFile('锻刀大赛.zip') as z:
-                  z.extractall('_unpacked')
-              files=sorted(Path('_unpacked').rglob('index.html'),key=lambda p:len(p.parts))
-              if not files: raise RuntimeError('Game index.html missing from ZIP')
-              shutil.copytree(files[0].parent, '_site', dirs_exist_ok=True)
-              source = str(files[0].parent)
-          Path('_site/.nojekyll').touch()
-          print('Prepared', len(list(Path('_site').rglob('*'))), 'items from', source)
-          PY
+          python3 scripts/prepare_game.py
+          test -s game/index.html
+          mkdir -p _site
+          cp -a game/. _site/
+          touch _site/.nojekyll
+          echo "SITE_FILES: $(find _site -type f | wc -l)"
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v4
         with:
           path: _site
-      - name: Deploy static game
+      - name: Deploy
         id: deployment
         uses: actions/deploy-pages@v4
