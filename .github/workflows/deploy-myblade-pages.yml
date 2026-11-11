@@ -14,22 +14,20 @@ jobs:
   deploy:
     runs-on: ubuntu-24.04
     environment:
-      name: github-pages
+      name: ${{ github.ref_name == 'main' && 'github-pages' || 'myblade-preview' }}
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
-      - name: Prepare exactly one playable site
+      - name: Build project-relative static Pages site
         run: |
-          python3 scripts/prepare_game.py
-          test -s game/index.html
-          mkdir -p _site
-          cp -a game/. _site/
-          touch _site/.nojekyll
-          echo "SITE_FILES: $(find _site -type f | wc -l)"
+          python3 scripts/build_static_site.py
+          test -s _site/index.html
+          test -s _site/__styles.css
+          test ! -e _site/serve.cjs
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v4
         with:
           path: _site
-      - name: Deploy
+      - name: Deploy static game
         id: deployment
         uses: actions/deploy-pages@v4
