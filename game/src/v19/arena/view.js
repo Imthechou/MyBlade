@@ -277,6 +277,7 @@ export function mountTournament(root, { getSave, commit, settings, onLegacy, has
     root.innerHTML = `
       <div class="arena-round-head">
         <h2 tabindex="-1">${esc(course.title)}</h2>
+        <span class="arena-active-blade" title="${esc(blade.name)}">${esc(blade.name)}</span>
         ${rounds.length ? `<span class="arena-round-index">${run.reports.length + 1} / ${rounds.length}</span>` : ''}
         ${button('pause', '暂停', 'quiet round-pause')}
       </div>
@@ -291,7 +292,7 @@ export function mountTournament(root, { getSave, commit, settings, onLegacy, has
         <span data-trial="wave" class="sr-only"></span>
         <div class="trial-verdict"><span data-trial="verdict" class="cut-callout"></span></div>
         <div class="trial-target"><b data-trial="target"></b></div>
-        <div class="trial-bottom">
+        <div class="trial-bottom${run.mode === 'practice' ? ' is-practice' : ''}">
           <div><span>刀刃耐久 <b data-trial="durability">100%</b></span><progress data-trial="wear" aria-label="刀刃耐久" max="100" value="100"></progress></div>
           <p data-trial="tip">滑过靶具</p>
           <div><span>斩断 <b data-trial="hits">0</b></span></div>
@@ -366,6 +367,8 @@ export function mountTournament(root, { getSave, commit, settings, onLegacy, has
       !report.win ? (report.complete ? '连斩未达标' : report.reason === 'wear' ? '耐久耗尽' : '靶具未斩完') : '';
     root.dataset.screen = 'report';
     const shownScore = casual ? report.score : report.performance;
+    const bestProject = (report.projects || []).filter(item => item.score > 0)
+      .sort((a, b) => b.score - a.score)[0];
     root.innerHTML = `<section class="arena-report">
       <header><span>${esc(record.title)}</span><h2 tabindex="-1">${heading}</h2>
         <strong><span data-report-score>0</span></strong>
@@ -377,6 +380,7 @@ export function mountTournament(root, { getSave, commit, settings, onLegacy, has
       </header>
       <div class="arena-result-metrics"><div><b>${report.cut}</b><span>斩断</span></div>
         <div><b>×${report.combo}</b><span>最高连斩</span></div></div>
+      ${bestProject ? `<div class="arena-best-cut"><span>表现最佳</span><b>${esc(bestProject.name)}</b><strong>${bestProject.score}%</strong></div>` : ''}
       ${mode !== 'practice' ? `<div class="report-rewards"><b>+${record.cr} CR</b><b>+${record.xp} XP</b>${record.mastery ? '<span>磨合 +1</span>' : ''}${record.streak >= 2 ? `<span class="is-hot">连胜 ×${record.streak}${record.streakBonus ? ' +' + record.streakBonus : ''}</span>` : ''}</div>` : ''}
       ${record.rank?.gain ? `<div class="arena-rank-gain${record.rank.levelUp ? ' is-up' : ''}">
         <div class="arena-rank-gain-head"><span>赛事评级</span><b>${record.rank.before}</b><i aria-hidden="true">›</i><b>${record.rank.after}</b><em>+${record.rank.gain}</em></div>
