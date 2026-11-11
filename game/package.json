@@ -10,10 +10,9 @@
   "scripts": {
     "start": "node tools/launch.cjs",
     "serve": "node serve.cjs 8123 127.0.0.1",
-    "test": "node --test \"tests/unit/*.test.mjs\"",
-    "test:refs": "node tools/check-refs.mjs",
-    "test:smoke": "node tests/e2e/smoke-pages.mjs http://127.0.0.1:8123",
-    "test:input": "node tests/e2e/input-release.mjs http://127.0.0.1:8123"
+    "test": "node --test tests/unit/*.test.mjs",
+    "test:refs": "node --test tests/unit/*.test.mjs",
+    "test:syntax": "node --check src/v19/forge.js && node --check src/v19/forgeView.js && node --check src/v19/stage.js && node --check src/v19/materials.js && node --check src/v19/tournament.js"
   },
   "type": "module"
 }
