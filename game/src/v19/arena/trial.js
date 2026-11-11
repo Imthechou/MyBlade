@@ -611,47 +611,101 @@ export function createTrial(frame, course, blade, { muted, volume, onPause, onFi
   }
 
   function makeBackdrop() {
+    // One-time high-DPI paint. The arena should feel like a lit object studio,
+    // with the targets as the visual focal point—not a busy wireframe floor.
     const buffer = document.createElement('canvas');
     buffer.width = canvas.width;
     buffer.height = canvas.height;
     const c = buffer.getContext('2d');
     c.setTransform(DPR, 0, 0, DPR, 0, 0);
-    c.fillStyle = grad(c, 0, 0, 0, H, [[0, wall], [.66, horizon], [1, floor]]);
+    c.fillStyle = grad(c, 0, 0, 0, H, [
+      [0, '#0f1829'], [.52, '#1a3048'], [1, '#0e192a'],
+    ]);
     c.fillRect(0, 0, W, H);
-    c.fillStyle = radial(c, W * .50, H * .39, Math.max(W * .63, H * .54), [[0, glow], [1, glow.slice(0, 7) + '00']]);
+    const halo = c.createRadialGradient(W * .49, H * .43, 5,
+      W * .49, H * .43, Math.max(W * .8, H * .54));
+    halo.addColorStop(0, 'rgba(101,186,189,.28)');
+    halo.addColorStop(.36, 'rgba(66,130,158,.14)');
+    halo.addColorStop(1, 'rgba(9,28,49,0)');
+    c.fillStyle = halo;
+    c.fillRect(0, 0, W, H);
+    const warm = c.createRadialGradient(W * .83, H * .20, 0,
+      W * .83, H * .20, W * .74);
+    warm.addColorStop(0, 'rgba(232,172,119,.095)');
+    warm.addColorStop(1, 'rgba(232,172,119,0)');
+    c.fillStyle = warm;
     c.fillRect(0, 0, W, H);
 
-    const y = H * .70;
-    const rx = W * .43, ry = Math.min(H * .095, 78);
-    strokeLine(c, [0, y, W, y], grid);
-    for (let i = -4; i <= 4; i++) {
-      strokeLine(c, [W * (.5 + i * .057), y, W * (.5 + i * .21), H], grid);
+    // Frosted panel edges, a subtle top light bar, and two vertical stage seams.
+    c.strokeStyle = 'rgba(199,228,236,.08)';
+    c.lineWidth = 1;
+    for (const x of [W * .085, W * .915]) {
+      c.beginPath();
+      c.moveTo(x, H * .24);
+      c.lineTo(x, H * .76);
+      c.stroke();
     }
+    c.fillStyle = grad(c, W * .18, 0, W * .82, 0, [
+      [0, 'rgba(154,224,215,0)'], [.5, 'rgba(177,228,227,.24)'],
+      [1, 'rgba(154,224,215,0)'],
+    ]);
+    c.fillRect(W * .18, 1, W * .64, 2);
     c.beginPath();
-    c.ellipse(W / 2, y + 8, rx, ry, 0, 0, TAU);
-    c.fillStyle = shadow;
-    c.fill();
-    c.beginPath();
-    c.ellipse(W / 2, y, rx, ry, 0, 0, TAU);
-    c.fillStyle = grad(c, 0, y - ry, 0, y + ry, [[0, wall], [1, horizon]]);
-    c.fill();
-    c.strokeStyle = grid;
+    c.ellipse(W * .5, H * .34, W * .34, H * .25, 0, Math.PI * 1.07, Math.PI * 1.93);
+    c.strokeStyle = 'rgba(200,228,239,.075)';
     c.stroke();
-    strokeLine(c, [W * .08, H * .34, W * .08, H * .28, W * .15, H * .28], grid, 1.4);
-    strokeLine(c, [W * .92, H * .34, W * .92, H * .28, W * .85, H * .28], grid, 1.4);
+
+    // Floating display dais: layered beveled rings with gentle reflected light.
+    const py = H * .745;
+    const rx = Math.min(W * .415, 325), ry = Math.min(H * .079, 62);
+    const under = c.createRadialGradient(W * .5, py + ry * .7, 0,
+      W * .5, py + ry * .7, rx * 1.35);
+    under.addColorStop(0, 'rgba(4,12,24,.62)');
+    under.addColorStop(1, 'rgba(4,12,24,0)');
+    c.fillStyle = under;
+    c.beginPath(); c.ellipse(W * .5, py + 10, rx * 1.31, ry * 1.65, 0, 0, TAU); c.fill();
+
+    c.beginPath(); c.ellipse(W * .5, py + 12, rx, ry, 0, 0, TAU);
+    c.fillStyle = '#0b1422'; c.fill();
+    c.strokeStyle = 'rgba(4,11,20,.7)'; c.lineWidth = 2; c.stroke();
+    c.beginPath(); c.ellipse(W * .5, py + 3, rx, ry, 0, 0, TAU);
+    c.fillStyle = grad(c, 0, py - ry, 0, py + ry, [
+      [0, '#263e52'], [.36, '#1c3146'], [1, '#162537'],
+    ]); c.fill();
+    c.strokeStyle = 'rgba(158,204,210,.28)'; c.lineWidth = 1.25; c.stroke();
+    c.beginPath(); c.ellipse(W * .5, py, rx * .79, ry * .68, 0, 0, TAU);
+    c.strokeStyle = 'rgba(185,223,224,.10)'; c.lineWidth = 1; c.stroke();
+    // Two clean cinematic highlights on the forward rim.
+    c.beginPath();
+    c.ellipse(W * .5, py + 3, rx, ry, 0, .09 * Math.PI, .91 * Math.PI);
+    c.strokeStyle = 'rgba(119,207,203,.32)'; c.lineWidth = 1.7; c.stroke();
+    c.beginPath();
+    c.ellipse(W * .5, py + 3, rx, ry, 0, 1.18 * Math.PI, 1.69 * Math.PI);
+    c.strokeStyle = 'rgba(239,191,140,.24)'; c.lineWidth = 1.2; c.stroke();
+    // A fine separator communicates depth without dated perspective-grid lines.
+    c.fillStyle = grad(c, 0, py + ry * 1.5, W, py + ry * 1.5, [
+      [0, 'rgba(120,167,192,0)'], [.5, 'rgba(120,167,192,.13)'],
+      [1, 'rgba(120,167,192,0)'],
+    ]);
+    c.fillRect(0, py + ry * 1.5, W, 1);
     return buffer;
   }
-  function renderBackground(){
-    if(!backdrop)backdrop=makeBackdrop();
-    ctx.drawImage(backdrop,0,0,W,H);
-    const t=state.time;
-    for(let i=0;i<ambientDots.length;i++){
-      const p=ambientDots[i],v=.18+.18*Math.sin(t*p.s+p.phase);
-      ctx.fillStyle=`rgba(156,218,218,${v})`;ctx.fillRect(p.x+Math.sin(t*.15+p.phase)*4,p.y+Math.cos(t*.27+p.phase)*9,p.r,p.r);
+  function renderBackground() {
+    if (!backdrop) backdrop = makeBackdrop();
+    ctx.drawImage(backdrop, 0, 0, W, H);
+    const t = state.time;
+    // Very few slow drifting dust motes, always behind the target art.
+    for (let i = 0; i < ambientDots.length; i++) {
+      const p = ambientDots[i], a = .06 + .13 * (1 + Math.sin(t * p.s + p.phase)) * .5;
+      ctx.fillStyle = 'rgba(208,235,235,' + a + ')';
+      ctx.fillRect(p.x + Math.sin(t * .12 + p.phase) * 3,
+        p.y + Math.cos(t * .18 + p.phase) * 5, p.r * .65, p.r * .65);
     }
-    // Pulsed horizon highlights and a projection directly under each target.
-    ctx.fillStyle=`rgba(134,244,222,${.022+.016*Math.sin(t*.8)})`;
-    ctx.beginPath();ctx.ellipse(W*.5,H*.71,Math.min(W*.35,310),Math.min(H*.09,70),0,0,TAU);ctx.fill();
+    ctx.fillStyle = 'rgba(134,230,214,' + (.016 + .008 * Math.sin(t * .82)) + ')';
+    ctx.beginPath();
+    ctx.ellipse(W * .5, H * .745, Math.min(W * .3, 260),
+      Math.min(H * .055, 48), 0, 0, TAU);
+    ctx.fill();
   }
   function shadowForTarget(t){
     /* 阴影必须落在精灵脚底，否则会浮在下方 30px 处，目标看上去悬空。 */
