@@ -1,0 +1,51 @@
+name: Restore MyBlade and real-browser playtest
+on:
+  push:
+    branches: [fix/playable-from-archive-20261111]
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  restore-playtest:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 22
+    steps:
+      - uses: actions/checkout@v4
+      - name: Restore editable game source from latest archive
+        run: python3 scripts/prepare_game.py
+      - name: Validate entry and basic module syntax
+        run: |
+          test -s game/index.html
+          for f in game/src/v19/forgeView.js game/src/v19/stage.js game/src/v19/materials.js game/src/app/bootstrap.js; do
+            test ! -f "$f" || node --check "$f"
+          done
+      - name: Commit editable source and remove duplicate archive
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add game/
+          git rm -f -- '*.zip' || true
+          if ! git diff --cached --quiet; then
+            git commit -m "chore: restore editable latest game and remove compressed duplicate"
+            git push origin "HEAD:$GITHUB_REF_NAME" || echo "WARNING: action token cannot push; restored source retained in run"
+          fi
+      - name: Install real Chromium
+        run: |
+          npm install --no-audit --no-fund --no-save playwright@1.56.1
+          npx playwright install chromium
+      - name: Browser UI smoke and clickable forging
+        run: |
+          python3 -m http.server 4173 --bind 127.0.0.1 --directory game >/tmp/myblade-http.log 2>&1 &
+          sleep 2
+          timeout --signal=TERM --kill-after=10s 125s node qa/archive-playtest.cjs
+      - name: Five-phase forging regression
+        if: success()
+        run: timeout --signal=TERM --kill-after=10s 155s node qa/forge-visual.spec.cjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: myblade-playtest-screenshots-and-results
+          path: |
+            audit-playtest/
+            audit/
+          if-no-files-found: ignore
