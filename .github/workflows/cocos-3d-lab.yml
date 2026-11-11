@@ -1,0 +1,76 @@
+name: Cocos 3D lab validation
+on:
+  push:
+    branches: [main, feat/cocos-blade-lab]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  structure:
+    name: Validate project and asset links
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Scene and source structural checks
+        run: node tools/validate-project.mjs
+
+  cocos-web-playtest:
+    name: Build Cocos Web and Playwright screenshots
+    needs: structure
+    # SECURITY: Do not run PR/fork code on a personal Windows machine.
+    # This public repository only runs self-hosted builds from owner-controlled push branches.
+    if: ${{ github.event_name == 'push' && github.repository == 'Imthechou/MyBlade' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/feat/cocos-blade-lab') }}
+    runs-on: [self-hosted, windows, cocos-3.8]
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Require locally installed Cocos Creator
+        shell: pwsh
+        run: |
+          if (-not $env:COCOS_CREATOR_EXE) { throw "Set COCOS_CREATOR_EXE before launching run.cmd." }
+          if (-not (Test-Path -LiteralPath $env:COCOS_CREATOR_EXE -PathType Leaf)) { throw "Cocos executable not found at $env:COCOS_CREATOR_EXE" }
+      - name: Cocos Creator 3.8 build web-mobile
+        shell: pwsh
+        run: |
+          $buildArgs = @(
+            "--project", "$((Get-Location).Path)",
+            "--build", "platform=web-mobile;debug=true;buildPath=project://build;outputName=web-mobile;startScene=d09b082c-0b82-4dbb-8018-6e0e4c443f4a"
+          )
+          & $env:COCOS_CREATOR_EXE @buildArgs
+          $exitCode = $LASTEXITCODE
+          Write-Host "Cocos exit code: $exitCode"
+          if ($exitCode -ne 0 -and $exitCode -ne 36) { throw "Cocos Creator build failed ($exitCode)" }
+          $index = Get-ChildItem -Path ./build -Filter index.html -Recurse -File -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $index) { throw "No build/**/index.html found: build did not yield a playable web package" }
+      - name: Install Playwright Chromium
+        shell: pwsh
+        run: |
+          npm install --no-save --no-package-lock playwright@1.56.1
+          if ($LASTEXITCODE -ne 0) { throw "npm install playwright failed" }
+          npx playwright install chromium
+          if ($LASTEXITCODE -ne 0) { throw "Playwright Chromium install failed" }
+      - name: Real WebGL launch and screenshot assertions
+        shell: pwsh
+        run: |
+          node tools/verify-web.mjs
+          if ($LASTEXITCODE -ne 0) { throw "WebGL playtest failed" }
+      - name: Upload screenshots and report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: myblade-cocos-web-visual-audit
+          path: artifacts/
+          if-no-files-found: warn
+          retention-days: 14

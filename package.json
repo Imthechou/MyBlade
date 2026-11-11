@@ -1,0 +1,8 @@
+{
+  "name": "myblade-cocos-lab",
+  "version": "0.1.0",
+  "private": true,
+  "type": "3d",
+  "uuid": "dad84b83-56ce-4120-bfaa-0d431e6c49a0",
+  "description": "Cocos Creator 3.8 3D sword + PBR + physics cut technical spike"
+}
