@@ -45,6 +45,21 @@ const errors=[],records=[];
  const canvas=page.locator('#v19-arena .trial-frame canvas').first();
  const r=await canvas.boundingBox();
  if(!r)throw new Error('Trial canvas invisible');
+ // Native Chromium touch gesture, not a mouse-only stand-in for a mobile game.
+ const cdp=await context.newCDPSession(page);
+ const touchBefore=Number(await page.locator('[data-trial="hits"]').textContent())||0;
+ const sx=r.x+r.width*.07,ex=r.x+r.width*.93,sy=r.y+r.height*.56;
+ await cdp.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x:sx,y:sy,id:1}]});
+ for(let step=1;step<=14;step++){
+   await cdp.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{
+     x:sx+(ex-sx)*step/14,y:sy+Math.sin(step/14*Math.PI)*2,id:1,
+   }]});
+ }
+ await cdp.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});
+ await page.waitForTimeout(110);
+ const touchAfter=Number(await page.locator('[data-trial="hits"]').textContent())||0;
+ if(touchAfter<=touchBefore)throw new Error('Real touchscreen swipe did not cut a target');
+ console.log('ARENA_TOUCH',JSON.stringify({before:touchBefore,after:touchAfter}));
  for(let i=0;i<14;i++){
    const yy=r.y+r.height*(.28+(i%5)*.11);
    const left=r.x+r.width*.12,right=r.x+r.width*.88;
