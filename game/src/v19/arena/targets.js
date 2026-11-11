@@ -54,15 +54,17 @@ export function targetSprite(key) {
 }
 
 /** null = image unavailable, boolean = whether this normalized point touches visible art.
- * Sample a single 64² cached mask and its immediate neighbors for forgiving touch input.
+ * Sample a single 64² cached mask with a small touch-friendly tolerance.
  */
 export function targetAlphaAt(key, x, y) {
   const alpha = images.get(key)?.mask;
   if (!alpha) return null;
   const cx = Math.floor(x * MASK_SIZE), cy = Math.floor(y * MASK_SIZE);
   if (cx < 0 || cy < 0 || cx >= MASK_SIZE || cy >= MASK_SIZE) return false;
-  for (let oy = -1; oy <= 1; oy++) {
-    for (let ox = -1; ox <= 1; ox++) {
+  // A small diamond-shaped touch tolerance favors fast thumbs without hitting blank corners.
+  for (let oy = -2; oy <= 2; oy++) {
+    for (let ox = -2; ox <= 2; ox++) {
+      if (Math.abs(ox) + Math.abs(oy) > 3) continue;
       const px = cx + ox, py = cy + oy;
       if (px >= 0 && py >= 0 && px < MASK_SIZE && py < MASK_SIZE && alpha[py * MASK_SIZE + px] > 45) return true;
     }
