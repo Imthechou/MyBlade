@@ -161,7 +161,7 @@ export function createTrial(frame, course, blade, { muted, volume, onPause, onFi
     state.targets.forEach((target, i) => {
       target.x = W / 2 + (i - (count - 1) / 2) * step;
       // Set target feet near the lit platform. The previous offset made props float in mid-air.
-      target.y = H * (row ? .56 : .50);
+      target.y = H * (row ? .58 : .50);
       target.scale = scale;
     });
   }
