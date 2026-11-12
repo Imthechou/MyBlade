@@ -1519,3 +1519,48 @@
   #v19-arena .trial-hud [data-trial="score"] { font-size: 24px; }
   #v19-arena .arena-active-blade { max-width: 20vw; }
 }
+
+
+/* 30-second arena progression: one compact summary per growth track. */
+#v19-arena .arena-blade-growth {
+  display: grid;
+  gap: 6px;
+  border: 1px solid color-mix(in srgb, var(--accent) 25%, var(--line));
+  border-radius: 12px;
+  padding: 10px 12px;
+  background: var(--showcase-surface);
+}
+#v19-arena .arena-blade-growth-head,
+#v19-arena .arena-workshop-growth {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 9px;
+  font-size: 12px;
+}
+#v19-arena .arena-blade-growth-head span {
+  color: var(--face);
+  font-weight: 750;
+}
+#v19-arena .arena-blade-growth-head b {
+  color: var(--accent-cool-deep);
+  font: 750 12px var(--v19-mono);
+}
+#v19-arena .arena-blade-growth small {
+  color: var(--face-3);
+  font-size: 10px;
+}
+#v19-arena .arena-blade-growth .arena-rank-track { margin: 0; }
+#v19-arena .arena-workshop-growth {
+  color: var(--face-2);
+  padding: 2px 6px;
+}
+#v19-arena .arena-workshop-growth span {
+  color: var(--face);
+  font-weight: 750;
+}
+#v19-arena .arena-workshop-growth b {
+  color: var(--face-3);
+  font-size: 11px;
+  font-weight: 600;
+}

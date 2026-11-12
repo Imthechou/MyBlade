@@ -200,6 +200,7 @@ function settleTournament(save, run, record) {
   const bladeId = blade?.id;
   const official = ['school', 'national', 'apex'].includes(mode);
   const before = save.cr;
+  const workshopBefore = workshopSnapshot(save);
   let events;
   if (official) {
     const performance = { version: 'cut-v19', result: { structure: { primary: report.progress } },
@@ -213,6 +214,12 @@ function settleTournament(save, run, record) {
     events = [{ key: 'v19:' + id, cr: record.cr, xp: record.xp }];
   }
   const grants = applyCareerGrants(save, events);
+  const workshopAfter = workshopSnapshot(save);
+  record.workshop = {
+    level: workshopAfter.level, xp: workshopAfter.xp,
+    nextXp: workshopAfter.nextXp, gained: workshopAfter.xp - workshopBefore.xp,
+    leveled: workshopAfter.level > workshopBefore.level,
+  };
   record.xp = grants.reduce((sum, grant) => sum + grant.xp, 0);
   addCr(save, grants.reduce((sum, grant) => sum + grant.cr, 0), 'cut:v19');
   const win = mode === 'school' ? report.win : official && champion;
