@@ -7,6 +7,7 @@ import { createTrial, warmTrialAudio } from './trial.js';
 import { targetThumbnail, warmTargets } from './targets.js';
 import { mountBladeThumbnail, disconnectBladeThumbnails } from '../collectionThumb.js';
 import { countUp } from '../../ui/dom.js';
+import { workshopSnapshot } from '../../core/arenaV41Growth.js';
 
 const esc = value => String(value ?? '').replace(/[&<>"']/g, character => ({
   '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
@@ -129,6 +130,7 @@ export function mountTournament(root, { getSave, commit, settings, onLegacy, has
   function renderHome(data, blades) {
     const loan = !blades.length;
     const dailyDone = Boolean(data.daily[dayKey()]?.rewarded);
+    const workshop = workshopSnapshot(getSave());
     const keys = ['card', 'rope', 'bamboo'];
     warmTargets(keys);
     return `<section class="arena-home">
@@ -136,6 +138,7 @@ export function mountTournament(root, { getSave, commit, settings, onLegacy, has
       <header class="arena-hero">
         <div class="arena-hero-heading">
           <span class="arena-chip">${loan ? '12 秒试刀' : '30 秒快赛'}</span>
+          <span class="arena-chip">工坊 Lv.${workshop.level}</span>
           ${data.streak >= 2 ? `<span class="arena-chip" data-hot="true">连胜 ×${data.streak}</span>` : ''}
           ${data.best.quick ? `<span class="arena-chip">最高 ${data.best.quick}</span>` : ''}
           <h1 tabindex="-1">斩试场</h1>
@@ -389,6 +392,10 @@ export function mountTournament(root, { getSave, commit, settings, onLegacy, has
         <div class="arena-blade-growth-head"><span>此刀成长 · ${esc(record.mastery.level)}</span><b>${record.mastery.xp} XP</b></div>
         <div class="arena-rank-track" aria-label="刀具成长进度"><i style="--v:${Math.round(record.mastery.progress * 100)}%"></i></div>
         <small>${record.mastery.nextLevel ? `距${esc(record.mastery.nextLevel)}还需 ${record.mastery.nextXp - record.mastery.xp} XP` : '已达最高熟练度'} · ${esc(record.mastery.project)}专长</small>
+      </div>` : ''}
+      ${record.workshop ? `<div class="arena-workshop-growth">
+        <span>工坊 Lv.${record.workshop.level}${record.workshop.leveled ? ' · 升级！' : ''}</span>
+        <b>${record.workshop.nextXp ? `下一级还差 ${Math.max(0, record.workshop.nextXp - record.workshop.xp)} XP` : '已满级'}</b>
       </div>` : ''}
       ${record.rank?.gain ? `<div class="arena-rank-gain${record.rank.levelUp ? ' is-up' : ''}">
         <div class="arena-rank-gain-head"><span>赛事评级</span><b>${record.rank.before}</b><i aria-hidden="true">›</i><b>${record.rank.after}</b><em>+${record.rank.gain}</em></div>
