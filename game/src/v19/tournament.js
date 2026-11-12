@@ -222,7 +222,7 @@ export function courseFor(run) {
     combo: 0, timedLoop: true, arcade: !practice,
     hpScale: practice ? .63 : .54, wearScale: .27,
     seed: run.mode === 'daily' ? run.date : run.id,
-    rotate: false,
+    rotate: !practice,
   };
 }
 
