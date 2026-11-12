@@ -1598,6 +1598,28 @@
 #v19-arena .arena-report-hint { margin: 0; color: var(--face-2); text-align: center; font-size: 12px; }
 #v19-arena .arena-workshop-growth b { text-align: right; }
 
+#v19-arena .arena-blade-profile {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 4px;
+  color: var(--face-2);
+  font-size: 11px;
+}
+#v19-arena .arena-blade-profile span {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 4px;
+  padding: 4px 7px;
+  border-radius: 7px;
+  background: var(--showcase-surface);
+}
+#v19-arena .arena-blade-profile b { color: var(--accent-cool-deep); font: 700 12px var(--v19-mono); }
+#v19-arena .trial-wear { max-width: 148px; }
+#v19-arena .trial-goal.is-danger { border-color: #ff83667a; }
+#v19-arena .trial-goal.is-danger b, #v19-arena .cut-callout.deflect { color: #ffab92; }
+#v19-arena .trial-goal.is-danger progress { accent-color: #fb765e; }
+
 @media (prefers-reduced-motion: reduce) {
   #v19-arena .arena-report > *,
   #v19-arena .trial-ready.is-on { animation: none; }

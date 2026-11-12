@@ -6,6 +6,7 @@ import { BladeAudio } from './audio.js';
 import { ART_BOUNDS, targetSprite, warmTargets, targetAlphaAt } from './targets.js';
 import { courseGoals } from './courses.js';
 import { flightAt, flightSchedule } from './flight.js';
+import { ARMOR_BODY_SHARE, arenaBladeStats, deflectsSwipe, strikeDamage, wearCost } from './stats.js';
 
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 const lerp = (a, b, t) => a + (b - a) * t;
@@ -64,15 +65,14 @@ export function createTrial(frame, course, blade, { muted, volume, onPause, onFi
     projects.set(wave.project, project);
     return wave.launches.map(launch => ({ ...launch, group }));
   }).sort((a, b) => a.begins - b.begins);
-  const stats = blade.stats.map(value => clamp(value, 0, 150));
-  const [power, toughness, edge, craft, design, spirit] = stats;
-  const bladeAccent = ['#f7bd86', '#a8d0e7', '#c8f2e7', '#a6dfda', '#cdb9f6', '#f4d7a0'][stats.indexOf(Math.max(...stats))];
+  const stats = arenaBladeStats(blade.stats);
+  const bladeAccent = ['#f7bd86', '#a8d0e7', '#c8f2e7', '#a6dfda', '#cdb9f6', '#f4d7a0'][stats.strongest];
   const mastery = blade.mastery;
   const perk = signaturePerk(blade.signature);
   audio.setVolume(volume);
   const state = {
     screen: 'ready', score: 0, bestCombo: 0, bestSwipe: 0, durability: 100, time: 0, elapsed: 0,
-    waves: 0, cut: 0, hits: 0, damage: 0, targets: [], pieces: [], particles: [], rings: [],
+    waves: 0, cut: 0, hits: 0, damage: 0, deflections: 0, targets: [], pieces: [], particles: [], rings: [],
     slashes: [], trails: [], impacts: [], comboChain: 0, lastKillAt: -Infinity,
     objectives: { multi: 0, precision: 0, armor: 0, relay: 0, mixed: 0 },
     pointer: { down: false, points: [], hitTargets: new Set() },
@@ -98,7 +98,11 @@ export function createTrial(frame, course, blade, { muted, volume, onPause, onFi
       write(node, goal.id === 'durability' ? goal.value + '% / ' + goal.target + '%' : goal.value + ' / ' + goal.target);
       node.closest('.trial-goal').classList.toggle('is-met', goal.met);
     });
-    if (ui.wear) ui.wear.value = state.durability;
+    if (ui.wear) {
+      ui.wear.value = state.durability;
+      ui.wear.closest('.trial-goal').classList.toggle('is-danger', state.durability < 25);
+      write(ui.durability, Math.floor(state.durability) + '%');
+    }
   }
 
   function updateClock(now) {
@@ -128,7 +132,7 @@ export function createTrial(frame, course, blade, { muted, volume, onPause, onFi
   }
 
   function showVerdict(text, kind) {
-    if (kind !== 'combo' && state.elapsed - lastVerdict < .37) return;
+    if (kind !== 'combo' && kind !== 'deflect' && state.elapsed - lastVerdict < .37) return;
     lastVerdict = state.elapsed;
     ui.verdict.className = 'cut-callout ' + kind;
     ui.verdict.textContent = text;
@@ -219,7 +223,8 @@ export function createTrial(frame, course, blade, { muted, volume, onPause, onFi
       reason, score: state.score, combo: state.bestCombo, swipe: state.bestSwipe,
       hits: state.hits, cut: state.cut, waves: state.waves,
       missed: launches.length - state.cut, objectives: { ...state.objectives },
-      damage: state.damage, durability: state.durability,
+      damage: state.damage, durability: state.durability, deflections: state.deflections,
+      scoreMultiplier: stats.scoreMultiplier,
       projects: [...projects].map(([kind, item]) => ({
         kind, name: PROJECTS[kind].name, score: Math.round(item.damage / item.count * 100),
       })),
@@ -257,7 +262,7 @@ export function createTrial(frame, course, blade, { muted, volume, onPause, onFi
       const id = ++launchIndex;
       const launch = launches[id - 1];
       const m = MATERIALS[launch.key];
-      const hp = m.armor * course.armorScale;
+      const hp = m.armor * course.armorScale * (launch.reinforced ? .70 : 1);
       state.targets.push({
         ...launch, id, m, alive: true, hp, maxHp: hp, pose: null, strikes: [], cracks: [],
         recoil: 0, recoilTime: 1, impulseX: 0, impulseY: 0, tilt: 0,
@@ -265,25 +270,14 @@ export function createTrial(frame, course, blade, { muted, volume, onPause, onFi
       state.waves = Math.max(state.waves, launch.group.index + 1);
     }
     state.targets = state.targets.filter(target => target.alive && state.elapsed < target.begins + target.duration);
-    if (state.comboChain && state.elapsed - state.lastKillAt > 1.18) clearCombo();
+    if (state.comboChain && state.elapsed - state.lastKillAt > stats.chainWindow) clearCombo();
   }
 
   function specialtyBonus(target) {
     return mastery && (mastery.specialty === target.group.project || mastery.specialty === course.specialty) ? mastery.bonus : 0;
   }
 
-  function damageFor(target, speed) {
-    if (!target.armored) return target.hp;
-    const tempo = clamp(speed / Math.max(650, W * 1.8), .22, 1);
-    const signature = perk?.targets.includes(target.key) ? 1 + Math.min(.10, perk.bonus) : 1;
-    const condition = state.durability < 20 ? .82 : 1;
-    const variance = 1 + (target.variation - .5) * (.13 - craft * .0006);
-    const crit = target.strikes.length === 0 && target.luck < .04 + spirit * .0009 ? 1.18 : 1;
-    const damage = (49 + power * .24 + edge * .18 + tempo * 29) *
-      (1 + specialtyBonus(target)) * signature * condition * variance * crit;
-    // Armor always needs at least two deliberate strokes.
-    return Math.min(target.maxHp * .64, damage);
-  }
+  const markRadiusFor = target => stats.markRadius * (1 + specialtyBonus(target));
 
   function recordCut(target, precise) {
     const group = target.group;
@@ -327,15 +321,16 @@ export function createTrial(frame, course, blade, { muted, volume, onPause, onFi
     const pointer = state.pointer;
     pointer.kills++;
     state.bestSwipe = Math.max(state.bestSwipe, pointer.kills);
-    const chained = state.elapsed - state.lastKillAt <= 1.18;
+    const chained = state.elapsed - state.lastKillAt <= stats.chainWindow;
     state.comboChain = chained ? state.comboChain + 1 : 1;
     state.lastKillAt = state.elapsed;
     state.bestCombo = Math.max(state.bestCombo, state.comboChain);
     const chainBonus = Math.min(54, (state.comboChain - 1) * 7);
     const swipeBonus = pointer.kills >= 3 ? 42 + (pointer.kills - 3) * 20 : 0;
     const cuttingBonus = mastery?.specialty === 'cutting' ? specialtyBonus(target) : 0;
-    const style = 1 + design * .001 + cuttingBonus;
-    state.score += Math.round((target.m.score * (target.armored ? 3.1 : 2) + chainBonus +
+    const style = stats.scoreMultiplier * (1 + cuttingBonus);
+    const targetWeight = target.armored ? 3.1 : target.reinforced ? 2.45 : 2;
+    state.score += Math.round((target.m.score * targetWeight + chainBonus +
       swipeBonus + (precise ? 32 : 0)) * style);
     recordCut(target, precise);
     if (pointer.kills >= 3) {
@@ -348,18 +343,21 @@ export function createTrial(frame, course, blade, { muted, volume, onPause, onFi
     }
   }
 
-  function hitTarget(target, contact, dx, dy, speed, index) {
+  function hitTarget(target, contact, dx, dy, speed, tempo, index) {
     const pointer = state.pointer;
     pointer.hitTargets.add(target.id);
     if (!target.strikes.length) state.hits++;
-    const damage = damageFor(target, speed);
+    const signature = perk?.targets.includes(target.key) ? 1 + Math.min(.10, perk.bonus) : 1;
+    const specialty = specialtyBonus(target);
+    const damage = strikeDamage(stats, target, tempo, state.durability, (1 + specialty) * signature);
     const previous = target.hp / target.maxHp;
     target.hp = Math.max(0, target.hp - damage);
     const remainder = target.hp / target.maxHp;
     state.damage += previous - remainder;
     projects.get(target.group.project).damage += previous - remainder;
     const broken = target.hp <= 0;
-    const fracture = !broken && ((previous > .68 && remainder <= .68) || (previous > .33 && remainder <= .33));
+    const shellBroke = target.armored && previous > ARMOR_BODY_SHARE && remainder <= ARMOR_BODY_SHARE;
+    const fracture = !broken && (shellBroke || (previous > .33 && remainder <= .33));
     const phase = broken ? 'break' : fracture ? 'fracture' : 'hit';
     const length = Math.hypot(dx, dy);
     const force = clamp(speed / Math.max(540, W * 1.22), .62, 1.32);
@@ -370,9 +368,7 @@ export function createTrial(frame, course, blade, { muted, volume, onPause, onFi
     target.strikes.push({ angle: Math.atan2(contact.uy, contact.ux), time: state.time, offset: contact.offset });
     if (!broken) makeCrack(target, dx, dy, damage);
     if (course.wearScale) {
-      const mitigation = (.8 + toughness * .006 + craft * .0018) * (1 + specialtyBonus(target));
-      const wear = target.m.wear * (target.armored ? 2.25 : 1) * (.90 + force * .22) / mitigation;
-      state.durability = Math.max(0, state.durability - wear * course.wearScale);
+      state.durability = Math.max(0, state.durability - wearCost(stats, target, force, course.wearScale, specialty));
     }
     if (!state.reducedMotion && target.armored) {
       state.flash = Math.max(state.flash, broken ? .17 : fracture ? .085 : .045);
@@ -396,7 +392,7 @@ export function createTrial(frame, course, blade, { muted, volume, onPause, onFi
       lastBuzz = now;
     }
     if (broken) splitTarget(target, contact, dx, dy, contact.precise);
-    else if (fracture) showVerdict(target.key === 'steel' || target.key === 'shield' ? '破甲' : '开裂', 'fracture');
+    else if (fracture) showVerdict(shellBroke ? '破甲' : '开裂', 'fracture');
   }
 
   function strokeSegment(a, b, seconds) {
@@ -405,6 +401,7 @@ export function createTrial(frame, course, blade, { muted, volume, onPause, onFi
     const speed = length / Math.max(.006, seconds);
     if (speed < Math.max(138, Math.min(220, W * .35))) return;
     const pointer = state.pointer;
+    if (pointer.deflected) return;
     if (!pointer.swung) {
       pointer.swung = true;
       audio.playSwing({ heavy: state.targets.some(target => target.anchored && target.pose?.y < H * .79) });
@@ -418,9 +415,20 @@ export function createTrial(frame, course, blade, { muted, volume, onPause, onFi
     if (!hits.length) return;
     hits.sort((a, b) => a.contact.ratio - b.contact.ratio);
     const previous = state.score;
+    const tempo = clamp(speed / Math.max(650, W * 1.8), .22, 1);
     for (const [i, { target, contact }] of hits.entries()) {
       if (state.durability <= 0) break;
-      hitTarget(target, contact, dx, dy, speed, i);
+      if (deflectsSwipe(stats, target, tempo, pointer.hitTargets.size)) {
+        pointer.deflected = true;
+        state.deflections++;
+        clearCombo();
+        showVerdict('弹刀', 'deflect');
+        audio.playHit({ material: target.key, stage: 'hit', force: .78, pan: (contact.x / W - .5) * .95 });
+        burst(contact.x, contact.y, target.m, 5);
+        haptics.vibrate(12);
+        break;
+      }
+      hitTarget(target, contact, dx, dy, speed, tempo, i);
     }
     updateHUD();
     if (state.score > previous) showScore(state.score - previous);
@@ -434,7 +442,7 @@ export function createTrial(frame, course, blade, { muted, volume, onPause, onFi
   function beginStroke(point, id) {
     Object.assign(state.pointer, {
       down: true, id, points: [point], anchor: point, x: point.x, y: point.y,
-      kills: 0, swung: false, lastContact: -Infinity, soundGroup: 0,
+      kills: 0, swung: false, deflected: false, lastContact: -Infinity, soundGroup: 0,
     });
     state.pointer.hitTargets.clear();
   }
@@ -579,7 +587,7 @@ export function createTrial(frame, course, blade, { muted, volume, onPause, onFi
     const length = Math.hypot(dx, dy);
     const ux = dx / length, uy = dy / length;
     const samples = Math.max(2, Math.ceil(length * (leave - enter) / 5));
-    const markRadius = 23 * (1 + specialtyBonus(target));
+    const markRadius = target.marked ? markRadiusFor(target) : 0;
     let ratio = null, precise = false;
     for (let i = 0; i <= samples; i++) {
       const t = lerp(enter, leave, i / samples);
@@ -771,7 +779,7 @@ export function createTrial(frame, course, blade, { muted, volume, onPause, onFi
     if (target.marked) {
       // A small high-contrast ring stays inside the material silhouette.
       ctx.beginPath();
-      ctx.arc(0, -4, 23, 0, TAU);
+      ctx.arc(0, -4, markRadiusFor(target), 0, TAU);
       ctx.strokeStyle = '#0a202c';
       ctx.lineWidth = 6;
       ctx.stroke();
@@ -784,7 +792,7 @@ export function createTrial(frame, course, blade, { muted, volume, onPause, onFi
       ctx.fill();
     }
     ctx.restore();
-    if (target.armored) {
+    if (target.armored || target.reinforced) {
       const barWidth = Math.min(102, 87 * scale);
       const barY = y + 113 * scale;
       const gap = 3;

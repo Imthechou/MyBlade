@@ -1,9 +1,9 @@
 import {
-  LOT_SIZE, BATCHES, HEAT, fittingPrice, PHASES, GRADES, rareOdds, oreMaterialOf, MODELS, LOOKS, FITS, STAT_NAMES,
+  LOT_SIZE, BATCHES, HEAT, fittingPrice, PHASES, GRADES, rareOdds, oreMaterialOf, MODELS, LOOKS, FITS, STAT_CAP, STAT_NAMES,
   offers, familyOf, stabilityOf, buyOre, beginRefining, advanceHeat, pourRefining, heatBand, refinementRank,
   REFINEMENT_RESULTS, REFINEMENT_FAILURES, fractureRisk, strike, finishForge,
   fitOptions, refreshFittings, signature, signaturePerk, inspectOre, mineralHeritage, oreInspection, oreModelId,
-  markLamp, tapOreProbe, oreClues, clueCount, probeBudget,
+  markLamp, tapOreProbe, oreClues, clueCount, probeBudget, oreStatFocus,
 } from './forge.js';
 import { attachForgeStage, bindStageInput, createBladeTools, releaseForgeStage } from './sharedStage.js';
 import { forgeMarkup } from './forgeMarkup.js';
@@ -17,7 +17,7 @@ import { countUp } from '../ui/dom.js';
 const PHASE_HINTS = {
   ore: ['v19-ore', '打灯、敲石、擦窗整局各只有一次——用在最像样的那块上。'],
   refine: ['v19-refine', '按住鼓风升温，松手降温；指针进入绿区才开始积累精炼。'],
-  forge: ['v19-forge', '点刀腹、刃侧或刀尖落锤；6 锤后可收，锤数越高断率越高。'],
+  forge: ['v19-forge', '刀腹偏强韧，刃侧偏锋利，刀尖偏设计与灵性。6 锤后可收。'],
   fit: ['v19-fit', '配件只改变六维倾向，不会抹掉已经打出的刀纹。'],
 };
 
@@ -192,7 +192,7 @@ export function mountForge(root, { onArena, onCollection }) {
         actions.innerHTML = button('to-refine', '切开中…', { off: true });
       } else {
         const heritage = mineralHeritage(ore);
-        title(familyOf(ore.family).name, GRADES[ore.grade] + '矿芯', oreMaterialOf(ore).name);
+        title(familyOf(ore.family).name, GRADES[ore.grade] + '矿芯 · 偏' + oreStatFocus(ore), oreMaterialOf(ore).name);
         readout.innerHTML = `<div class="mineral-meters" data-grade="${ore.grade}">
           <div><span>纯净度</span><b id="ore-purity">${ore.purity}</b><i style="--value:${ore.purity}%"></i></div>
           <div><span>稳定性</span><b id="ore-stability">${stabilityOf(ore.stability)}</b><i style="--value:${ore.stability}%"></i></div>
@@ -255,7 +255,7 @@ export function mountForge(root, { onArena, onCollection }) {
         readout.innerHTML = `<div class="forge-result arcade-result${rare ? ' is-rare' : ''}" data-rarity="${esc(rarity)}">
           <span class="result-grade">${esc(record.grade)} · 品质 ${esc(record.quality)}</span>
           <b class="result-score"><span id="result-score">0</span><small> 分</small></b><span>+${record.credit} CR</span></div>
-          <div class="stat-list">${record.stats.map((n, i) => `<div class="stat" style="--i:${i}"><span>${STAT_NAMES[i]}</span><b>${Number(n)}</b><span class="stat-track"><i style="width:${Number(n)}%"></i></span></div>`).join('')}</div>
+          <div class="stat-list">${record.stats.map((n, i) => `<div class="stat" style="--i:${i}"><span>${STAT_NAMES[i]}</span><b>${Number(n)}</b><span class="stat-track"><i style="width:${Math.min(100, Number(n) / STAT_CAP * 100)}%"></i></span></div>`).join('')}</div>
           ${perk ? `<p class="fit-detail result-perk">${esc(perk.desc)}</p>` : ''}`;
         const scoreNode = get('result-score');
         if (scoreRevealKey !== run.resultId) {
@@ -609,6 +609,7 @@ export function mountForge(root, { onArena, onCollection }) {
   const FINISH_WORDS = { metal: '质', pattern: '纹', film: '膜', fx: '光' };
   /* 没有升级到新档位时，用区域对应的产出字，保证每一锤都有可见回报。 */
   const ZONE_WORDS = { belly: '纹', edge: '膜', tip: '光' };
+  const ZONE_FOCUS = { belly: '强度', edge: '锋利', tip: '灵性' };
 
   /** 命中浮字：贴在锤点上方，只显示“这一锤真的留下了什么”。 */
   function showHitFloat(hit, result) {
@@ -651,7 +652,7 @@ export function mountForge(root, { onArena, onCollection }) {
     }
     const canvasRect = stage.canvas.getBoundingClientRect();
     const boxRect = stageBox.getBoundingClientRect();
-    layer.replaceChildren(...[['belly', ZONE_WORDS.belly], ['edge', ZONE_WORDS.edge], ['tip', ZONE_WORDS.tip]]
+    layer.replaceChildren(...Object.entries(ZONE_FOCUS)
       .filter(([zone]) => anchors[zone])
       .map(([zone, word]) => {
         const dot = document.createElement('span');

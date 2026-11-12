@@ -4,6 +4,7 @@ import {
   masteryOf, NATIONAL_UNLOCK,
 } from '../tournament.js';
 import { goalText } from './courses.js';
+import { arenaBladeStats } from './stats.js';
 import { createTrial, warmTrialAudio } from './trial.js';
 import { targetThumbnail, warmTargets } from './targets.js';
 import { mountBladeThumbnail, disconnectBladeThumbnails } from '../collectionThumb.js';
@@ -51,6 +52,8 @@ export function mountTournament(root, { getSave, commit, settings, onLegacy, onF
     const multi = count > 1;
     const specialties = multi ? roundNames(entry.mode).map((_, i) =>
       courseFor({ ...entry, id: 'preview', reports: Array(i) }).specialty) : [course?.specialty];
+    const selected = !multi && blades.find(blade => bladeId(blade) === chosen[0]);
+    const profile = selected && arenaBladeStats(selected.stats);
     const card = (id, name, meta, on, locked, mastered = 0, suited = false) => `<button type="button" class="arena-blade-card${on ? ' is-picked' : ''}${suited ? ' is-suited' : ''}"
       data-arena-action="pick-blade" data-value="${esc(id)}" aria-pressed="${on}"${locked ? ' disabled' : ''}${mastered ? ` data-mastery="${mastered}"` : ''}>
       <span class="arena-blade-art" data-thumb-blade="${esc(id)}"><i class="arena-blade-fallback" aria-hidden="true"></i></span>
@@ -73,6 +76,11 @@ export function mountTournament(root, { getSave, commit, settings, onLegacy, onF
             on, locked, mastery.levelIndex, suited);
         }).join('')}
       </div>
+      ${profile ? `<div class="arena-blade-profile" aria-label="参赛刀能力">
+        <span title="强度与锋利">破坏 <b>${profile.power}</b></span>
+        <span title="韧性与工艺">控制 <b>${profile.control}</b></span>
+        <span title="设计与灵性">表现 <b>${profile.art}</b></span>
+      </div>` : ''}
     </div>`;
   }
 
@@ -311,6 +319,10 @@ export function mountTournament(root, { getSave, commit, settings, onLegacy, onF
             <span>${esc(goal.label)} <b data-trial="goal-${i}"></b></span>
             ${goal.id === 'durability' ? '<progress data-trial="wear" aria-label="刀刃耐久" max="100" value="100"></progress>' : ''}
           </div>`).join('')}
+          ${course.wearScale && !course.goals.some(goal => goal.id === 'durability') ? `<div class="trial-goal trial-wear">
+            <span>刀刃耐久 <b data-trial="durability">100%</b></span>
+            <progress data-trial="wear" aria-label="刀刃耐久" max="100" value="100"></progress>
+          </div>` : ''}
           <div class="trial-cut-count"><span>斩断 <b data-trial="hits">0</b></span></div>
         </div>
         <div class="trial-cover" data-cover hidden></div>
@@ -377,7 +389,7 @@ export function mountTournament(root, { getSave, commit, settings, onLegacy, onF
       plan: { mode, style: run.style, material: run.material, school: run.school, grade: nextGrade ?? run.grade },
       ids: run.roster.filter(blade => blade.id !== 'training').map(bladeId),
     } : null;
-    const reason = casual ? (record.paidDaily ? '今日奖励已领取' :
+    const reason = casual ? (report.reason === 'wear' ? '刀刃耐久耗尽' : record.paidDaily ? '今日奖励已领取' :
       !record.qualified && mode !== 'practice' ? '斩断 4 个靶具即可获得成长奖励' : '') :
       mode === 'apex' && record.done && !record.champion ? '全轮达标且总评 ≥ ' + APEX_GOAL + ' 分夺冠' :
       !report.win ? (report.reason === 'wear' ? '耐久耗尽' : '本轮目标未达成') : '';
@@ -404,7 +416,12 @@ export function mountTournament(root, { getSave, commit, settings, onLegacy, onF
       </header>
       <div class="arena-result-metrics"><div><b>${report.cut}</b><span>斩断</span></div>
         ${Number.isFinite(report.swipe) ? `<div><b>${report.swipe}</b><span>一刀最多</span></div>` : ''}
-        <div><b>×${report.combo}</b><span>最高连斩</span></div></div>
+        <div><b>×${report.combo}</b><span>最高连斩</span></div>
+        ${report.tracksWear && !report.goals?.some(goal => goal.id === 'durability') ? `<div><b>${Math.floor(report.durability)}%</b><span>剩余耐久</span></div>` : ''}
+      </div>
+      ${report.cut > 0 && Number.isFinite(report.scoreMultiplier) ? `<p class="arena-report-hint">
+        灵性得分 ×${report.scoreMultiplier.toFixed(2)}${report.deflections > 0 ? ' · 弹刀 ' + report.deflections + ' 次' : ''}
+      </p>` : ''}
       ${report.goals?.length ? `<div class="arena-report-goals">${report.goals.map(goal => `<div data-met="${goal.met}">
         <span>${esc(goal.label)}</span><b>${esc(goal.value)}${esc(goal.unit)} / ${esc(goal.target)}${esc(goal.unit)} ${goal.met ? '✓' : ''}</b>
       </div>`).join('')}</div>` : ''}

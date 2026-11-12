@@ -121,6 +121,7 @@ async function quick(page, cdp) {
     });
   });
   await page.goto(new URL('#/arena', target).href);
+  assert.match(await page.locator('.arena-blade-profile').innerText(), /破坏\s*80/);
   await page.getByRole('button', { name: '开始快赛' }).click();
   const box = await page.locator('.trial-frame canvas').boundingBox();
   assert.equal(await page.locator(ui('time')).textContent(), '30″');
@@ -141,6 +142,7 @@ async function quick(page, cdp) {
     await nativeSwipe(cdp, box, x - .12, x + .12, y);
   }
   assert.ok(Number(await page.locator(ui('hits')).textContent()) >= 4, 'Quick match should qualify for growth');
+  assert.ok(Number.parseInt(await page.locator(ui('durability')).textContent(), 10) < 100);
   await page.getByRole('button', { name: '暂停', exact: true }).click();
   const pausedAt = await page.locator(ui('time')).textContent();
   await page.waitForTimeout(1100);
@@ -153,6 +155,7 @@ async function quick(page, cdp) {
   const report = await snapshot(page, '04-arena-quick-growth');
   assert.match(report.report, /工坊 Lv\.2/);
   assert.match(report.report, /里程碑/);
+  assert.match(report.report, /灵性得分 ×0\.98/);
   await page.reload({ waitUntil: 'domcontentloaded' });
   await page.locator('#v19-arena[data-screen="lobby"]').waitFor();
   assert.match(await page.locator('#v19-arena .arena-hero').innerText(), /工坊 Lv\.2/);
