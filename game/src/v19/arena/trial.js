@@ -50,11 +50,11 @@ export function warmTrialAudio() {
   void audio.preload().catch(() => {});
 }
 
-export function createTrial(frame, course, blade, { muted, volume, onPause, onFinish }) {
+export function createTrial(frame, course, blade, { hud = frame, muted, volume, onPause, onFinish }) {
   const canvas = frame.querySelector('canvas');
   const ctx = canvas.getContext('2d', { alpha: false });
   if (!ctx) throw new Error('浏览器无法开启切割画布');
-  const ui = Object.fromEntries([...frame.querySelectorAll('[data-trial]')].map(node => [node.dataset.trial, node]));
+  const ui = Object.fromEntries([...hud.querySelectorAll('[data-trial]')].map(node => [node.dataset.trial, node]));
   const ready = frame.querySelector('[data-trial-ready]');
   const input = new AbortController();
   const projects = new Map();
@@ -111,6 +111,7 @@ export function createTrial(frame, course, blade, { muted, volume, onPause, onFi
     if (clock === seconds) return;
     clock = seconds;
     write(ui.time, String(seconds).padStart(2, '0') + '″');
+    if (ui.timer) ui.timer.value = seconds;
     ui.time.classList.toggle('urgent', seconds <= 5);
     if (phaseMarks > 1) {
       const act = Math.min(2, Math.floor((course.limit - seconds) / 10));

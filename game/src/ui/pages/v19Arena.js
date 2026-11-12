@@ -3,6 +3,7 @@ import { commitTournament, hasLegacyCareer, openFurnace, tournamentView } from '
 import { get } from '../../core/progress.js';
 import router from '../router.js';
 import { toast } from '../dom.js';
+import { open as openSettings } from '../settingsSheet.js';
 
 let page;
 let pending;
@@ -18,6 +19,7 @@ export function render() {
     commit: commitTournament,
     settings: () => get().settings,
     hasLegacyCareer,
+    onSettings: openSettings,
     onLegacy: () => router.go('legacy-arena'),
     onForge: () => {
       const result = openFurnace({ restart: true });
@@ -35,4 +37,8 @@ export function leave() {
 
 export function pauseForSettings() {
   page?.pause();
+}
+
+export function back() {
+  return page?.back();
 }

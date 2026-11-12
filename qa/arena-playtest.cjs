@@ -85,11 +85,28 @@ async function dismissGuide(page) {
 async function practice(page, cdp) {
   await page.goto(new URL('#/arena', target).href, { waitUntil: 'domcontentloaded' });
   await dismissGuide(page);
+  const shortcuts = await page.locator('.arena-casual').boundingBox();
+  assert.ok(shortcuts && shortcuts.y + shortcuts.height <= page.viewportSize().height, 'Practice and daily should fit on the first screen');
   await snapshot(page, '01-arena-lobby');
+  await page.getByRole('button', { name: /试刀练习/ }).click();
+  const practiceStart = await page.getByRole('button', { name: '开始练习' }).boundingBox();
+  assert.ok(practiceStart && practiceStart.y + practiceStart.height <= page.viewportSize().height);
+  const targetButton = page.getByRole('button', { name: /练习靶具/ });
+  await targetButton.click();
+  const picker = page.getByRole('dialog', { name: '选择练习靶具' });
+  await picker.locator('[data-picker-value="ice"]').click();
+  await picker.waitFor({ state: 'hidden' });
+  assert.match(await targetButton.innerText(), /冰/);
+  assert.ok(await targetButton.evaluate(element => document.activeElement === element));
+  await page.getByRole('button', { name: '返回', exact: true }).click();
   await page.getByRole('button', { name: '借刀开斩' }).click();
   const canvas = page.locator('.trial-frame canvas');
   const box = await canvas.boundingBox();
   assert.ok(box && box.height > 250);
+  const header = await page.locator('.trial-hud').boundingBox();
+  const footer = await page.locator('.trial-bottom').boundingBox();
+  assert.ok(header && header.y + header.height <= box.y, 'The HUD should sit above the cutting area');
+  assert.ok(footer && box.y + box.height <= footer.y, 'The goals should sit below the cutting area');
   await waitForRow(page);
   const positions = await page.evaluate(() => window.renderedTargets);
   const height = positions[0][1];
@@ -97,6 +114,7 @@ async function practice(page, cdp) {
   const live = await snapshot(page, '02-arena-native-triple-cut');
   assert.ok(Number(live.hits) >= 3, 'One native swipe should break the first three light targets');
   await page.locator('.arena-report').waitFor({ timeout: 15000 });
+  await page.locator('.arena-report-details summary').click();
   await page.waitForTimeout(850);
   const report = await snapshot(page, '03-arena-practice-report');
   assert.match(report.report, /试刀结束/);
@@ -115,12 +133,25 @@ async function quick(page, cdp) {
         id: 'arena-qa-blade', bladeName: '测试青锋', rarity: 'fine', rarityName: '精良', score: 152,
         canEnterArena: true, traits: [], combos: [],
         stats: { strength: 77, toughness: 73, sharpness: 82, craft: 66, design: 65, spirit: 60 },
+      }, {
+        id: 'arena-qa-heavy', bladeName: '测试重锋', rarity: 'fine', rarityName: '精良', score: 146,
+        canEnterArena: true, traits: [], combos: [],
+        stats: { strength: 110, toughness: 94, sharpness: 65, craft: 54, design: 60, spirit: 55 },
       });
       draft.workshopV41.xp = 79;
       return { ok: true };
     });
   });
   await page.goto(new URL('#/arena', target).href);
+  const choose = page.getByRole('button', { name: /换刀/ });
+  const blades = page.getByRole('dialog', { name: '选择出战刀' });
+  await choose.click();
+  await blades.getByRole('button', { name: /测试重锋/ }).click();
+  await blades.waitFor({ state: 'hidden' });
+  assert.match(await choose.innerText(), /测试重锋/);
+  await choose.click();
+  await blades.getByRole('button', { name: /测试青锋/ }).click();
+  await blades.waitFor({ state: 'hidden' });
   assert.match(await page.locator('.arena-blade-profile').innerText(), /破坏\s*80/);
   await page.getByRole('button', { name: '开始快赛' }).click();
   const box = await page.locator('.trial-frame canvas').boundingBox();
@@ -151,21 +182,25 @@ async function quick(page, cdp) {
   await page.locator('.trial-frame[data-act="1"]').waitFor({ timeout: 14000 });
   await page.locator('.trial-frame[data-act="2"]').waitFor({ timeout: 14000 });
   await page.locator('.arena-report').waitFor({ timeout: 14000 });
+  await page.locator('.arena-report-details summary').click();
   await page.waitForTimeout(850);
   const report = await snapshot(page, '04-arena-quick-growth');
   assert.match(report.report, /工坊 Lv\.2/);
   assert.match(report.report, /里程碑/);
   assert.match(report.report, /灵性得分 ×0\.98/);
+  const replay = await page.getByRole('button', { name: '再来一局' }).boundingBox();
+  assert.ok(replay && replay.y + replay.height <= page.viewportSize().height, 'The report actions should stay visible with details expanded');
   await page.reload({ waitUntil: 'domcontentloaded' });
   await page.locator('#v19-arena[data-screen="lobby"]').waitFor();
-  assert.match(await page.locator('#v19-arena .arena-hero').innerText(), /工坊 Lv\.2/);
   const saved = await page.evaluate(async () => {
     const { get } = await import(new URL('src/core/progress.js', location.href));
+    const { tournamentView } = await import(new URL('src/core/v19Progress.js', location.href));
     const save = get();
-    return { mastery: save.v19.arena.mastery['arena-qa-blade'], stats: save.collection[0].stats };
+    return { mastery: save.v19.arena.mastery['arena-qa-blade'], stats: save.collection[0].stats, level: tournamentView(save).workshop.level };
   });
   assert.ok(saved.mastery.bestSwipe >= 3 && saved.mastery.xp > 0);
   assert.equal(saved.stats.sharpness, 82);
+  assert.equal(saved.level, 2);
 }
 
 (async () => {
@@ -173,7 +208,7 @@ async function quick(page, cdp) {
     headless: true, args: ['--disable-dev-shm-usage', '--use-gl=angle', '--use-angle=swiftshader', '--enable-webgl'],
   });
   try {
-    const context = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+    const context = await browser.newContext({ viewport: { width: 320, height: 568 }, isMobile: true, hasTouch: true });
     await context.addInitScript(observeRenderedTargets);
     const page = await context.newPage();
     page.setDefaultTimeout(14000);
