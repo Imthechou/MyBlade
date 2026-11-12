@@ -57,19 +57,20 @@ export function mountTournament(root, { getSave, commit, settings, onLegacy, onF
       <span title="设计与灵性">表现 <b>${art}</b></span>`;
   };
 
-  function bladeFields(blades, data) {
+  function bladeFields(blades, data, course) {
     const ids = selectedIds();
     const rounds = entry.mode === 'apex' ? roundNames('apex') : [];
     return `<div class="arena-blades">
       ${ids.map((id, slot) => {
         const blade = blades.find(item => bladeId(item) === id);
         const mastery = blade && masteryOf({ tournament: data }, blade);
-        const specialty = rounds.length ? previewCourse(slot).specialty : '';
+        const specialty = rounds.length ? previewCourse(slot).specialty : course?.specialty;
+        const suited = mastery && specialty === mastery.specialty;
         return `<div class="arena-loadout-item">
           ${rounds.length ? `<div class="arena-loadout-round"><b>${esc(rounds[slot])}</b>
-            <span>${PROJECTS[specialty].name}专长${specialty === mastery?.specialty ? ' · 已匹配' : ''}</span></div>` : ''}
+            <span>${PROJECTS[specialty].name}专长${suited ? ' · 已匹配' : ''}</span></div>` : ''}
           ${button('choose-blade', `${bladeArt(id)}<span class="arena-blade-copy"><b>${esc(blade?.name ?? '工坊试刀')}</b>
-            <small>${mastery ? mastery.level + ' · ' + mastery.project + '专长' : '借用'}</small></span>
+            <small>${mastery ? mastery.level + ' · ' + mastery.project + '专长' : '借用'}${!rounds.length && suited ? ' · 适合本轮' : ''}</small></span>
             <span class="arena-change">${blade ? '换刀' : '选刀'} ${symbol('next')}</span>`, 'arena-blade-select', `data-slot="${slot}"`)}
           ${blade && !rounds.length ? `<div class="arena-blade-profile" aria-label="参赛刀能力">${profileText(blade)}</div>` : ''}
         </div>`;
@@ -219,7 +220,7 @@ export function mountTournament(root, { getSave, commit, settings, onLegacy, onF
         </header>
         ${entry.mode === 'school' ? schoolOptions(data) : entry.mode === 'practice' ? practiceOptions() : ''}
         ${courseNotes(course)}
-        ${active ? `<p class="arena-lock">进行中 · ${esc(courseFor(active).title)}</p>` : reason ? `<p class="arena-lock">${esc(reason)}</p>` : bladeFields(blades, data)}
+        ${active ? `<p class="arena-lock">进行中 · ${esc(courseFor(active).title)}</p>` : reason ? `<p class="arena-lock">${esc(reason)}</p>` : bladeFields(blades, data, course)}
       </div>
       <footer class="arena-dock">${action}</footer>
     </section>`;
@@ -267,6 +268,7 @@ export function mountTournament(root, { getSave, commit, settings, onLegacy, onF
     const blades = eligibleBlades(save);
     const ids = selectedIds();
     const multi = entry.mode === 'apex';
+    const specialty = entry.mode === 'quick' ? null : previewCourse(slot).specialty;
     const row = (id, name, meta, profile) => `<button type="button" class="arena-picker-blade" data-picker-value="${esc(id)}"
         aria-pressed="${id === ids[slot]}">${bladeArt(id)}<span class="arena-blade-copy"><b>${esc(name)}</b>
         <small>${esc(meta)}</small>${profile ? `<span class="arena-picker-profile">${profile}</span>` : ''}</span>
@@ -278,7 +280,8 @@ export function mountTournament(root, { getSave, commit, settings, onLegacy, onF
         const assigned = ids.indexOf(id);
         const mastery = masteryOf(save, blade);
         const order = multi && assigned >= 0 ? ` · 第 ${assigned + 1} 轮` : '';
-        return row(id, blade.name, mastery.level + ' · ' + mastery.project + '专长' + order, profileText(blade));
+        const suited = specialty === mastery.specialty ? ' · 适合本轮' : '';
+        return row(id, blade.name, mastery.level + ' · ' + mastery.project + '专长' + order + suited, profileText(blade));
       }),
     ];
     const body = openPicker(multi ? `第 ${slot + 1} 轮出战刀` : '选择出战刀', options.join(''),
@@ -446,6 +449,8 @@ export function mountTournament(root, { getSave, commit, settings, onLegacy, onF
     const shownScore = casual ? report.score : report.performance;
     const bestProject = (report.projects || []).filter(item => item.score > 0)
       .sort((a, b) => b.score - a.score)[0];
+    const showMultiplier = report.cut > 0 && Number.isFinite(report.scoreMultiplier);
+    const hasDetails = bestProject || record.rank?.gain || showMultiplier || record.rounds?.length > 1;
     const borrow = mode === 'practice' && !currentBlades().length;
     const mainAction = canContinue ? button('continue', '进入下一轮', 'primary') :
       record.unlockedNational ? button('mode', '报名全国赛', 'primary', 'data-value="national"') :
@@ -493,9 +498,9 @@ export function mountTournament(root, { getSave, commit, settings, onLegacy, onF
           `<b>${record.workshop.nextXp ? `再获 ${record.workshop.nextXp - record.workshop.xp} XP${record.workshop.nextPerk ? ' · ' + esc(record.workshop.nextPerk) : ''}` : '已满级'}</b>`}
       </div>` : ''}
       ${borrow ? '<p class="arena-report-hint">锻出第一把刀，即可报名 30 秒快赛。</p>' : ''}
-      ${bestProject || record.rank?.gain || report.scoreMultiplier || record.rounds?.length > 1 ? `<details class="arena-details arena-report-details">
+      ${hasDetails ? `<details class="arena-details arena-report-details">
         <summary>战报详情</summary><div>
-      ${report.cut > 0 && Number.isFinite(report.scoreMultiplier) ? `<p class="arena-report-hint">
+      ${showMultiplier ? `<p class="arena-report-hint">
         灵性得分 ×${report.scoreMultiplier.toFixed(2)}${report.deflections > 0 ? ' · 弹刀 ' + report.deflections + ' 次' : ''}
       </p>` : ''}
       ${bestProject ? `<div class="arena-best-cut"><span>表现最佳</span><b>${esc(bestProject.name)}</b><strong>${bestProject.score}%</strong></div>` : ''}
