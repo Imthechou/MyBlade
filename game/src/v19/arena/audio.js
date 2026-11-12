@@ -8,7 +8,7 @@ const cuts={card:520,rope:330,bamboo:235,pineapple:245,wood:240,ice:260,gel:410,
 const gainByMat={card:.96,rope:1.00,bamboo:.98,pineapple:.99,wood:.93,ice:1.04,gel:.90,steel:.94,shield:.91};
 export class BladeAudio {
  constructor(){
-  this.ctx=null;this.buffers=new Map();this.loading=null;this.ready=false;
+  this.ctx=null;this.buffers=new Map();this.loading=null;
   this.enabled=true;this.volume=.8;this.tone='punchy';this.bank=null;
   this.voices=new Set();this.lastSwing=0;
   this.master=null;this.contactBus=null;this.fxBus=null;this.contactEQ=null;this.fxHP=null;this.comp=null;
@@ -35,8 +35,8 @@ export class BladeAudio {
     const curve=new Float32Array(8192);for(let i=0;i<curve.length;i++){
      const x=i*2/(curve.length-1)-1;curve[i]=.95*Math.tanh(x*1.14);
     }this.limiter.curve=curve;this.limiter.oversample='2x';
-    this.contactBus=ctx.createGain();this.contactBus.gain.value=1.08;
-    this.fxBus=ctx.createGain();this.fxBus.gain.value=.18;
+    this.contactBus=ctx.createGain();this.contactBus.gain.value=1.12;
+    this.fxBus=ctx.createGain();this.fxBus.gain.value=.22;
     // Low shelf attenuates the old samples' drum-like low-mid impact body.
     this.contactEQ=ctx.createBiquadFilter();this.contactEQ.type='lowshelf';this.contactEQ.frequency.value=360;this.contactEQ.gain.value=-3.9;
     this.contactPresence=ctx.createBiquadFilter();this.contactPresence.type='peaking';this.contactPresence.frequency.value=2150;
@@ -49,13 +49,15 @@ export class BladeAudio {
    if(this.ctx.state==='suspended')await this.ctx.resume();
    if(!this.loading){
     this.loading=this.preload().then(async bank => {
-     await Promise.all(Object.entries(bank).map(async ([name, encoded]) => {
-      const raw = atob(encoded);
+     const decode = names => Promise.allSettled(names.map(async name => {
+      const raw = atob(bank[name]);
       const bytes = Uint8Array.from(raw, char => char.charCodeAt(0));
       this.buffers.set(name, await this.ctx.decodeAudioData(bytes.buffer));
      }));
-     this.ready=true;
-     return true;
+     const first = new Set(['swing_fast', 'swing_heavy', ...MATERIALS.map(material => material + '_break')]);
+     await decode([...first]);
+     void decode(Object.keys(bank).filter(name => !first.has(name)));
+     return this.buffers.size > 0;
     }).catch(err=>{this.loading=null;console.warn('音效解码失败',err);return false});
 
    }
@@ -70,11 +72,11 @@ export class BladeAudio {
    // '沉稳' affects texture/midrange, never boosts the bass back into a drum.
    this.contactEQ.gain.setTargetAtTime(this.tone==='punchy'?-3.9:-4.6,time,.02);
    this.contactPresence.gain.setTargetAtTime(this.tone==='punchy'?1.35:1.75,time,.02);
-   this.fxBus.gain.setTargetAtTime(this.tone==='punchy'?.18:.20,time,.02);
+   this.fxBus.gain.setTargetAtTime(this.tone==='punchy'?.22:.23,time,.02);
   }return this.tone;
  }
  sample(clip,{volume=.3,rate=1,delay=0,pan=0,bus='contact',highpass=0,duration=0}={}){
-  if(!this.ready||!this.enabled||!this.ctx||this.volume<=0||this.voices.size>=16)return false;
+  if(!this.enabled||this.ctx?.state!=='running'||this.volume<=0||this.voices.size>=12)return false;
   const buffer=this.buffers.get(clip);if(!buffer)return false;
   const ctx=this.ctx,t=ctx.currentTime+clamp(delay,0,.8);
   const speed=clamp(rate,.95,1.055),d=Math.min(duration||.4,buffer.duration/speed);
@@ -93,7 +95,7 @@ export class BladeAudio {
  }
  duckSwing(delay,stage){
   if(!this.fxBus||!this.ctx)return;
-  const bus=this.fxBus.gain,now=this.ctx.currentTime+delay,base=this.tone==='punchy'?.18:.20;
+  const bus=this.fxBus.gain,now=this.ctx.currentTime+delay,base=this.tone==='punchy'?.22:.23;
   bus.cancelScheduledValues(now);bus.setValueAtTime(base,now);bus.linearRampToValueAtTime(base*.22,now+.009);
   bus.linearRampToValueAtTime(base,now+(stage==='break'?.12:.09));
  }
@@ -111,7 +113,7 @@ export class BladeAudio {
   const delay=clamp(delayMs,0,550)/1000;
   // One blade contact = one foreground material sound. No bass thump overlay, no UI chime.
   // Multi-cut retains direction and stagger; grouping trims peaks, not all the detail.
-  const group=1/Math.pow(Math.max(1,groupSize),.40);
+  const group=1/Math.pow(Math.max(1,groupSize),.48);
   const amount=clamp(force,.4,1.4);
   // Map actual swipe speed to contact strength without layering artificial bass hits.
   const vol=(phase==='hit'?.64:phase==='fracture'?.77:.90)*(.63+amount*.37)*group*gainByMat[material];

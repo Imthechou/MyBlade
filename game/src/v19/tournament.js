@@ -1,3 +1,6 @@
+import { arcadeCourse, courseGoals, practiceCourse, schoolCourse, SCHOOLS } from './arena/courses.js';
+export { SCHOOLS } from './arena/courses.js';
+
 export const TARGET_NAMES = {
   card: '纸牌', rope: '绳束', bamboo: '竹节', pineapple: '菠萝', gel: '凝胶',
   wood: '硬木', ice: '冰块', steel: '钢桶', shield: '复合盾牌',
@@ -46,35 +49,11 @@ export function rankGain(mode, info = {}) {
 
 export const EVENTS = {
   practice: { name: '试刀练习', sub: '12 秒 · 自选靶具' },
-  quick: { name: '自由快赛', sub: '30 秒 · 三段冲分' },
-  daily: { name: '每日挑战', sub: '30 秒 · 当日固定靶序' },
+  quick: { name: '自由快赛', sub: '30 秒 · 飞靶连斩' },
+  daily: { name: '每日挑战', sub: '30 秒 · 当日固定飞靶' },
   school: { name: '流派试炼', sub: '六个流派 · 各五阶' },
   national: { name: '全国大赛', sub: '单刀出征 · 五轮淘汰' },
   apex: { name: '三刀巅峰赛', sub: '三把成刀 · 三轮接力' },
-};
-
-// A wave can be a line of light targets or a heavy target with persistent damage.
-const line = (project, ...targets) => ({ project, targets, heavy: false });
-const heavy = (project, target) => ({ project, targets: [target], heavy: true });
-export const SCHOOLS = {
-  press: { name: '锻压', glyph: '锤', focus: '重劈硬靶', waves: [
-    line('strength', 'bamboo', 'wood', 'bamboo'), heavy('strength', 'wood'), heavy('strength', 'ice'),
-  ] },
-  edge: { name: '锋刃', glyph: '刃', focus: '横排连斩', combo: 2, waves: [
-    line('cutting', 'card', 'rope', 'bamboo'), line('cutting', 'rope', 'pineapple', 'card'), heavy('cutting', 'bamboo'),
-  ] },
-  precise: { name: '精密', glyph: '准', focus: '稳斩凝胶', waves: [
-    line('precision', 'card', 'gel', 'pineapple'), heavy('precision', 'gel'), line('precision', 'gel', 'rope', 'gel'),
-  ] },
-  quench: { name: '淬彩', glyph: '彩', focus: '冰果轮替', combo: 2, waves: [
-    line('cutting', 'pineapple', 'card', 'pineapple'), heavy('precision', 'ice'), line('precision', 'ice', 'gel', 'card'),
-  ] },
-  composite: { name: '复合', glyph: '复', focus: '软硬兼顾', waves: [
-    line('cutting', 'rope', 'pineapple', 'wood'), heavy('durability', 'steel'), line('precision', 'ice', 'bamboo', 'gel'),
-  ] },
-  overload: { name: '过载', glyph: '载', focus: '强破护甲', waves: [
-    line('durability', 'bamboo', 'ice', 'steel'), heavy('extreme', 'shield'), heavy('durability', 'steel'),
-  ] },
 };
 
 export const PROJECTS = {
@@ -94,25 +73,12 @@ const NATIONAL = [
 ];
 const APEX = [
   { title: '第一轮 · 连斩', school: 'edge' },
-  { title: '第二轮 · 精斩', school: 'composite' },
+  { title: '第二轮 · 复合', school: 'composite' },
   { title: '第三轮 · 极限', school: 'overload' },
-];
-// Thirty-second arcade flow: 0–10s warm-up, 10–20s technique, 20–30s finale.
-// Keep the original 9 materials for the formal schools; quickplay favors one-hit
-// rows and reserves heavy targets for brief punctuation, not a damage sponge.
-const QUICK_WAVES = [
-  { ...line('cutting', 'card', 'rope', 'card'), cue: '热身连斩', motion: 'float' },
-  { ...line('precision', 'gel', 'pineapple', 'card'), cue: '轻快连斩', motion: 'float' },
-  { ...line('cutting', 'rope', 'card', 'gel'), cue: '连续试锋', motion: 'float' },
-  { ...line('cutting', 'card', 'pineapple', 'rope', 'gel'), cue: '移动追斩', motion: 'sweep' },
-  { ...heavy('strength', 'wood'), cue: '硬靶破防', motion: 'static' },
-  { ...line('precision', 'ice', 'gel', 'pineapple'), cue: '追踪切割', motion: 'sweep' },
-  { ...line('cutting', 'card', 'rope', 'pineapple', 'card'), cue: '四连冲分', motion: 'sweep' },
-  { ...heavy('durability', 'steel'), cue: '重劈钢桶', motion: 'static' },
-  { ...line('cutting', 'gel', 'pineapple', 'rope', 'card'), cue: '终局狂热', motion: 'sweep' },
 ];
 const TRAINING_BLADE = { id: 'training', name: '工坊试刀', grade: '借用', stats: [69, 77, 73, 65, 64, 60] };
 export const APEX_GOAL = 2700;
+export const NATIONAL_UNLOCK = 2;
 
 export const dayKey = (time = Date.now()) => new Date(time + 8 * 3600e3).toISOString().slice(0, 10);
 export const bladeId = blade => String(blade.id);
@@ -136,6 +102,10 @@ export const BLADE_MASTERY_TIERS = [
   { xp: 1200, name: '传世', bonus: .08 },
 ];
 
+const SWIPE_GOALS = [
+  { count: 3, xp: 14 }, { count: 4, xp: 22 }, { count: 5, xp: 30 },
+];
+
 export function masteryOf(save, blade) {
   const saved = tournamentState(save).mastery[bladeId(blade)];
   const average = id => {
@@ -148,11 +118,13 @@ export function masteryOf(save, blade) {
   // Older saves only had match counts. Preserve the earned rank on migration.
   const legacyXp = matches >= 5 ? 700 : matches >= 2 ? 350 : matches * 40;
   const xp = Number.isFinite(saved?.xp) ? Math.max(0, Math.floor(saved.xp)) : legacyXp;
+  const bestSwipe = Math.max(0, Math.floor(Number(saved?.bestSwipe) || 0));
   const index = BLADE_MASTERY_TIERS.reduce((tier, item, i) => xp >= item.xp ? i : tier, 0);
   const tier = BLADE_MASTERY_TIERS[index];
   const next = BLADE_MASTERY_TIERS[index + 1];
   return {
-    specialty, matches, xp, level: tier.name, levelIndex: index, bonus: tier.bonus,
+    specialty, matches, xp, bestSwipe, swipeGoal: SWIPE_GOALS.find(item => item.count > bestSwipe) ?? null,
+    level: tier.name, levelIndex: index, bonus: tier.bonus,
     nextLevel: next?.name ?? '', nextXp: next?.xp ?? xp,
     progress: next ? (xp - tier.xp) / (next.xp - tier.xp) : 1,
     project: PROJECTS[specialty].name,
@@ -168,7 +140,7 @@ export function gate(save, entry) {
     if (!Object.hasOwn(SCHOOLS, entry.school) || !Number.isInteger(entry.grade) || !GRADIENTS[entry.grade]) return '请选择流派与梯度';
     if (entry.grade > (schools[entry.school] || 0)) return '先通过本流派上一阶';
   }
-  if (entry.mode === 'national' && !Object.values(schools).some(cleared => cleared >= 2)) return '任一流派通关能手后解锁';
+  if (entry.mode === 'national' && !Object.values(schools).some(cleared => cleared >= NATIONAL_UNLOCK)) return '任一流派通关能手后解锁';
   if (entry.mode === 'apex' && !titles.national) return '夺得全国大赛冠军后解锁';
   if (eligibleBlades(save).length < bladeCount(entry)) return entry.mode === 'apex' ? '需要三把不同的成刀' : '完成第一把成刀即可报名';
   return '';
@@ -201,39 +173,32 @@ export function courseFor(run) {
   if (school && ['school', 'national', 'apex'].includes(run.mode)) {
     const grade = run.mode === 'school' ? run.grade : run.mode === 'national' ? round : 4;
     return {
+      ...schoolCourse(school, grade),
       title: stage?.title ?? school.name + ' · ' + GRADIENTS[grade],
-      limit: 30, waves: school.waves, combo: school.combo ?? 0, timedLoop: false,
-      hpScale: [.52, .62, .74, .86, .98][grade],
-      wearScale: [.34, .38, .42, .46, .50][grade],
-      // Higher-grade trials introduce gentle target motion rather than only
-      // turning enemies into HP sponges. Heavy armor stays planted.
-      motion: grade >= 2 && ['precise', 'quench', 'composite', 'edge'].includes(stage?.school ?? run.school)
-        ? 'sweep' : 'float',
-      motionRate: 1 + grade * .12,
+      limit: 30,
       seed: run.id + ':' + round,
     };
   }
   const practice = run.mode === 'practice';
-  const waves = !practice ? QUICK_WAVES : run.material ? [heavy('extreme', run.material)] :
-    run.style === 'row' ? QUICK_WAVES.filter(wave => !wave.heavy) :
-    run.style === 'heavy' ? QUICK_WAVES.filter(wave => wave.heavy) : QUICK_WAVES;
   return {
-    title: EVENTS[run.mode].name, limit: practice ? 12 : 30, waves,
-    combo: 0, timedLoop: true, arcade: !practice,
-    hpScale: practice ? .63 : .54, wearScale: .27,
+    ...(practice ? practiceCourse(run) : arcadeCourse()),
+    title: EVENTS[run.mode].name, limit: practice ? 12 : 30,
     seed: run.mode === 'daily' ? run.date : run.id,
-    rotate: !practice,
   };
 }
 
 export function summarizeRound(course, result) {
   const targets = course.waves.reduce((count, wave) => count + wave.targets.length, 0);
-  const complete = !course.timedLoop && result.waves >= course.waves.length;
-  const win = complete && result.combo >= course.combo;
-  const progress = Math.min(1, result.damage / targets);
-  const performance = Math.round(800 * progress + (complete ?
-    120 * result.remaining / course.limit + 80 * result.durability / 100 : 0));
-  return { ...result, title: course.title, complete, win, progress, performance, targets };
+  const coverage = Math.min(1, result.damage / targets);
+  const goals = courseGoals(course, { ...result.objectives, cut: result.cut, durability: result.durability });
+  const progress = goals.length ? Math.min(...goals.map(item => Math.min(1, item.value / item.target))) : coverage;
+  const win = goals.length > 0 && goals.every(item => item.met) && result.reason !== 'wear';
+  const swipe = result.swipe ?? 0;
+  const performance = Math.round(win ? 880 + 100 * coverage + 20 * Math.min(1, swipe / 4) :
+    goals.length ? 850 * progress : 1000 * (.74 * coverage + .16 * Math.min(1, swipe / 4) + .10 * Math.min(1, result.combo / 8)));
+  const medal = performance >= (goals.length ? 950 : 830) ? 'S' : performance >= (goals.length ? 900 : 650) ? 'A' :
+    performance >= (goals.length ? 780 : 470) ? 'B' : performance >= (goals.length ? 480 : 240) ? 'C' : 'D';
+  return { ...result, swipe, title: course.title, complete: win, win, progress, coverage, performance, targets, goals, medal };
 }
 
 export function settleRound(save, id, round, result) {
@@ -248,38 +213,43 @@ export function settleRound(save, id, round, result) {
   const report = summarizeRound(course, result);
   const quick = run.mode === 'quick' || run.mode === 'daily';
   const blade = run.roster[run.mode === 'apex' ? round : 0];
-  const qualified = quick ? result.reason === 'time' && result.hits >= 4 : report.progress >= .20;
+  const qualified = quick ? result.reason === 'time' && result.cut >= 4 :
+    report.win || (result.cut >= 4 && (report.progress >= .20 || report.coverage >= .24));
   const paidDaily = run.mode === 'daily' && data.daily[run.date]?.rewarded;
   const valid = qualified && !paidDaily;
   /* 连胜：连续有效出战叠加额外 CR，断了就归零。只算快赛/每日，避免流派赛刷连胜。 */
   const streakBefore = Math.max(0, Math.floor(Number(data.streak) || 0));
-  const streak = quick ? (valid ? streakBefore + 1 : 0) : streakBefore;
-  const streakBonus = quick && streak >= 2 ? Math.min(12, (streak - 1) * 3) : 0;
+  const streak = quick && !paidDaily ? (valid ? streakBefore + 1 : 0) : streakBefore;
+  const streakBonus = quick && valid && streak >= 2 ? Math.min(12, (streak - 1) * 3) : 0;
   data.streak = streak;
   const cr = (valid && quick ? Math.min(35, 4 + Math.floor(result.score / 100)) : 0) + streakBonus;
   const xp = valid && quick ? Math.min(45, 10 + Math.floor(result.score / 75)) : 0;
   let mastery = null;
   let masteryGain = 0;
-  if (valid && !run.qualified.includes(blade.id)) {
+  let swipeBonus = 0;
+  if (valid) {
     const before = masteryOf(save, blade);
-    // Blade experience is earned by using a specific knife. It never rewrites
-    // the six forged base stats; capped specialty proficiency rewards practice.
-    masteryGain = Math.min(90, 24 + Math.floor(result.score / 65) +
-      (run.mode === 'school' && result.reason === 'clear' ? 15 : 0));
+    const firstRoundForBlade = !run.qualified.includes(blade.id);
+    swipeBonus = SWIPE_GOALS.filter(item => item.count > before.bestSwipe && item.count <= report.swipe)
+      .reduce((sum, item) => sum + item.xp, 0);
+    masteryGain = Math.min(75, 22 + Math.floor(result.score / 110) + (report.win ? 12 : 0)) + swipeBonus;
     data.mastery[blade.id] = {
-      specialty: before.specialty, matches: before.matches + 1, xp: before.xp + masteryGain,
+      specialty: before.specialty, matches: before.matches + Number(firstRoundForBlade),
+      xp: before.xp + masteryGain, bestSwipe: Math.max(before.bestSwipe, report.swipe),
     };
     mastery = masteryOf({ tournament: data }, blade);
-    run.qualified.push(blade.id);
+    mastery.leveled = mastery.levelIndex > before.levelIndex;
+    if (firstRoundForBlade) run.qualified.push(blade.id);
   }
-  /* 先存本局之前的最高分，写完 best 就分不清「刷新」和「追不上」了。 */
-  const prevBest = run.mode === 'quick' ? Math.max(0, Math.floor(Number(data.best?.quick) || 0))
-    : run.mode === 'daily' ? Math.max(0, Math.floor(Number(data.daily?.[run.date]?.best) || 0)) : null;
+  // The flight rules change scoring; keep the original records and compare
+  // scores earned on the new course. Daily rewards still share the original receipt.
+  const prevBest = run.mode === 'quick' ? Math.max(0, Number(data.best.flightQuick) || 0) :
+    run.mode === 'daily' ? Math.max(0, Number(data.daily[run.date]?.flightBest) || 0) : null;
   if (run.mode === 'daily') data.daily[run.date] = {
-    best: Math.max(data.daily[run.date]?.best ?? 0, result.score),
+    ...data.daily[run.date], flightBest: Math.max(prevBest, result.score),
     rewarded: Boolean(paidDaily || valid),
   };
-  if (run.mode === 'quick') data.best.quick = Math.max(data.best.quick ?? 0, result.score);
+  if (run.mode === 'quick') data.best.flightQuick = Math.max(prevBest, result.score);
   run.reports.push({ ...report, blade: blade.name, bladeId: blade.id, cr, xp });
   const series = roundNames(run.mode).length;
   const done = !series || run.reports.length >= series || (run.mode === 'national' && !report.win);
@@ -287,15 +257,17 @@ export function settleRound(save, id, round, result) {
   const champion = done && run.reports.length === series && (run.mode === 'national' ?
     report.win : run.mode === 'apex' && run.reports.every(item => item.win) && total >= APEX_GOAL);
   const record = {
-    id, round, mode: run.mode, title: report.title, date: run.date, blade: blade.name, cr, xp, mastery, masteryGain,
+    id, round, mode: run.mode, title: report.title, date: run.date, blade: blade.name, cr, xp, mastery, masteryGain, swipeBonus,
     qualified, paidDaily: Boolean(paidDaily), done, champion, total, report, rounds: run.reports.slice(),
+    unlockedNational: run.mode === 'school' && report.win && run.grade + 1 === NATIONAL_UNLOCK &&
+      !Object.values(data.schools).some(cleared => cleared >= NATIONAL_UNLOCK),
     streak, streakBonus,
     /* 本模式结算前的最高分，用来判断本局是刷新还是落后。 */
     best: prevBest,
   };
   /* 赛事评级：本局结算时一次性写入，UI 用它做段位条与升段演出。 */
   const ratingBefore = Math.max(0, Math.floor(Number(data.rating) || 0));
-  const gain = rankGain(run.mode, { valid, score: result.score, win: report.win, grade: run.grade ?? 0, champion });
+  const gain = paidDaily ? 0 : rankGain(run.mode, { valid, score: result.score, win: report.win, grade: run.grade ?? 0, champion });
   const before = rankOf(ratingBefore);
   const after = rankOf(ratingBefore + gain);
   data.rating = ratingBefore + gain;

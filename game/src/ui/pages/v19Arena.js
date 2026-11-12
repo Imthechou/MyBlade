@@ -1,7 +1,8 @@
 import { mountTournament } from '../../v19/arena/view.js';
-import { commitTournament, hasLegacyCareer, tournamentView } from '../../core/v19Progress.js';
+import { commitTournament, hasLegacyCareer, openFurnace, tournamentView } from '../../core/v19Progress.js';
 import { get } from '../../core/progress.js';
 import router from '../router.js';
+import { toast } from '../dom.js';
 
 let page;
 let pending;
@@ -18,6 +19,11 @@ export function render() {
     settings: () => get().settings,
     hasLegacyCareer,
     onLegacy: () => router.go('legacy-arena'),
+    onForge: () => {
+      const result = openFurnace({ restart: true });
+      if (!result.ok) return toast(result.error, 'warn');
+      router.go('forge');
+    },
   });
   page.open(pending);
   pending = undefined;
