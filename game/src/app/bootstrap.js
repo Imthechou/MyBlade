@@ -33,6 +33,7 @@ function lazyPage(load) {
     },
     leave() { page?.leave?.(); },
     pauseForSettings() { page?.pauseForSettings?.(); },
+    back() { return page?.back?.(); },
   };
 }
 
@@ -45,6 +46,7 @@ function start() {
   const forge = lazyPage(() => import('../ui/pages/v19Forge.js'));
   const arena = lazyPage(() => import('../ui/pages/v19Arena.js'));
   Shell.create(document.getElementById('topbar'), {
+    onBack: () => router.currentKey() === 'arena' && arena.back(),
     beforeSettings() {
       if (router.currentKey() === 'forge') forge.pauseForSettings();
       if (router.currentKey() === 'arena') arena.pauseForSettings();

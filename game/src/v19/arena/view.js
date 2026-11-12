@@ -8,266 +8,305 @@ import { arenaBladeStats } from './stats.js';
 import { createTrial, warmTrialAudio } from './trial.js';
 import { targetThumbnail, warmTargets } from './targets.js';
 import { mountBladeThumbnail, disconnectBladeThumbnails } from '../collectionThumb.js';
-import { countUp } from '../../ui/dom.js';
+import { countUp, sheet } from '../../ui/dom.js';
+import { icon } from '../../ui/icons.js';
 
 const esc = value => String(value ?? '').replace(/[&<>"']/g, character => ({
   '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
 })[character]);
-const seriesModes = { school: '流派试炼', national: '全国赛', apex: '巅峰赛' };
 const practiceStyles = { mix: '混合', row: '连斩', heavy: '重劈' };
 const button = (action, label, kind = 'secondary', attrs = '') =>
   `<button class="${kind}" type="button" data-arena-action="${action}" ${attrs}>${label}</button>`;
-const selectButton = (action, value, label, active, disabled = false) =>
-  button(action, label, 'arena-choice', `data-value="${value}" aria-pressed="${active}" ${disabled ? 'disabled' : ''}`);
+const selectButton = (action, value, label, active, disabled = false, cleared = false) =>
+  button(action, label + (cleared ? '<span aria-label="已通过">✓</span>' : ''), 'arena-choice',
+    `data-value="${value}" aria-pressed="${active}" ${disabled ? 'disabled' : ''}`);
+const symbol = name => icon(name).outerHTML;
 const art = (key, attrs = '') => `<img src="${targetThumbnail(key)}" alt="" ${attrs}>`;
 const eventId = () => globalThis.crypto?.randomUUID?.() ?? Date.now().toString(36) + Math.random().toString(36).slice(2);
 
-export function mountTournament(root, { getSave, commit, settings, onLegacy, onForge, hasLegacyCareer }) {
+export function mountTournament(root, { getSave, commit, settings, onLegacy, onForge, onSettings, hasLegacyCareer }) {
   const entry = { mode: 'quick', school: 'edge', grade: 0, style: 'mix', material: '' };
-  let chosen = [];
+  const page = root.closest('.page');
+  let solo, practice, lineup = [];
   let notice = '', confirming = false;
-  let bout, engine, replay;
+  let bout, engine, replay, picker;
 
   const state = () => tournamentState(getSave());
-  const isFormal = () => Object.hasOwn(seriesModes, entry.mode);
   const currentBlades = () => eligibleBlades(getSave());
+  const selectedIds = () => entry.mode === 'apex' ? lineup :
+    [entry.mode === 'practice' ? practice : solo].filter(Boolean);
 
-  function syncSelection(preferred) {
-    const ids = currentBlades().map(bladeId);
-    if (entry.mode === 'practice' && (preferred ?? chosen[0]) === 'training') {
-      chosen = ['training'];
-      return;
+  function syncSelection(blades, preferred) {
+    const ids = blades.map(bladeId);
+    if (entry.mode === 'apex') {
+      lineup = [...new Set([...lineup, ...ids])].filter(id => ids.includes(id)).slice(0, bladeCount(entry));
+    } else if (entry.mode === 'practice') {
+      const wanted = preferred ?? practice ?? solo;
+      practice = wanted === 'training' || ids.includes(wanted) ? wanted : ids[0] ?? 'training';
+    } else {
+      const wanted = preferred ?? solo;
+      solo = ids.includes(wanted) ? wanted : ids[0];
     }
-    const valid = [preferred, ...chosen, ...ids].filter(id => ids.includes(id));
-    chosen = [...new Set(valid)].slice(0, bladeCount(entry));
-    if (!chosen.length && entry.mode === 'practice') chosen = ['training'];
   }
 
-  /**
-   * 出战刀选择：不再用原生下拉框（只有一行字），改成带真实刀模的卡。
-   * 单刀赛点一下即选；三刀赛（巅峰）点选切换，最多三把。
-   */
+  const previewCourse = (round = 0) => courseFor({ ...entry, id: 'preview', reports: Array(round) });
+  const bladeArt = id => `<span class="arena-blade-art" data-thumb-blade="${esc(id)}" aria-hidden="true">${symbol('spark')}</span>`;
+  const profileText = blade => {
+    const { power, control, art } = arenaBladeStats(blade.stats);
+    return `<span title="强度与锋利">破坏 <b>${power}</b></span><span title="韧性与工艺">控制 <b>${control}</b></span>
+      <span title="设计与灵性">表现 <b>${art}</b></span>`;
+  };
+
   function bladeFields(blades, data, course) {
-    const count = bladeCount(entry);
-    const multi = count > 1;
-    const specialties = multi ? roundNames(entry.mode).map((_, i) =>
-      courseFor({ ...entry, id: 'preview', reports: Array(i) }).specialty) : [course?.specialty];
-    const selected = !multi && blades.find(blade => bladeId(blade) === chosen[0]);
-    const profile = selected && arenaBladeStats(selected.stats);
-    const card = (id, name, meta, on, locked, mastered = 0, suited = false) => `<button type="button" class="arena-blade-card${on ? ' is-picked' : ''}${suited ? ' is-suited' : ''}"
-      data-arena-action="pick-blade" data-value="${esc(id)}" aria-pressed="${on}"${locked ? ' disabled' : ''}${mastered ? ` data-mastery="${mastered}"` : ''}>
-      <span class="arena-blade-art" data-thumb-blade="${esc(id)}"><i class="arena-blade-fallback" aria-hidden="true"></i></span>
-      <b>${esc(name)}</b><span class="arena-blade-meta">${esc(meta)}</span>
-    </button>`;
+    const ids = selectedIds();
+    const rounds = entry.mode === 'apex' ? roundNames('apex') : [];
     return `<div class="arena-blades">
-      <div class="arena-blades-head"><span>出战刀</span>${multi ? `<b>已选 ${chosen.filter(id => id !== 'training').length} / ${count}</b>` : ''}</div>
-      <div class="arena-blade-row">
-        ${entry.mode === 'practice' ? card('training', '工坊试刀', '借用 · 68 分', chosen[0] === 'training', false) : ''}
-        ${blades.map(blade => {
-          const id = bladeId(blade);
-          const on = chosen.includes(id);
-          const locked = multi && !on && chosen.filter(item => item !== 'training').length >= count;
-          const mastery = masteryOf({ tournament: data }, blade);
-          const slot = multi ? on ? chosen.indexOf(id) : chosen.length : 0;
-          const suited = specialties[slot] === mastery.specialty;
-          const order = multi && on ? '第' + (chosen.indexOf(id) + 1) + '轮 · ' : '';
-          return card(id, blade.name,
-            `${order}${mastery.level} · ${mastery.project}专长${suited ? ' · 适合本轮' : ''}`,
-            on, locked, mastery.levelIndex, suited);
-        }).join('')}
-      </div>
-      ${profile ? `<div class="arena-blade-profile" aria-label="参赛刀能力">
-        <span title="强度与锋利">破坏 <b>${profile.power}</b></span>
-        <span title="韧性与工艺">控制 <b>${profile.control}</b></span>
-        <span title="设计与灵性">表现 <b>${profile.art}</b></span>
-      </div>` : ''}
+      ${ids.map((id, slot) => {
+        const blade = blades.find(item => bladeId(item) === id);
+        const mastery = blade && masteryOf({ tournament: data }, blade);
+        const specialty = rounds.length ? previewCourse(slot).specialty : course?.specialty;
+        const suited = mastery && specialty === mastery.specialty;
+        return `<div class="arena-loadout-item">
+          ${rounds.length ? `<div class="arena-loadout-round"><b>${esc(rounds[slot])}</b>
+            <span>${PROJECTS[specialty].name}专长${suited ? ' · 已匹配' : ''}</span></div>` : ''}
+          ${button('choose-blade', `${bladeArt(id)}<span class="arena-blade-copy"><b>${esc(blade?.name ?? '工坊试刀')}</b>
+            <small>${mastery ? mastery.level + ' · ' + mastery.project + '专长' : '借用'}${!rounds.length && suited ? ' · 适合本轮' : ''}</small></span>
+            <span class="arena-change">${blade ? '换刀' : '选刀'} ${symbol('next')}</span>`, 'arena-blade-select', `data-slot="${slot}"`)}
+          ${blade && !rounds.length ? `<div class="arena-blade-profile" aria-label="参赛刀能力">${profileText(blade)}</div>` : ''}
+        </div>`;
+      }).join('')}
     </div>`;
   }
 
-  /**
-   * 下一目标：把「段位 → 流派阶位 → 全国赛 → 巅峰赛」串成一条线，
-   * 大厅不再只是"再打一局"，而是"再打几局能解锁什么"。
-   */
   function goalCard(data) {
     const [school, cleared] = Object.entries(data.schools).filter(([key, value]) => SCHOOLS[key] && value > 0)
       .sort((a, b) => b[1] - a[1])[0] || ['edge', 0];
-    const goal = cleared < NATIONAL_UNLOCK
-      ? { action: 'school', school, label: '下一站', title: `${SCHOOLS[school].name} · 通关${GRADIENTS[NATIONAL_UNLOCK - 1]}`,
-        value: cleared / NATIONAL_UNLOCK, step: `${cleared} / ${NATIONAL_UNLOCK} 阶` }
-      : !data.titles.national
-        ? { action: 'national', label: '下一站', title: '全国大赛 · 夺冠', value: 0, step: '已解锁' }
-        : { action: 'apex', label: '下一站', title: '三刀巅峰赛',
-          value: data.titles.apex ? 1 : 0, step: data.titles.apex ? '已夺冠' : '已解锁' };
-    return `<button type="button" class="arena-goal" data-arena-action="mode" data-value="${goal.action}"${goal.school ? ` data-school="${goal.school}"` : ''}>
-      <div class="arena-goal-head"><span>${goal.label}</span><b>${esc(goal.step)}</b></div>
-      <div class="arena-goal-title">${esc(goal.title)}</div>
-      <div class="arena-rank-track" aria-hidden="true"><i style="--v:${Math.round(goal.value * 100)}%"></i></div>
-    </button>`;
-  }
-  function rankBlock(data) {
-    const rank = rankOf(data.rating);
-    /* 五段阶梯本身是主题内容，但以前只看得到「当前段」和「下一段」。
-       补一行全段路径，玩家能看清自己在整条路上的位置。 */
-    const nextAt = RANKS[rank.index + 1]?.at ?? null;
-    const steps = RANKS.map((item, i) =>
-      `<span class="${i === rank.index ? 'is-now' : i < rank.index ? 'is-done' : ''}">${esc(item.name)}</span>`).join('');
-    return `<section class="arena-rank" data-tier="${rank.index}">
-      <div class="arena-rank-head"><b>${esc(rank.name)}</b><span>${nextAt ? `评级 ${rank.rating} / ${nextAt}` : `评级 ${rank.rating} · 顶阶`}</span></div>
-      <div class="arena-rank-track" aria-label="距离 ${esc(rank.next || '顶阶')} 还需 ${rank.toNext}">
-        ${rank.progress > 0 ? `<i style="--v:${Math.round(rank.progress * 100)}%"></i>` : ''}
-      </div>
-      <div class="arena-rank-steps" aria-hidden="true">${steps}</div>
-      <div class="arena-rank-foot"><span>${rank.next ? '下一段 ' + esc(rank.next) : '已达顶阶'}</span>${rank.next ? `<b>还差 ${rank.toNext}</b>` : '<b>MAX</b>'}</div>
-    </section>`;
+    if (cleared < NATIONAL_UNLOCK) {
+      return button('mode', `<span>下一目标</span><b>${SCHOOLS[school].name} · 通关${GRADIENTS[NATIONAL_UNLOCK - 1]}</b>${symbol('next')}`,
+        'arena-goal', `data-value="school" data-school="${school}"`);
+    }
+    const mode = data.titles.national ? 'apex' : 'national';
+    const goal = mode === 'national' ? '全国大赛 · 夺冠' : data.titles.apex ? '巅峰赛 · 再战' : '巅峰赛 · 夺冠';
+    return button('mode', `<span>下一目标</span><b>${goal}</b>${symbol('next')}`, 'arena-goal', `data-value="${mode}"`);
   }
 
   function activeCard(active) {
     if (!active) return '';
+    const rounds = roundNames(active.mode).length;
     return `<section class="arena-active">
-      <div><span>进行中</span><b>${esc(courseFor(active).title)}</b></div>
-      ${button('continue', '继续比赛', 'primary')}
+      <div class="arena-active-copy"><span>进行中${rounds ? ' · 第 ' + (active.reports.length + 1) + ' / ' + rounds + ' 轮' : ''}</span>
+        <b>${esc(courseFor(active).title)}</b></div>
+      ${button('continue', '继续赛程', 'primary')}
       ${button('abandon', confirming ? '取消' : '结束', 'arena-text')}
       ${confirming ? `<div class="arena-confirm"><span>已结算的奖励会保留</span>${button('confirm-abandon', '确认结束', 'arena-text')}</div>` : ''}
     </section>`;
   }
 
-  function historyList(data) {
-    if (!data.history.length) return '';
-    return `<details class="arena-details arena-history"><summary>近期战报</summary>
-      ${data.history.slice(0, 6).map((record, index) => button('history',
-        `<span>${esc(record.title)}</span><b>${record.report.score} 分</b>`,
-        'arena-history-row', `data-value="${index}"`)).join('')}
+  function progressPanel(data) {
+    const rank = rankOf(data.rating);
+    const nextAt = RANKS[rank.index + 1]?.at;
+    return `<details class="arena-details arena-progress">
+      <summary>赛事进度 <span>${esc(rank.name)} · ${rank.rating}</span></summary>
+      <div class="arena-progress-content">
+        <div class="arena-rank">
+          <div class="arena-rank-head"><b>${esc(rank.name)}</b><span>${nextAt ? '距 ' + esc(rank.next) + ' ' + rank.toNext : '最高段位'}</span></div>
+          <div class="arena-rank-track" role="progressbar" aria-label="段位进度" aria-valuenow="${Math.round(rank.progress * 100)}"><i style="--v:${Math.round(rank.progress * 100)}%"></i></div>
+        </div>
+        ${goalCard(data)}
+        ${data.history.length ? `<h2>近期战报</h2>${data.history.slice(0, 6).map((record, index) => button('history',
+          `<span>${esc(record.title)}</span><b>${esc(record.report.score)} 分</b>${symbol('next')}`, 'arena-history-row', `data-value="${index}"`)).join('')}` : ''}
+      </div>
     </details>`;
+  }
+
+  function eventLink(mode, target, description = '', status = '') {
+    return button('mode', `<span class="arena-event-art" aria-hidden="true">${art(target)}</span>
+      <span class="arena-event-copy"><b>${EVENTS[mode].name}</b><small>${description || EVENTS[mode].sub}</small></span>
+      ${status ? `<span class="arena-event-status">${status}</span>` : symbol('next')}`,
+    'arena-event-link', `data-value="${mode}"`);
   }
 
   function renderHome(data, blades) {
     const loan = !blades.length;
     const dailyDone = Boolean(data.daily[dayKey()]?.rewarded);
-    const workshop = getSave().workshop;
+    const legacy = hasLegacyCareer();
     const keys = ['card', 'rope', 'bamboo'];
+    const nationalReady = Object.values(data.schools).some(value => value >= NATIONAL_UNLOCK);
+    const apexReady = data.titles.national && blades.length >= 3;
     warmTargets(keys);
     return `<section class="arena-home">
       ${activeCard(data.active)}
-      <header class="arena-hero">
-        <div class="arena-hero-heading">
-          <span class="arena-chip">${loan ? '12 秒试刀' : '30 秒快赛'}</span>
-          <span class="arena-chip">工坊 Lv.${workshop.level}</span>
-          ${data.streak >= 2 ? `<span class="arena-chip" data-hot="true">连胜 ×${data.streak}</span>` : ''}
-          ${data.best.flightQuick ? `<span class="arena-chip">最高 ${data.best.flightQuick}</span>` : ''}
-          <h1 tabindex="-1">斩试场</h1>
+      <section class="arena-quick">
+        <header class="arena-hero">
+          <div class="arena-hero-heading">
+            <span>${loan ? '12 秒试刀' : '30 秒飞靶'}</span>
+            <h1 tabindex="-1">${loan ? '斩试场' : '自由快赛'}</h1>
+            ${data.best.flightQuick ? `<small>个人最高 <b>${data.best.flightQuick}</b></small>` : ''}
+          </div>
+          <div class="arena-hero-art" aria-hidden="true">${keys.map(key => art(key)).join('')}</div>
+        </header>
+        <div class="arena-launch">
+          ${!loan && !data.active && !legacy ? bladeFields(blades, data) : ''}
+          ${data.active ? button('loan', '借刀练习', 'secondary') :
+            legacy ? button('legacy-career', '继续旧赛程', 'primary') :
+            loan ? `<div class="arena-actions">${button('forge', '去锻刀')}${button('loan', '借刀开斩', 'primary')}</div>` :
+            button('register', '开始快赛', 'primary')}
         </div>
-        <div class="arena-hero-art" aria-hidden="true">${keys.map(key => art(key)).join('')}</div>
-      </header>
-      <div class="arena-launch">
-        ${!loan ? bladeFields(blades, data) : ''}
-        ${loan ? button('loan', '借刀开斩', 'primary') :
-          data.active ? button('loan', '借刀练习') : button('register', '开始快赛', 'primary')}
-      </div>
-      <nav class="arena-shortcuts" aria-label="更多赛事">
-        ${button('mode', '<b>进阶赛</b><span aria-hidden="true">↗</span>', 'arena-shortcut', 'data-value="series"')}
-        ${button('mode', `<b>每日</b><span aria-hidden="true">${dailyDone ? '✓' : '↗'}</span>`, 'arena-shortcut',
-          `data-value="daily"${dailyDone ? ' data-done="true"' : ''}`)}
-        ${button('mode', '<b>练习</b><span aria-hidden="true">↗</span>', 'arena-shortcut', 'data-value="practice"')}
+      </section>
+      <nav class="arena-casual" aria-label="日常赛事">
+        ${eventLink('daily', 'ice', dailyDone ? '今日已领奖' : '30 秒 · 固定靶序')}
+        ${eventLink('practice', 'pineapple')}
       </nav>
-      ${!loan ? goalCard(data) + rankBlock(data) : ''}
-      ${hasLegacyCareer() ? button('legacy-career', '继续旧赛程', 'arena-text') : ''}
-      ${historyList(data)}
+      <section class="arena-advanced" aria-labelledby="arena-advanced-title">
+        <h2 id="arena-advanced-title">进阶赛</h2>
+        ${eventLink('school', 'bamboo')}
+        ${eventLink('national', 'steel', nationalReady ? '' : '任一流派通关能手解锁', nationalReady ? '' : '未解锁')}
+        ${eventLink('apex', 'shield', data.titles.national ? '' : '全国大赛夺冠解锁', apexReady ? '' : '未解锁')}
+      </section>
+      ${!loan || data.history.length ? progressPanel(data) : ''}
     </section>`;
   }
 
-  function renderSeries() {
-    const artKeys = ['bamboo', 'steel', 'shield'];
-    return `<section class="arena-detail">
-      <header class="arena-detail-head">
-        ${button('mode', '‹ 大厅', 'arena-text', 'data-value="quick"')}
-        <h1 tabindex="-1">进阶赛</h1>
-      </header>
-      <nav class="arena-series" aria-label="进阶赛类型">
-        ${Object.entries(seriesModes).map(([mode, label], index) => button('mode',
-          `${art(artKeys[index])}<b>${label}</b><span aria-hidden="true">›</span>`, 'arena-series-entry', `data-value="${mode}"`)).join('')}
-      </nav>
-    </section>`;
-  }
-
-  function seriesOptions(data) {
-    if (entry.mode !== 'school') return '';
+  function schoolOptions(data) {
     const cleared = data.schools[entry.school] ?? 0;
-    return `<div class="arena-school-fields"><label class="arena-select"><span>流派</span>
-      <select data-arena-choice="school" aria-label="流派">${Object.entries(SCHOOLS).map(([key, school]) =>
-        `<option value="${key}" ${entry.school === key ? 'selected' : ''}>${school.name}</option>`).join('')}</select>
-      </label>
-      <label class="arena-select"><span>阶位</span>
-        <select data-arena-choice="grade" aria-label="试炼阶位">${GRADIENTS.map((name, grade) =>
-          `<option value="${grade}" ${entry.grade === grade ? 'selected' : ''} ${grade > cleared ? 'disabled' : ''}>${name}${grade < cleared ? ' ✓' : ''}</option>`).join('')}</select>
-      </label></div>`;
+    return `<div class="arena-school-fields">
+      <div class="arena-options-label">流派</div>
+      <div class="arena-choices arena-schools" role="group" aria-label="流派">${Object.entries(SCHOOLS).map(([key, school]) =>
+        selectButton('school', key, school.name, entry.school === key)).join('')}</div>
+      <div class="arena-options-label">阶位</div>
+      <div class="arena-choices arena-grades" role="group" aria-label="试炼阶位">${GRADIENTS.map((name, grade) =>
+        selectButton('grade', grade, name, entry.grade === grade, grade > cleared, grade < cleared)).join('')}</div>
+    </div>`;
   }
 
   function practiceOptions() {
-    return `<div class="arena-choices" aria-label="练习方式">${Object.entries(practiceStyles).map(([id, label]) =>
+    return `<div class="arena-choices arena-practice-styles" role="group" aria-label="练习方式">${Object.entries(practiceStyles).map(([id, label]) =>
       selectButton('style', id, label, entry.style === id && !entry.material)).join('')}</div>
-      <details class="arena-details" ${entry.material ? 'open' : ''}><summary>${entry.material ? TARGET_NAMES[entry.material] : '自选靶具'}</summary>
-      <div class="arena-target-picker">${Object.entries(TARGET_NAMES).map(([key, name]) => selectButton(
-        'material', key, art(key, 'loading="lazy"') + `<span>${name}</span>`, key === entry.material)).join('')}</div></details>`;
+      ${button('choose-material', `<span>练习靶具</span><b>${entry.material ? TARGET_NAMES[entry.material] : '按练习方式出靶'}</b>${symbol('next')}`, 'arena-goal')}`;
   }
 
   function courseNotes(course) {
-    const list = roundNames(entry.mode);
+    const rounds = roundNames(entry.mode);
     const task = course.goals.length ? `<div class="arena-course-rule"><b>${esc(course.focus)}</b>
-      <span>${course.limit} 秒 · ${course.goals.map(goalText).join(' · ')}</span></div>` : '';
-    if (list.length) {
-      return `${task}<details class="arena-details"><summary>${list.length} 轮赛程</summary>
-        <ol>${list.map((label, i) => {
-          const { specialty } = courseFor({ ...entry, id: 'preview', reports: Array(i) });
-          return `<li>${esc(label)} · ${PROJECTS[specialty].name}专长</li>`;
-        }).join('')}</ol>
-        <small>${entry.mode === 'national' ? '一把刀，逐轮晋级' : '三把刀各打一轮，全达标且总评 ≥ ' + APEX_GOAL}</small></details>`;
+      <span>${course.goals.map(goalText).join(' · ')}</span></div>` : '';
+    if (rounds.length) {
+      return `${task}<details class="arena-details"><summary>${rounds.length} 轮赛程</summary>
+        <ol>${rounds.map((label, i) => `<li>${esc(label)} · ${PROJECTS[previewCourse(i).specialty].name}专长</li>`).join('')}</ol>
+        ${entry.mode === 'apex' ? '<small>全轮达标且总评 ≥ ' + APEX_GOAL + '</small>' : ''}</details>`;
     }
-    if (entry.mode === 'daily') return '<div class="arena-course-meta">30 秒 · 当日固定靶序 · 首场有效奖励</div>';
+    if (entry.mode === 'daily') return '<p class="arena-course-meta">当日固定靶序 · 首场有效奖励</p>';
     return task;
   }
 
   function renderDetail(data, blades) {
-    const course = courseFor({ ...entry, id: 'preview', reports: [] });
+    const course = previewCourse();
     const reason = gate(getSave(), entry);
-    const blocked = data.active && entry.mode !== 'practice';
-    const bestDaily = data.daily[dayKey()]?.flightBest;
+    const active = entry.mode !== 'practice' && data.active;
+    const daily = data.daily[dayKey()];
     const targets = [...new Set(course.waves.flatMap(wave => wave.targets))].slice(0, 3);
+    const title = entry.mode === 'school' ? course.title : EVENTS[entry.mode].name;
+    const action = active ? button('continue', '继续赛程', 'primary') :
+      !reason ? button('register', entry.mode === 'practice' ? '开始练习' : '开斩', 'primary') :
+      !blades.length ? button('forge', '去锻第一把刀', 'primary') :
+      button('lobby', '返回大厅', 'secondary');
     warmTargets(course.waves[0].targets);
     return `<section class="arena-detail">
-      <header class="arena-detail-head">
-        ${button('mode', isFormal() ? '‹ 进阶赛' : '‹ 大厅', 'arena-text', `data-value="${isFormal() ? 'series' : 'quick'}"`)}
-        <h1 tabindex="-1">${seriesModes[entry.mode] || EVENTS[entry.mode].name}</h1>
-      </header>
-      ${isFormal() ? seriesOptions(data) : entry.mode === 'practice' ? practiceOptions() : ''}
-      <div class="arena-event">
-        <div class="arena-event-title">
-          <div><h2>${entry.mode === 'school' ? course.title : entry.mode === 'practice' ? '12 秒试斩' : entry.mode === 'daily' ? '今日挑战' : '赛前准备'}</h2>
-            ${entry.mode === 'daily' && bestDaily ? `<span>最高 ${bestDaily}</span>` : ''}</div>
+      <div class="arena-detail-scroll">
+        <header class="arena-detail-head">
+          <div><h1 tabindex="-1">${esc(title)}</h1>
+            <span>${course.limit} 秒${entry.mode === 'daily' && daily?.rewarded ? ' · 今日已领奖' :
+              entry.mode === 'daily' && daily?.flightBest ? ' · 最高 ' + daily.flightBest : ''}</span></div>
           <div class="arena-course-art" aria-hidden="true">${targets.map(key => art(key)).join('')}</div>
-        </div>
+        </header>
+        ${entry.mode === 'school' ? schoolOptions(data) : entry.mode === 'practice' ? practiceOptions() : ''}
         ${courseNotes(course)}
-        ${reason ? `<p class="arena-lock">${esc(reason)}</p>` : bladeFields(blades, data, course)}
-        ${blocked ? button('continue', '继续比赛', 'primary') : !reason ? button('register', '开斩', 'primary') :
-          !blades.length ? button('forge', '去锻刀', 'primary') : ''}
+        ${active ? `<p class="arena-lock">进行中 · ${esc(courseFor(active).title)}</p>` : reason ? `<p class="arena-lock">${esc(reason)}</p>` : bladeFields(blades, data, course)}
       </div>
-      ${entry.mode === 'daily' ? '<a class="arena-text arena-daily-link" href="#/daily">今日工坊目标 ›</a>' : ''}
+      <footer class="arena-dock">${action}</footer>
     </section>`;
   }
 
-  function renderLobby() {
+  function renderLobby(preferred) {
     const data = state();
     const blades = currentBlades();
+    syncSelection(blades, preferred);
     root.dataset.screen = entry.mode === 'quick' ? 'lobby' : 'detail';
     disconnectBladeThumbnails();
     root.innerHTML = `${notice ? `<p class="arena-alert" role="status">${esc(notice)}</p>` : ''}
-      ${entry.mode === 'quick' ? renderHome(data, blades) : entry.mode === 'series' ? renderSeries() : renderDetail(data, blades)}`;
+      ${entry.mode === 'quick' ? renderHome(data, blades) : renderDetail(data, blades)}`;
     mountBladeArts(blades);
     if (settings().sound !== false && settings().volume > 0) warmTrialAudio();
   }
 
+  function refreshLobby() {
+    const previous = root.querySelector('.arena-detail-scroll') ?? page;
+    const scroll = previous.scrollTop;
+    renderLobby();
+    const next = root.querySelector('.arena-detail-scroll') ?? page;
+    next.scrollTop = scroll;
+  }
+
+  function openPicker(title, markup, trigger, select) {
+    if (picker) return null;
+    const body = document.createElement('div');
+    body.className = 'arena-picker v19-surface';
+    body.innerHTML = markup;
+    body.addEventListener('click', event => {
+      const item = event.target.closest('[data-picker-value]');
+      if (!item) return;
+      select(item.dataset.pickerValue);
+      refreshLobby();
+      picker?.close();
+    });
+    picker = sheet({ title, body, onClose: () => { picker = null; },
+      returnFocus: () => page.classList.contains('is-active') ? root.querySelector(trigger) : null });
+    return body;
+  }
+
+  function chooseBlade(slot) {
+    const save = getSave();
+    const blades = eligibleBlades(save);
+    const ids = selectedIds();
+    const multi = entry.mode === 'apex';
+    const specialty = entry.mode === 'quick' ? null : previewCourse(slot).specialty;
+    const row = (id, name, meta, profile) => `<button type="button" class="arena-picker-blade" data-picker-value="${esc(id)}"
+        aria-pressed="${id === ids[slot]}">${bladeArt(id)}<span class="arena-blade-copy"><b>${esc(name)}</b>
+        <small>${esc(meta)}</small>${profile ? `<span class="arena-picker-profile">${profile}</span>` : ''}</span>
+        ${id === ids[slot] ? symbol('check') : symbol('next')}</button>`;
+    const options = [
+      entry.mode === 'practice' ? row('training', '工坊试刀', '借用') : '',
+      ...blades.map(blade => {
+        const id = bladeId(blade);
+        const assigned = ids.indexOf(id);
+        const mastery = masteryOf(save, blade);
+        const order = multi && assigned >= 0 ? ` · 第 ${assigned + 1} 轮` : '';
+        const suited = specialty === mastery.specialty ? ' · 适合本轮' : '';
+        return row(id, blade.name, mastery.level + ' · ' + mastery.project + '专长' + order + suited, profileText(blade));
+      }),
+    ];
+    const body = openPicker(multi ? `第 ${slot + 1} 轮出战刀` : '选择出战刀', options.join(''),
+      `[data-arena-action="choose-blade"][data-slot="${slot}"]`, id => {
+        if (multi) {
+          const other = lineup.indexOf(id);
+          if (other >= 0) lineup[other] = lineup[slot];
+          lineup[slot] = id;
+        } else if (entry.mode === 'practice') practice = id;
+        else solo = id;
+      });
+    if (body) mountBladeArts(blades, body);
+  }
+
+  function chooseMaterial() {
+    const options = Object.entries(TARGET_NAMES).map(([key, name]) => `<button type="button" class="arena-picker-target"
+      data-picker-value="${key}" aria-pressed="${key === entry.material}">${art(key, 'loading="lazy"')}<span>${name}</span></button>`);
+    options.unshift(`<button type="button" class="arena-picker-target all-targets" data-picker-value="" aria-pressed="${!entry.material}">按练习方式出靶</button>`);
+    openPicker('选择练习靶具', `<div class="arena-target-picker">${options.join('')}</div>`, '[data-arena-action="choose-material"]',
+      value => { entry.material = value; });
+  }
+
   /** 给刀卡补上真实刀模；未出图前保留底色占位，不会出现空白洞。 */
-  function mountBladeArts(blades) {
-    root.querySelectorAll('[data-thumb-blade]').forEach(host => {
+  function mountBladeArts(blades, container = root) {
+    container.querySelectorAll('[data-thumb-blade]').forEach(host => {
       const blade = blades.find(item => bladeId(item) === host.dataset.thumbBlade);
       if (!blade?.visual) {
         host.dataset.state = 'fallback';
@@ -284,7 +323,7 @@ export function mountTournament(root, { getSave, commit, settings, onLegacy, onF
   }
 
   function scrollTop() {
-    root.closest('.page').scrollTop = 0;
+    page.scrollTop = 0;
     root.querySelector('h1, h2')?.focus({ preventScroll: true });
   }
 
@@ -294,27 +333,25 @@ export function mountTournament(root, { getSave, commit, settings, onLegacy, onF
     const course = courseFor(run);
     const selected = run.roster[run.mode === 'apex' ? run.reports.length : 0];
     const blade = { ...selected, mastery: masteryOf(getSave(), selected) };
-    const current = bout = { run, course };
+    const current = bout = { run, course, bladeName: blade.name };
     const rounds = roundNames(run.mode);
     root.dataset.screen = 'play';
     root.innerHTML = `
-      <div class="arena-round-head">
-        <h2 tabindex="-1">${esc(course.title)}</h2>
-        <span class="arena-active-blade" title="${esc(blade.name)}">${esc(blade.name)}</span>
-        ${rounds.length ? `<span class="arena-round-index">${run.reports.length + 1} / ${rounds.length}</span>` : ''}
-        ${button('pause', '暂停', 'quiet round-pause')}
-      </div>
-      <div class="trial-frame" data-act="0">
-        <canvas tabindex="0" aria-label="挥刀舞台。手指滑过飞靶。键盘空格横斩，数字键选斩。"></canvas>
-        <div class="trial-hud">
+      <section class="arena-match" aria-label="${esc(course.title)}">
+        <header class="trial-hud">
           <div><small>得分</small><b data-trial="score">0000</b><em data-trial="delta"></em></div>
-          <div><small>剩余</small><b data-trial="time">${course.limit}″</b></div>
+          <div><small${course.limit === 30 ? ' data-trial="phase"' : ''}>${course.limit === 30 ? '热身' : '剩余'}</small><b data-trial="time">${course.limit}″</b></div>
           <div><small>连斩</small><b data-trial="combo">—</b></div>
+          ${button('pause', symbol('pause'), 'round-pause', 'aria-label="暂停" title="暂停"')}
+          <progress class="trial-timer" data-trial="timer" max="${course.limit}" value="${course.limit}" aria-label="剩余时间"></progress>
+        </header>
+        <div class="trial-frame" data-act="0">
+          <canvas tabindex="0" aria-label="${esc(blade.name)}。手指滑过飞靶。键盘空格横斩，数字键选斩。"></canvas>
+          <div class="trial-ready" data-trial-ready hidden><b>开斩</b><span>${esc(course.focus || '滑过飞靶，一刀多斩')}</span></div>
+          <div class="trial-verdict"><span data-trial="verdict" class="cut-callout"></span></div>
+          <div class="trial-cover" data-cover hidden></div>
         </div>
-        <div class="trial-ready" data-trial-ready hidden><b>开斩</b><span>${esc(course.focus || '滑过飞靶，一刀多斩')}</span></div>
-        <div class="trial-verdict"><span data-trial="verdict" class="cut-callout"></span></div>
-        ${course.limit === 30 ? '<div class="trial-phase" data-trial="phase"></div>' : ''}
-        <div class="trial-bottom">
+        <footer class="trial-bottom">
           ${course.goals.map((goal, i) => `<div class="trial-goal" aria-label="${esc(goalText(goal))}">
             <span>${esc(goal.label)} <b data-trial="goal-${i}"></b></span>
             ${goal.id === 'durability' ? '<progress data-trial="wear" aria-label="刀刃耐久" max="100" value="100"></progress>' : ''}
@@ -323,34 +360,49 @@ export function mountTournament(root, { getSave, commit, settings, onLegacy, onF
             <span>刀刃耐久 <b data-trial="durability">100%</b></span>
             <progress data-trial="wear" aria-label="刀刃耐久" max="100" value="100"></progress>
           </div>` : ''}
-          <div class="trial-cut-count"><span>斩断 <b data-trial="hits">0</b></span></div>
-        </div>
-        <div class="trial-cover" data-cover hidden></div>
-      </div>`;
+          <div class="trial-cut-count${course.goals.length ? ' sr-only' : ''}"><span>斩断 <b data-trial="hits">0</b></span></div>
+          ${rounds.length ? `<span class="trial-round" aria-label="第 ${run.reports.length + 1} 轮，共 ${rounds.length} 轮">${run.reports.length + 1}/${rounds.length}</span>` : ''}
+        </footer>
+      </section>`;
     scrollTop();
     try {
       engine = createTrial(root.querySelector('.trial-frame'), course, blade, {
-        muted: settings().sound === false, volume: settings().volume, onPause: showPause,
+        hud: root.querySelector('.arena-match'),
+        muted: settings().sound === false, volume: settings().volume, onPause: () => showPause(current),
         onFinish: result => finish(current, result),
       });
       focusCanvas();
       engine.start();
     } catch (error) {
       console.warn('[arena] 画布初始化失败', error);
-      setCover(`<h3>切割舞台暂不可用</h3>${button('lobby', '返回大厅', 'primary')}`);
+      setCover(`<h3 id="trial-cover-title">切割舞台暂不可用</h3>${button('lobby', '返回大厅', 'primary')}`);
     }
   }
 
   function setCover(content) {
     const cover = root.querySelector('[data-cover]');
-    cover.innerHTML = `<div class="trial-card">${content}</div>`;
+    cover.innerHTML = `<div class="trial-card" role="dialog" aria-modal="true" aria-labelledby="trial-cover-title">${content}</div>`;
     cover.hidden = false;
-    root.querySelector('.round-pause').hidden = true;
+    root.querySelector('.round-pause').disabled = true;
+    root.querySelector('canvas').inert = true;
     cover.querySelector('button')?.focus({ preventScroll: true });
   }
 
-  function showPause() {
-    setCover(`<h3>比赛暂停</h3>${button('resume', '继续挥刀', 'primary')}${button('lobby', '返回大厅')}`);
+  function showPause(current) {
+    const { run, course, bladeName } = current;
+    setCover(`<h3 id="trial-cover-title">比赛暂停</h3>
+      <p>${esc(course.title)} · ${esc(bladeName)}</p>
+      ${button('resume', '继续挥刀', 'primary')}
+      <div class="arena-actions">${button('lobby', '返回大厅')}${button('settings', '设置')}</div>
+      ${run.mode === 'practice' ? '' : '<small>返回大厅后，本轮需重新开始。</small>'}`);
+  }
+
+  function resume() {
+    root.querySelector('[data-cover]').hidden = true;
+    root.querySelector('.round-pause').disabled = false;
+    root.querySelector('canvas').inert = false;
+    focusCanvas();
+    engine.resume(settings());
   }
 
   function focusCanvas() {
@@ -366,7 +418,7 @@ export function mountTournament(root, { getSave, commit, settings, onLegacy, onF
     const reply = commit(draft => settleRound(draft, current.run.id, current.run.reports.length, result));
     if (reply.error) {
       current.result = result;
-      setCover(`<h3>战报暂未保存</h3><p>${esc(reply.error)}</p>
+      setCover(`<h3 id="trial-cover-title">战报暂未保存</h3><p>${esc(reply.error)}</p>
         ${button('retry-report', '重试保存', 'primary')}${button('lobby', '返回大厅')}`);
       return;
     }
@@ -397,31 +449,35 @@ export function mountTournament(root, { getSave, commit, settings, onLegacy, onF
     const shownScore = casual ? report.score : report.performance;
     const bestProject = (report.projects || []).filter(item => item.score > 0)
       .sort((a, b) => b.score - a.score)[0];
+    const showMultiplier = report.cut > 0 && Number.isFinite(report.scoreMultiplier);
+    const hasDetails = bestProject || record.rank?.gain || showMultiplier || record.rounds?.length > 1;
     const borrow = mode === 'practice' && !currentBlades().length;
     const mainAction = canContinue ? button('continue', '进入下一轮', 'primary') :
       record.unlockedNational ? button('mode', '报名全国赛', 'primary', 'data-value="national"') :
         borrow ? button('forge', '去锻第一把刀', 'primary') :
           replay ? button('replay', nextGrade === null ? '再来一局' : '挑战下一阶', 'primary') : '';
     root.innerHTML = `<section class="arena-report">
-      <header><span>${esc(record.title)}</span><h2 tabindex="-1">${heading}</h2>
-        <div class="arena-score-line">
-          <strong><span data-report-score>0</span></strong>
-          ${report.medal ? `<b class="arena-medal" data-medal="${esc(report.medal)}" aria-label="${esc(report.medal)}级评价">${esc(report.medal)}</b>` : ''}
+      <div class="arena-report-scroll">
+      <header class="arena-result-header">
+        <div class="arena-result-title">
+          <span>${esc(record.title)}</span><h2 tabindex="-1">${heading}</h2>
+          ${Number.isFinite(record.best) && shownScore > record.best
+            ? `<p class="arena-best">${record.best ? '刷新纪录 · +' + (shownScore - record.best) : '创下个人纪录'}</p>`
+            : record.best ? `<p>个人最高 ${record.best}</p>` : ''}
         </div>
-        <small>${casual ? '本局得分' : '评定分 / 1000'}</small>
-        ${Number.isFinite(record.best) && shownScore > record.best
-          ? `<p class="arena-best is-new">${record.best ? '刷新纪录 · +' + (shownScore - record.best) : '创下个人纪录'}</p>`
-          : record.best ? `<p class="arena-best">个人最高 <b>${record.best}</b></p>` : ''}
-        ${reason ? `<p>${reason}</p>` : ''}
+        <div class="arena-result-score">
+          <div class="arena-score-line"><strong data-report-score>0</strong>
+            ${report.medal ? `<b class="arena-medal" data-medal="${esc(report.medal)}" aria-label="${esc(report.medal)}级评价">${esc(report.medal)}</b>` : ''}
+          </div>
+          <small>${casual ? '本局得分' : '评定分 / 1000'}</small>
+        </div>
       </header>
+      ${reason ? `<p class="arena-report-hint">${reason}</p>` : ''}
       <div class="arena-result-metrics"><div><b>${report.cut}</b><span>斩断</span></div>
         ${Number.isFinite(report.swipe) ? `<div><b>${report.swipe}</b><span>一刀最多</span></div>` : ''}
         <div><b>×${report.combo}</b><span>最高连斩</span></div>
         ${report.tracksWear && !report.goals?.some(goal => goal.id === 'durability') ? `<div><b>${Math.floor(report.durability)}%</b><span>剩余耐久</span></div>` : ''}
       </div>
-      ${report.cut > 0 && Number.isFinite(report.scoreMultiplier) ? `<p class="arena-report-hint">
-        灵性得分 ×${report.scoreMultiplier.toFixed(2)}${report.deflections > 0 ? ' · 弹刀 ' + report.deflections + ' 次' : ''}
-      </p>` : ''}
       ${report.goals?.length ? `<div class="arena-report-goals">${report.goals.map(goal => `<div data-met="${goal.met}">
         <span>${esc(goal.label)}</span><b>${esc(goal.value)}${esc(goal.unit)} / ${esc(goal.target)}${esc(goal.unit)} ${goal.met ? '✓' : ''}</b>
       </div>`).join('')}</div>` : ''}
@@ -438,24 +494,31 @@ export function mountTournament(root, { getSave, commit, settings, onLegacy, onF
       </div>` : ''}
       ${record.workshop?.gained ? `<div class="arena-workshop-growth">
         <span>工坊 Lv.${record.workshop.level}${record.workshop.leveled ? ' · 升级' : ''}</span>
-        <b>${record.workshop.nextXp ? `再获 ${record.workshop.nextXp - record.workshop.xp} XP${record.workshop.nextPerk ? ' · ' + esc(record.workshop.nextPerk) : ''}` : '已满级'}</b>
+        ${record.workshop.leveled && !canContinue && !record.unlockedNational ? button('forge', '去锻刀', 'arena-text') :
+          `<b>${record.workshop.nextXp ? `再获 ${record.workshop.nextXp - record.workshop.xp} XP${record.workshop.nextPerk ? ' · ' + esc(record.workshop.nextPerk) : ''}` : '已满级'}</b>`}
       </div>` : ''}
       ${borrow ? '<p class="arena-report-hint">锻出第一把刀，即可报名 30 秒快赛。</p>' : ''}
-      <div class="report-actions">
-        ${mainAction}
-        ${borrow ? button('replay', '再试一次') : record.workshop?.leveled && !canContinue && !record.unlockedNational ? button('forge', '去锻刀') : ''}
-        ${button('lobby', '返回大厅', mainAction ? 'secondary' : 'primary')}
-      </div>
+      ${hasDetails ? `<details class="arena-details arena-report-details">
+        <summary>战报详情</summary><div>
+      ${showMultiplier ? `<p class="arena-report-hint">
+        灵性得分 ×${report.scoreMultiplier.toFixed(2)}${report.deflections > 0 ? ' · 弹刀 ' + report.deflections + ' 次' : ''}
+      </p>` : ''}
       ${bestProject ? `<div class="arena-best-cut"><span>表现最佳</span><b>${esc(bestProject.name)}</b><strong>${bestProject.score}%</strong></div>` : ''}
       ${record.rank?.gain ? `<div class="arena-rank-gain${record.rank.levelUp ? ' is-up' : ''}">
         <div class="arena-rank-gain-head"><span>赛事评级</span><b>${record.rank.before}</b><i aria-hidden="true">›</i><b>${record.rank.after}</b><em>+${record.rank.gain}</em></div>
         <div class="arena-rank-track" aria-hidden="true"><i style="--v:${Math.round((record.rank.progress ?? 0) * 100)}%"></i></div>
         <div class="arena-rank-foot"><span>${record.rank.levelUp ? '升段 · ' + esc(record.rank.to) : '下一段 ' + esc(record.rank.next || '')}</span>${record.rank.next ? `<b>还差 ${record.rank.toNext}</b>` : '<b>MAX</b>'}</div>
       </div>` : ''}
-      ${record.rounds?.length > 1 ? `<details class="arena-details"><summary>总评 ${record.total}${mode === 'apex' ? ' / ' + APEX_GOAL : ''}</summary>
-        ${record.rounds.map(item => `<div class="arena-round-result"><span>${esc(item.title)}</span><b>${item.win ? '' : '未达标 · '}${item.performance}</b></div>`).join('')}</details>` : ''}
+      ${record.rounds?.length > 1 ? `<div class="arena-round-result"><span>总评</span><b>${record.total}${mode === 'apex' ? ' / ' + APEX_GOAL : ''}</b></div>
+        ${record.rounds.map(item => `<div class="arena-round-result"><span>${esc(item.title)}</span><b>${item.win ? '' : '未达标 · '}${item.performance}</b></div>`).join('')}` : ''}
+        </div></details>` : ''}
+      </div>
+      <footer class="arena-dock report-actions">
+        ${borrow && replay ? button('replay', '再试一次') : button('lobby', '返回大厅', mainAction ? 'secondary' : 'primary')}
+        ${mainAction}
+      </footer>
     </section>`;
-    requestAnimationFrame(() => countUp(root.querySelector('[data-report-score]'), 0, shownScore, 820));
+    countUp(root.querySelector('[data-report-score]'), 0, shownScore, 660);
     scrollTop();
   }
 
@@ -472,17 +535,30 @@ export function mountTournament(root, { getSave, commit, settings, onLegacy, onF
     entry.grade = Math.min(GRADIENTS.length - 1, state().schools[id] || 0);
   }
 
-  root.addEventListener('change', event => {
-    const { arenaChoice } = event.target.dataset;
-    if (!['school', 'grade'].includes(arenaChoice)) return;
-    if (arenaChoice === 'school') chooseSchool(event.target.value);
-    else entry.grade = Number(event.target.value);
+  function showLobby() {
+    closeBout();
+    entry.mode = 'quick';
+    confirming = false;
     renderLobby();
-    root.querySelector(`[data-arena-choice="${arenaChoice}"]`)?.focus({ preventScroll: true });
-  });
+    scrollTop();
+  }
 
   root.addEventListener('keydown', event => {
-    if (event.key === 'Escape' && engine?.pause()) event.preventDefault();
+    const cover = root.querySelector('[data-cover]:not([hidden])');
+    if (event.key === 'Escape') {
+      if (cover?.querySelector('[data-arena-action="resume"]')) {
+        event.preventDefault();
+        resume();
+      } else if (engine?.pause()) event.preventDefault();
+    }
+    if (event.key === 'Tab' && cover) {
+      const buttons = [...cover.querySelectorAll('button:not(:disabled)')];
+      const first = buttons[0], last = buttons.at(-1);
+      if ((event.shiftKey && event.target === first) || (!event.shiftKey && event.target === last)) {
+        event.preventDefault();
+        (event.shiftKey ? last : first)?.focus();
+      }
+    }
   });
 
   root.addEventListener('click', event => {
@@ -493,26 +569,20 @@ export function mountTournament(root, { getSave, commit, settings, onLegacy, onF
     switch (action) {
       case 'legacy-career': return onLegacy();
       case 'forge': return onForge();
+      case 'settings': return onSettings();
       case 'loan': return register({ mode: 'practice', style: 'mix' }, []);
-      case 'pick-blade': {
-        const limit = bladeCount(entry);
-        const current = chosen.filter(item => item !== 'training');
-        if (limit === 1) chosen = [value];
-        else if (chosen.includes(value)) chosen = current.filter(item => item !== value);
-        else if (current.length < limit) chosen = [...current, value];
-        renderLobby();
-        return;
-      }
-      case 'register': return register({ ...entry }, chosen[0] === 'training' ? [] : chosen);
+      case 'choose-blade': return chooseBlade(Number(target.dataset.slot));
+      case 'choose-material': return chooseMaterial();
+      case 'register': return register({ ...entry }, selectedIds().filter(id => id !== 'training'));
       case 'replay': if (replay) return register(replay.plan, replay.ids); return;
       case 'mode':
         if (value === 'school') chooseSchool(target.dataset.school || entry.school);
         entry.mode = value;
-        if (value !== 'series') syncSelection();
         renderLobby();
         return scrollTop();
+      case 'school': chooseSchool(value); break;
+      case 'grade': entry.grade = Number(value); break;
       case 'style': entry.style = value; entry.material = ''; break;
-      case 'material': entry.material = value; break;
       case 'continue': {
         const active = state().active;
         confirming = false;
@@ -528,36 +598,31 @@ export function mountTournament(root, { getSave, commit, settings, onLegacy, onF
         break;
       }
       case 'pause': return engine?.pause();
-      case 'resume':
-        root.querySelector('[data-cover]').hidden = true;
-        root.querySelector('.round-pause').hidden = false;
-        focusCanvas();
-        return engine?.resume(settings());
+      case 'resume': return resume();
       case 'retry-report': return finish(bout, bout.result);
       case 'history': return renderReport(state().history[Number(value)]);
-      case 'lobby':
-        closeBout();
-        entry.mode = 'quick';
-        syncSelection();
-        renderLobby();
-        return scrollTop();
+      case 'lobby': return showLobby();
       default: return;
     }
-    renderLobby();
+    refreshLobby();
     root.querySelector(`[data-arena-action="${action}"]${value == null ? '' : `[data-value="${value}"]`}`)?.focus({ preventScroll: true });
   });
 
   return {
     open({ bladeId: preferred, mode = 'quick' } = {}) {
       closeBout();
-      entry.mode = mode;
+      entry.mode = Object.hasOwn(EVENTS, mode) ? mode : 'quick';
       confirming = false;
       notice = '';
-      syncSelection(preferred);
-      renderLobby();
+      renderLobby(preferred);
       scrollTop();
     },
-    leave() { closeBout(); },
+    back() {
+      if (!['detail', 'report'].includes(root.dataset.screen)) return false;
+      showLobby();
+      return true;
+    },
+    leave() { picker?.close(); closeBout(); },
     pause: () => engine?.pause(),
   };
 }

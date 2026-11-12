@@ -101,7 +101,7 @@ export function toast(message, tone = 'info', ms = 2200) {
 }
 
 /** 居中玻璃弹窗：焦点约束、Esc 关闭与返回触发器。 */
-export function sheet({ title, body, onClose }) {
+export function sheet({ title, body, onClose, returnFocus }) {
   const trigger = document.activeElement;
   const cross = icon('close');
   cross.classList.add('sheet-x-icon');
@@ -141,7 +141,8 @@ export function sheet({ title, body, onClose }) {
       const remaining = [...document.querySelectorAll('.sheet-mask')].at(-1);
       if (remaining) remaining.inert = false;
       else if (app) app.inert = false;
-      if (trigger?.isConnected) trigger.focus({ preventScroll: true });
+      const destination = returnFocus ? returnFocus() : trigger;
+      if (destination?.isConnected) destination.focus({ preventScroll: true });
     }, 220);
     if (onClose) onClose();
   }

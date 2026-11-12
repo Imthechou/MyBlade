@@ -34,12 +34,12 @@ let titleEl = null;
 let crEl = null;
 let backEl = null;
 
-export function create(host, { beforeSettings } = {}) {
+export function create(host, { beforeSettings, onBack } = {}) {
   if (!env.hasLocalStorage) toast('当前浏览器无法持久保存，进度仅在本次页面有效。请允许本地存储后重新打开。', 'warn', 8000);
   backEl = el('button', {
     class: 'topbar-back',
     title: '返回首页', 'aria-label': '返回首页',
-    onclick: () => router.go('home'),
+    onclick: () => { if (!onBack?.()) router.go('home'); },
   }, [icon('back')]);
   backEl.hidden = true;
 
@@ -62,7 +62,12 @@ export function create(host, { beforeSettings } = {}) {
 
 export function sync(pageKey) {
   if (titleEl) titleEl.textContent = TITLES[pageKey] || TITLES.home;
-  if (backEl) backEl.hidden = pageKey === 'home';
+  if (backEl) {
+    backEl.hidden = pageKey === 'home';
+    const label = pageKey === 'arena' ? '返回' : '返回首页';
+    backEl.title = label;
+    backEl.setAttribute('aria-label', label);
+  }
   const state = Progress.get();
   if (crEl) {
     const value = crEl.querySelector('b');
