@@ -1,6 +1,7 @@
 import {
   TARGET_NAMES, SCHOOLS, GRADIENTS, EVENTS, APEX_GOAL, bladeCount, bladeId, eligibleBlades, gate, roundNames,
   tournamentState, createEntry, courseFor, summarizeRound, settleRound, abandonEntry, dayKey, rankOf, RANKS,
+  masteryOf,
 } from '../tournament.js';
 import { createTrial, warmTrialAudio } from './trial.js';
 import { targetThumbnail, warmTargets } from './targets.js';
@@ -60,9 +61,10 @@ export function mountTournament(root, { getSave, commit, settings, onLegacy, has
           const id = bladeId(blade);
           const on = chosen.includes(id);
           const locked = multi && !on && chosen.filter(item => item !== 'training').length >= count;
-          const matches = data.mastery?.[id]?.matches ?? 0;
-          const mastered = matches >= 5 ? 2 : matches >= 2 ? 1 : 0;
-          return card(id, blade.name, `${blade.grade || '成刀'} · ${blade.score} 分`, on, locked, mastered);
+          const mastery = masteryOf({ tournament: data }, blade);
+          return card(id, blade.name,
+            `${blade.grade || '成刀'} · ${mastery.level} · ${mastery.project}专长`,
+            on, locked, mastery.levelIndex);
         }).join('')}
       </div>
     </div>`;
@@ -133,7 +135,7 @@ export function mountTournament(root, { getSave, commit, settings, onLegacy, has
       ${activeCard(data.active)}
       <header class="arena-hero">
         <div class="arena-hero-heading">
-          <span class="arena-chip">${loan ? '12 秒试刀' : '45 秒快赛'}</span>
+          <span class="arena-chip">${loan ? '12 秒试刀' : '30 秒快赛'}</span>
           ${data.streak >= 2 ? `<span class="arena-chip" data-hot="true">连胜 ×${data.streak}</span>` : ''}
           ${data.best.quick ? `<span class="arena-chip">最高 ${data.best.quick}</span>` : ''}
           <h1 tabindex="-1">斩试场</h1>
@@ -201,7 +203,8 @@ export function mountTournament(root, { getSave, commit, settings, onLegacy, has
         <small>${entry.mode === 'national' ? '一把刀，逐轮晋级' : '三把刀各打一轮，全达标且总评 ≥ ' + APEX_GOAL}</small></details>`;
     }
     if (entry.mode === 'school') return `<div class="arena-course-meta">${course.limit} 秒 · 斩完三波${course.combo ? ' · 连斩 ×' + course.combo : ''}</div>`;
-    if (entry.mode === 'daily') return `<div class="arena-course-meta">${dayKey().slice(5).replace('-', '.')} · 当日首场有效出战有奖励</div>`;
+    if (entry.mode === 'daily') return `<div class="arena-course-meta">30 秒三段冲分 · 当日固定靶序 · 首场有效奖励</div>`;
+    if (entry.mode === 'quick') return '<div class="arena-course-meta">30 秒 · 热身 → 进阶 → 冲刺 · 每把刀都能成长</div>';
     return '';
   }
 
@@ -381,7 +384,12 @@ export function mountTournament(root, { getSave, commit, settings, onLegacy, has
       <div class="arena-result-metrics"><div><b>${report.cut}</b><span>斩断</span></div>
         <div><b>×${report.combo}</b><span>最高连斩</span></div></div>
       ${bestProject ? `<div class="arena-best-cut"><span>表现最佳</span><b>${esc(bestProject.name)}</b><strong>${bestProject.score}%</strong></div>` : ''}
-      ${mode !== 'practice' ? `<div class="report-rewards"><b>+${record.cr} CR</b><b>+${record.xp} XP</b>${record.mastery ? '<span>磨合 +1</span>' : ''}${record.streak >= 2 ? `<span class="is-hot">连胜 ×${record.streak}${record.streakBonus ? ' +' + record.streakBonus : ''}</span>` : ''}</div>` : ''}
+      ${mode !== 'practice' ? `<div class="report-rewards"><b>+${record.cr} CR</b><b>+${record.xp} XP</b>${record.masteryGain ? `<span>成刀熟练度 +${record.masteryGain}</span>` : ''}${record.streak >= 2 ? `<span class="is-hot">连胜 ×${record.streak}${record.streakBonus ? ' +' + record.streakBonus : ''}</span>` : ''}</div>` : ''}
+      ${record.mastery ? `<div class="arena-blade-growth">
+        <div class="arena-blade-growth-head"><span>此刀成长 · ${esc(record.mastery.level)}</span><b>${record.mastery.xp} XP</b></div>
+        <div class="arena-rank-track" aria-label="刀具成长进度"><i style="--v:${Math.round(record.mastery.progress * 100)}%"></i></div>
+        <small>${record.mastery.nextLevel ? `距${esc(record.mastery.nextLevel)}还需 ${record.mastery.nextXp - record.mastery.xp} XP` : '已达最高熟练度'} · ${esc(record.mastery.project)}专长</small>
+      </div>` : ''}
       ${record.rank?.gain ? `<div class="arena-rank-gain${record.rank.levelUp ? ' is-up' : ''}">
         <div class="arena-rank-gain-head"><span>赛事评级</span><b>${record.rank.before}</b><i aria-hidden="true">›</i><b>${record.rank.after}</b><em>+${record.rank.gain}</em></div>
         <div class="arena-rank-track" aria-hidden="true"><i style="--v:${Math.round((record.rank.progress ?? 0) * 100)}%"></i></div>
