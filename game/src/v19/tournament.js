@@ -205,6 +205,11 @@ export function courseFor(run) {
       limit: 30, waves: school.waves, combo: school.combo ?? 0, timedLoop: false,
       hpScale: [.52, .62, .74, .86, .98][grade],
       wearScale: [.34, .38, .42, .46, .50][grade],
+      // Higher-grade trials introduce gentle target motion rather than only
+      // turning enemies into HP sponges. Heavy armor stays planted.
+      motion: grade >= 2 && ['precise', 'quench', 'composite', 'edge'].includes(stage?.school ?? run.school)
+        ? 'sweep' : 'float',
+      motionRate: 1 + grade * .12,
       seed: run.id + ':' + round,
     };
   }
