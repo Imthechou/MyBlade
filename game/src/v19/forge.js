@@ -9,11 +9,11 @@ export const MARK_HEIGHT = 8;
 export const PHASES = ['ore', 'refine', 'forge', 'fit', 'appraise'];
 
 export const FAMILIES = [
-  { id: 'river', name: '河床叠钢', short: '层钢', color: '#8ea8b6', dark: '#334f62', metal: 'silver', pattern: 'damascus', film: 'oxide', hint: '石皮下露出平行的细脉，适合打出层叠纹路。' },
-  { id: 'frost', name: '霜晶矿', short: '晶矿', color: '#89cbc7', dark: '#345d5d', metal: 'pearl', pattern: 'crystal', film: 'rainbow', hint: '斜光下有细碎反光，内里可能有清晰的晶区。' },
-  { id: 'coal', name: '熔渣铁', short: '暗钢', color: '#e0956a', dark: '#69433a', metal: 'obsidian', pattern: 'ember', film: 'oxide', hint: '断口露出暖色矿脉，可能保留少量熔纹。' },
-  { id: 'meteor', name: '陨星黑矿', short: '陨铁', color: '#aaa1e6', dark: '#413862', metal: 'gunmetal', pattern: 'nebula', film: 'doppler', hint: '带浅熔蚀坑的深色熔壳，细看可能见到金属碎屑。' },
-  { id: 'ochre', name: '赭铁层矿', short: '赭铁', color: '#b58a69', dark: '#684735', metal: 'copper', pattern: 'damascus', film: 'gold', hint: '黄褐石皮呈层状剥落，铁质结核常藏在厚皮之内。' },
+  { id: 'river', statBias: [6, 15, -7, 7, -8, -13], name: '河床叠钢', short: '层钢', color: '#8ea8b6', dark: '#334f62', metal: 'silver', pattern: 'damascus', film: 'oxide', hint: '石皮下露出平行的细脉，适合打出层叠纹路。' },
+  { id: 'frost', statBias: [-10, -5, 18, 9, -5, -7], name: '霜晶矿', short: '晶矿', color: '#89cbc7', dark: '#345d5d', metal: 'pearl', pattern: 'crystal', film: 'rainbow', hint: '斜光下有细碎反光，内里可能有清晰的晶区。' },
+  { id: 'coal', statBias: [19, -9, 7, -8, -9, 0], name: '熔渣铁', short: '暗钢', color: '#e0956a', dark: '#69433a', metal: 'obsidian', pattern: 'ember', film: 'oxide', hint: '断口露出暖色矿脉，可能保留少量熔纹。' },
+  { id: 'meteor', statBias: [5, -10, -7, -9, 5, 16], name: '陨星黑矿', short: '陨铁', color: '#aaa1e6', dark: '#413862', metal: 'gunmetal', pattern: 'nebula', film: 'doppler', hint: '带浅熔蚀坑的深色熔壳，细看可能见到金属碎屑。' },
+  { id: 'ochre', statBias: [-7, 9, -13, -1, 18, -6], name: '赭铁层矿', short: '赭铁', color: '#b58a69', dark: '#684735', metal: 'copper', pattern: 'damascus', film: 'gold', hint: '黄褐石皮呈层状剥落，铁质结核常藏在厚皮之内。' },
 ];
 
 export const LOOKS = {
@@ -183,14 +183,24 @@ export const oreSignals = ore => {
   };
 };
 export const STAT_NAMES = ['强度', '韧性', '锋利', '工艺', '设计', '灵性'];
-export const STAT_CAP = 100;
+export const STAT_CAP = 150;
+export function oreStatFocus(ore) {
+  const bias = familyOf(ore.family).statBias;
+  return STAT_NAMES[bias.indexOf(Math.max(...bias))];
+}
+
+const HAMMER_STAT_BIAS = {
+  belly: [20, 12, -10, 1, -9, -14],
+  edge: [-8, -7, 23, 8, -7, -9],
+  tip: [-12, -5, -13, -9, 16, 23],
+};
 export const FITS = [
-  { id: 'walnut', role: '沉稳', name: '赤木束柄', parts: '胡桃木 · 铜色端箍', color: '#673424', accent: '#bc8555', grip: 1, delta: [0, 5, 0, 3, 2, 0] },
-  { id: 'night', role: '轻巧', name: '夜行纤维', parts: '黑纤维 · 枪灰端箍', color: '#252c32', accent: '#687988', grip: 2, delta: [1, 0, 5, 3, 0, 0] },
-  { id: 'ivory', role: '衬纹', name: '霜白骨柄', parts: '骨白握柄 · 雾银端箍', color: '#b5a889', accent: '#bfcbd2', grip: 3, delta: [0, 1, 0, 1, 5, 3] },
-  { id: 'copper', role: '沉稳', name: '炉心铜座', parts: '缝线棕皮 · 赤铜端箍', color: '#694031', accent: '#d69e5b', grip: 4, delta: [6, 1, -2, 0, 2, 2] },
-  { id: 'ink', role: '轻巧', name: '墨蓝缠线', parts: '深蓝缠柄 · 冷银端箍', color: '#233b58', accent: '#82a4c3', grip: 5, delta: [0, 4, 4, 0, 1, 0] },
-  { id: 'jade', role: '衬纹', name: '苍玉包柄', parts: '黛绿握柄 · 玉色嵌线', color: '#31685a', accent: '#7eb8a2', grip: 6, delta: [-1, 0, 1, 2, 4, 5] },
+  { id: 'walnut', role: '沉稳', name: '赤木束柄', parts: '胡桃木 · 铜色端箍', color: '#673424', accent: '#bc8555', grip: 1, delta: [-3, 14, -4, 8, 1, -6] },
+  { id: 'night', role: '轻巧', name: '夜行纤维', parts: '黑纤维 · 枪灰端箍', color: '#252c32', accent: '#687988', grip: 2, delta: [0, -5, 15, 8, -2, -5] },
+  { id: 'ivory', role: '衬纹', name: '霜白骨柄', parts: '骨白握柄 · 雾银端箍', color: '#b5a889', accent: '#bfcbd2', grip: 3, delta: [-5, 4, -2, 2, 12, 3] },
+  { id: 'copper', role: '沉稳', name: '炉心铜座', parts: '缝线棕皮 · 赤铜端箍', color: '#694031', accent: '#d69e5b', grip: 4, delta: [16, 5, -9, -2, 2, -1] },
+  { id: 'ink', role: '轻巧', name: '墨蓝缠线', parts: '深蓝缠柄 · 冷银端箍', color: '#233b58', accent: '#82a4c3', grip: 5, delta: [-4, 10, 11, -1, 2, -5] },
+  { id: 'jade', role: '衬纹', name: '苍玉包柄', parts: '黛绿握柄 · 玉色嵌线', color: '#31685a', accent: '#7eb8a2', grip: 6, delta: [-7, -3, 1, 1, 8, 13] },
 ];
 
 const anchors = [[6, 0], [10, .006], [14, .017], [18, .034], [22, .068], [25, .128], [27, .231], [30, .5], [35, .66], [40, .8], [45, .9]];
@@ -258,7 +268,7 @@ const pick = (array, roll) => array[Math.floor(roll() * array.length)];
 export function freshRun(seed) {
   return {
     seed, phase: 'ore', batch: 0, selected: 0, inspections: {}, probes: {}, probeUsed: {}, ore: null, purity: 0, stability: 60, refining: null, refinement: null,
-    hits: 0, work: 0, cracks: 0, changedShape: false, model: 'blank', marks: {}, highlights: [],
+    hits: 0, work: 0, hammerWork: {}, cracks: 0, changedShape: false, model: 'blank', marks: {}, highlights: [],
     fit: null, refreshed: false, last: null, record: null,
     skin: { metal: 'raw', pattern: 'none', film: 'none', fx: 'none', levels: { metal: 1, pattern: 0, film: 0, fx: 0 }, seed: rngFor(seed, 'surface')() },
   };
@@ -601,7 +611,12 @@ export function strike(run, zone, position = { u: .67, v: zone === 'edge' ? .12 
   }
   if (run.specialist?.id === 'edge' && zone === 'edge' && type !== 'scar') run.edgeHits = (run.edgeHits || 0) + 1;
   const mark = workSurface(run, type, position);
-  run.work += ({ scar: -.6, polish: .8, shift: 1.35, surge: 2.4 })[type];
+  const work = { scar: -.6, polish: .8, shift: 1.35, surge: 2.4 }[type];
+  run.work += work;
+  if (work > 0) {
+    const zones = run.hammerWork ??= {};
+    zones[zone] = (zones[zone] || 0) + work;
+  }
   const after = signature(run.skin);
   const fusion = after !== before ? after : null;
   const notable = Boolean(fusion || change?.tier === 3 || change?.action === 'fade');
@@ -645,8 +660,27 @@ export function appraise(run) {
   const fit = FITS.find(item => item.id === run.fit);
   if (run.phase !== 'fit' || !fit) return null;
   const roll = rngFor(run.seed, 'review');
-  const base = 41 + run.ore.grade * 5 + run.purity * .19 + run.work * .94 - run.cracks * 2.9 + (run.refinement?.bonus || 0);
-  const stats = fit.delta.map((delta, index) => clamp(Math.round(base + delta + (roll() - .5) * 12 + (index > 3 ? run.skin.levels.fx * 2 : 0)), 20, STAT_CAP));
+  const base = 39 + run.ore.grade * 9 + run.purity * .21 + run.work * .94 -
+    run.cracks * 3.2 + (run.refinement?.bonus || 0);
+  const mineral = familyOf(run.ore.family).statBias;
+  const zones = Object.keys(HAMMER_STAT_BIAS).map(zone => ({
+    work: run.hammerWork?.[zone] ?? 0, bias: HAMMER_STAT_BIAS[zone],
+  }));
+  // Old checkpoints have total work but no strike locations. Earlier work stays neutral.
+  const totalWork = Math.max(10, run.work, zones.reduce((sum, zone) => sum + zone.work, 0));
+  const { pattern = 0, film = 0, fx = 0 } = run.skin.levels;
+  const finishing = [
+    0,
+    (run.stability - 60) * .19 - run.cracks * 1.2,
+    0,
+    ((run.refinement?.quality ?? 60) - 60) * .28 + pattern * 1.5,
+    pattern * 1.5 + film * 2.5,
+    fx * 4 + film * 1.5,
+  ];
+  const stats = fit.delta.map((fitting, i) => {
+    const hammer = zones.reduce((sum, zone) => sum + zone.bias[i] * zone.work / totalWork, 0);
+    return clamp(Math.round(base + mineral[i] + hammer + finishing[i] + fitting + (roll() - .5) * 6), 20, STAT_CAP);
+  });
   const specialist = run.specialist;
   if (specialist?.id === 'edge') stats[2] = clamp(stats[2] + Math.round(Math.min(6, run.edgeHits || 0) * specialist.boost), 20, STAT_CAP);
   if (specialist?.id === 'precise') {

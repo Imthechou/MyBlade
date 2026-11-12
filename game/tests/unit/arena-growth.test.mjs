@@ -6,6 +6,7 @@ import {
 } from '../../src/v19/tournament.js';
 import { flightAt, flightSchedule } from '../../src/v19/arena/flight.js';
 import { TARGET_NAMES } from '../../src/v19/tournament.js';
+import { arenaBladeStats, deflectsSwipe, strikeDamage, wearCost } from '../../src/v19/arena/stats.js';
 
 const blade = {
   id: 'crafted-one', name: '青锋试刃', grade: '稀有',
@@ -64,7 +65,8 @@ test('each school has distinct win conditions and faster flights at higher grade
       assert.equal(stage.limit, 30);
       assert.deepEqual(stage.goals.map(goal => goal.id), expected[school]);
       assert.ok(stage.waves.every(wave => wave.targets.every(key => Object.hasOwn(TARGET_NAMES, key))));
-      assert.ok(stage.wearScale > 0 === (school === 'overload'));
+      assert.ok(stage.wearScale > 0);
+      assert.equal(stage.wearScale >= .85, school === 'overload');
     }
     assert.ok(course(4).waves[0].speed > course(0).waves[0].speed);
     assert.ok(course(4).goals[0].target > course(0).goals[0].target);
@@ -82,7 +84,49 @@ test('each school has distinct win conditions and faster flights at higher grade
       assert.ok(stage.goals.length > 0);
     }
   }
-  assert.equal(courseFor({ mode: 'practice', id: 't', reports: [], style: 'mix' }).limit, 12);
+  const practice = courseFor({ mode: 'practice', id: 't', reports: [], style: 'mix' });
+  assert.equal(practice.limit, 12);
+  assert.equal(practice.wearScale, 0);
+});
+
+test('strength opens the shell, sharpness cuts the body and craft improves both', () => {
+  const steel = { hp: 307, maxHp: 307, armored: true, variation: .5 };
+  const base = arenaBladeStats([45, 75, 45, 65, 75, 75]);
+  const stronger = arenaBladeStats([115, 75, 45, 65, 75, 75]);
+  const sharper = arenaBladeStats([45, 75, 115, 65, 75, 75]);
+  const crafted = arenaBladeStats([45, 75, 45, 110, 75, 75]);
+  const hit = (blade, target = steel) => strikeDamage(blade, target, 1, 100);
+  assert.ok(hit(stronger) > hit(base) * 1.35);
+  assert.equal(hit(sharper), hit(base));
+  assert.ok(hit(crafted) > hit(base));
+
+  const exposed = { ...steel, hp: 160 };
+  assert.equal(hit(stronger, exposed), hit(base, exposed));
+  assert.ok(hit(sharper, exposed) > hit(base, exposed) * 1.5);
+  const bamboo = { hp: 113.4, maxHp: 113.4, reinforced: true, variation: .5 };
+  assert.ok(hit(base, bamboo) < bamboo.hp);
+  assert.equal(hit(sharper, bamboo), bamboo.hp);
+  const light = { hp: 200, maxHp: 200 };
+  assert.equal(hit(base, light), light.hp);
+});
+
+test('toughness, design and spirit each produce a visible effect', () => {
+  const weak = arenaBladeStats([75, 45, 75, 75, 45, 45]);
+  const strong = arenaBladeStats([75, 115, 75, 75, 115, 115]);
+  const steel = { hp: 307, maxHp: 307, armored: true, m: { wear: 4.45 } };
+  assert.ok(wearCost(strong, steel, 1, 1) < wearCost(weak, steel, 1, 1) * .6);
+  assert.ok(strong.markRadius > weak.markRadius + 8);
+  assert.ok(strong.chainWindow > weak.chainWindow + .4);
+  assert.ok(deflectsSwipe(weak, steel, .4, 1));
+  assert.equal(deflectsSwipe(weak, steel, .4, 0), false);
+  assert.equal(deflectsSwipe(weak, steel, .8, 1), false);
+  assert.equal(deflectsSwipe(strong, steel, .4, 1), false);
+  assert.ok(strong.scoreMultiplier > weak.scoreMultiplier * 1.25);
+  assert.deepEqual([strong.power, strong.control, strong.art], [75, 95, 115]);
+  const course = courseFor({ mode: 'school', school: 'edge', grade: 0, id: 'test', reports: [] });
+  const outcome = { ...sampleResult, objectives: { multi: 2 } };
+  assert.ok(summarizeRound(course, { ...outcome, score: 2100 }).performance >
+    summarizeRound(course, outcome).performance);
 });
 
 test('qualified rounds persist one-time swipe milestones without changing forging stats', () => {

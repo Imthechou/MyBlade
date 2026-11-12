@@ -11,7 +11,7 @@ const ARCADE = [
   row('card', 'rope', 'card'), row('gel', 'pineapple', 'rope'),
   diagonal('rope', 'card', 'gel'), row('pineapple', 'rope', 'card', 'gel'),
   cross('card', 'pineapple', 'rope', 'gel'), anvil('wood'),
-  diagonal('ice', 'gel', 'pineapple'), cross('bamboo', 'card', 'rope'),
+  diagonal('ice', 'gel', 'pineapple'), { ...cross('bamboo', 'card', 'rope'), reinforced: 'bamboo' },
   row('card', 'rope', 'pineapple', 'gel'), anvil('steel', 'durability'),
   cross('gel', 'bamboo', 'pineapple', 'rope'), diagonal('rope', 'ice', 'card', 'gel'),
   row('gel', 'pineapple', 'rope', 'card', 'gel'),
@@ -90,7 +90,7 @@ export function schoolCourse(school, grade) {
     waves, goals: school.goals.map(({ thresholds, ...item }) => ({ ...item, target: thresholds[grade] })),
     focus: school.focus, specialty: school.project,
     armorScale: [1, 1.04, 1.08, 1.12, 1.16][grade],
-    wearScale: school === SCHOOLS.overload ? [.85, .92, 1, 1.07, 1.14][grade] : 0,
+    wearScale: school === SCHOOLS.overload ? [.85, .92, 1, 1.07, 1.14][grade] : [.58, .63, .68, .73, .78][grade],
   };
 }
 
@@ -99,7 +99,7 @@ export function arcadeCourse() {
     waves: ARCADE.map((item, i) => ({
       ...item, at: SLOTS[i], speed: i < 4 ? 0 : i < 8 ? .13 : .21,
     })),
-    armorScale: 1, wearScale: 0, goals: [], rotate: true,
+    armorScale: 1, wearScale: .60, goals: [], rotate: true,
   };
 }
 

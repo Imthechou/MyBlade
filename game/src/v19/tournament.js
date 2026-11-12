@@ -194,11 +194,14 @@ export function summarizeRound(course, result) {
   const progress = goals.length ? Math.min(...goals.map(item => Math.min(1, item.value / item.target))) : coverage;
   const win = goals.length > 0 && goals.every(item => item.met) && result.reason !== 'wear';
   const swipe = result.swipe ?? 0;
-  const performance = Math.round(win ? 880 + 100 * coverage + 20 * Math.min(1, swipe / 4) :
-    goals.length ? 850 * progress : 1000 * (.74 * coverage + .16 * Math.min(1, swipe / 4) + .10 * Math.min(1, result.combo / 8)));
+  const swipeGrade = Math.min(1, swipe / 4);
+  const scoreGrade = Math.min(1, result.score / (targets * 85));
+  const performance = Math.round(win ? 870 + 65 * coverage + 25 * swipeGrade + 40 * scoreGrade :
+    goals.length ? 850 * progress : 1000 * (.60 * coverage + .15 * swipeGrade + .10 * Math.min(1, result.combo / 8) + .15 * scoreGrade));
   const medal = performance >= (goals.length ? 950 : 830) ? 'S' : performance >= (goals.length ? 900 : 650) ? 'A' :
     performance >= (goals.length ? 780 : 470) ? 'B' : performance >= (goals.length ? 480 : 240) ? 'C' : 'D';
-  return { ...result, swipe, title: course.title, complete: win, win, progress, coverage, performance, targets, goals, medal };
+  return { ...result, swipe, title: course.title, complete: win, win, progress, coverage, performance, targets, goals, medal,
+    tracksWear: course.wearScale > 0 };
 }
 
 export function settleRound(save, id, round, result) {
@@ -213,7 +216,7 @@ export function settleRound(save, id, round, result) {
   const report = summarizeRound(course, result);
   const quick = run.mode === 'quick' || run.mode === 'daily';
   const blade = run.roster[run.mode === 'apex' ? round : 0];
-  const qualified = quick ? result.reason === 'time' && result.cut >= 4 :
+  const qualified = quick ? result.cut >= 4 :
     report.win || (result.cut >= 4 && (report.progress >= .20 || report.coverage >= .24));
   const paidDaily = run.mode === 'daily' && data.daily[run.date]?.rewarded;
   const valid = qualified && !paidDaily;

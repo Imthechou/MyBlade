@@ -49,10 +49,12 @@ export function flightSchedule(course) {
       const anchored = pattern === 'anvil';
       const begins = at + delay;
       const duration = Math.min(course.limit - begins, anchored ? 2.8 : 2.77 - speed * 1.5);
+      const spin = side * (.18 + random() * .16);
+      random(); // Preserve the seeded sequence from the flight rules with first-hit criticals.
       return {
         key, begins, duration, anchored, lane, drift, apex,
         armored: key === wave.armor, marked: wave.marks?.includes(key) ?? false,
-        spin: side * (.18 + random() * .16), luck: random(), variation: random(),
+        reinforced: key === wave.reinforced, spin, variation: random(),
       };
     });
     return { ...wave, index, launches };
