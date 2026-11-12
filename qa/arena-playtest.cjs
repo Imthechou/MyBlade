@@ -64,7 +64,7 @@ async function snapshot(page, name) {
   return data;
 }
 
-async function captureErrors(page) {
+function captureErrors(page) {
   page.on('pageerror', error => errors.push('JS ' + error.message));
   page.on('console', message => { if (message.type() === 'error') errors.push('CONSOLE ' + message.text().slice(0, 320)); });
   page.on('response', response => { if (response.status() >= 400) errors.push('HTTP ' + response.status() + ' ' + response.url()); });
@@ -76,7 +76,10 @@ async function captureErrors(page) {
 async function dismissGuide(page) {
   await page.waitForTimeout(650);
   const guide = page.getByRole('button', { name: /知道了，开始第一把刀/ }).first();
-  if (await guide.isVisible()) await guide.click();
+  if (await guide.isVisible()) {
+    await guide.click();
+    await guide.waitFor({ state: 'hidden' });
+  }
 }
 
 async function practice(page, cdp) {
@@ -94,6 +97,7 @@ async function practice(page, cdp) {
   const live = await snapshot(page, '02-arena-native-triple-cut');
   assert.ok(Number(live.hits) >= 3, 'One native swipe should break the first three light targets');
   await page.locator('.arena-report').waitFor({ timeout: 15000 });
+  await page.waitForTimeout(850);
   const report = await snapshot(page, '03-arena-practice-report');
   assert.match(report.report, /试刀结束/);
   assert.match(report.report, /一刀最多/);
@@ -122,11 +126,21 @@ async function quick(page, cdp) {
   assert.equal(await page.locator(ui('time')).textContent(), '30″');
   await waitForRow(page);
   await nativeSwipe(cdp, box, .04, .96, await page.evaluate(() => window.renderedTargets[0][1]));
-  assert.ok(Number(await page.locator(ui('hits')).textContent()) >= 3);
-  await page.waitForFunction(() => window.renderedTargets.length === 0);
-  await waitForRow(page);
-  await nativeSwipe(cdp, box, .04, .96, await page.evaluate(() => window.renderedTargets[0][1]));
-  assert.ok(Number(await page.locator(ui('hits')).textContent()) >= 4);
+  const first = Number(await page.locator(ui('hits')).textContent());
+  assert.ok(first >= 3);
+  // Throws can overlap and the next seeded formation can be diagonal. Aim
+  // from its rendered position instead of requiring an empty frame or a row.
+  for (let elapsed = 3; elapsed <= 8 && Number(await page.locator(ui('hits')).textContent()) < 4; elapsed++) {
+    const aim = await page.waitForFunction(minElapsed => {
+      const seconds = Number.parseInt(document.querySelector('[data-trial="time"]').textContent, 10);
+      if (30 - seconds < minElapsed) return null;
+      return window.renderedTargets.filter(([x, y]) => x > .13 && x < .87 && y > .44 && y < .62)
+        .sort(([x], [other]) => Math.abs(x - .5) - Math.abs(other - .5))[0] ?? null;
+    }, elapsed, { timeout: 9000 });
+    const [x, y] = await aim.jsonValue();
+    await nativeSwipe(cdp, box, x - .12, x + .12, y);
+  }
+  assert.ok(Number(await page.locator(ui('hits')).textContent()) >= 4, 'Quick match should qualify for growth');
   await page.getByRole('button', { name: '暂停', exact: true }).click();
   const pausedAt = await page.locator(ui('time')).textContent();
   await page.waitForTimeout(1100);
@@ -135,6 +149,7 @@ async function quick(page, cdp) {
   await page.locator('.trial-frame[data-act="1"]').waitFor({ timeout: 14000 });
   await page.locator('.trial-frame[data-act="2"]').waitFor({ timeout: 14000 });
   await page.locator('.arena-report').waitFor({ timeout: 14000 });
+  await page.waitForTimeout(850);
   const report = await snapshot(page, '04-arena-quick-growth');
   assert.match(report.report, /工坊 Lv\.2/);
   assert.match(report.report, /里程碑/);
@@ -159,7 +174,7 @@ async function quick(page, cdp) {
     await context.addInitScript(observeRenderedTargets);
     const page = await context.newPage();
     page.setDefaultTimeout(14000);
-    await captureErrors(page);
+    captureErrors(page);
     const cdp = await context.newCDPSession(page);
     await practice(page, cdp);
     await quick(page, cdp);

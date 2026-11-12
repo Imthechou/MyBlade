@@ -269,7 +269,7 @@ export function createTrial(frame, course, blade, { muted, volume, onPause, onFi
   }
 
   function specialtyBonus(target) {
-    return mastery?.specialty === target.group.project ? mastery.bonus : 0;
+    return mastery && (mastery.specialty === target.group.project || mastery.specialty === course.specialty) ? mastery.bonus : 0;
   }
 
   function damageFor(target, speed) {
@@ -333,7 +333,8 @@ export function createTrial(frame, course, blade, { muted, volume, onPause, onFi
     state.bestCombo = Math.max(state.bestCombo, state.comboChain);
     const chainBonus = Math.min(54, (state.comboChain - 1) * 7);
     const swipeBonus = pointer.kills >= 3 ? 42 + (pointer.kills - 3) * 20 : 0;
-    const style = 1 + design * .001 + (target.group.project === 'cutting' ? specialtyBonus(target) : 0);
+    const cuttingBonus = mastery?.specialty === 'cutting' ? specialtyBonus(target) : 0;
+    const style = 1 + design * .001 + cuttingBonus;
     state.score += Math.round((target.m.score * (target.armored ? 3.1 : 2) + chainBonus +
       swipeBonus + (precise ? 32 : 0)) * style);
     recordCut(target, precise);

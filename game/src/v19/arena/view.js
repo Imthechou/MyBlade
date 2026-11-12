@@ -1,5 +1,5 @@
 import {
-  TARGET_NAMES, SCHOOLS, GRADIENTS, EVENTS, APEX_GOAL, bladeCount, bladeId, eligibleBlades, gate, roundNames,
+  TARGET_NAMES, SCHOOLS, GRADIENTS, EVENTS, PROJECTS, APEX_GOAL, bladeCount, bladeId, eligibleBlades, gate, roundNames,
   tournamentState, createEntry, courseFor, summarizeRound, settleRound, abandonEntry, dayKey, rankOf, RANKS,
   masteryOf, NATIONAL_UNLOCK,
 } from '../tournament.js';
@@ -49,6 +49,8 @@ export function mountTournament(root, { getSave, commit, settings, onLegacy, onF
   function bladeFields(blades, data, course) {
     const count = bladeCount(entry);
     const multi = count > 1;
+    const specialties = multi ? roundNames(entry.mode).map((_, i) =>
+      courseFor({ ...entry, id: 'preview', reports: Array(i) }).specialty) : [course?.specialty];
     const card = (id, name, meta, on, locked, mastered = 0, suited = false) => `<button type="button" class="arena-blade-card${on ? ' is-picked' : ''}${suited ? ' is-suited' : ''}"
       data-arena-action="pick-blade" data-value="${esc(id)}" aria-pressed="${on}"${locked ? ' disabled' : ''}${mastered ? ` data-mastery="${mastered}"` : ''}>
       <span class="arena-blade-art" data-thumb-blade="${esc(id)}"><i class="arena-blade-fallback" aria-hidden="true"></i></span>
@@ -63,7 +65,8 @@ export function mountTournament(root, { getSave, commit, settings, onLegacy, onF
           const on = chosen.includes(id);
           const locked = multi && !on && chosen.filter(item => item !== 'training').length >= count;
           const mastery = masteryOf({ tournament: data }, blade);
-          const suited = Boolean(course?.specialty === mastery.specialty && (!multi || chosen[0] === id));
+          const slot = multi ? on ? chosen.indexOf(id) : chosen.length : 0;
+          const suited = specialties[slot] === mastery.specialty;
           const order = multi && on ? '第' + (chosen.indexOf(id) + 1) + '轮 · ' : '';
           return card(id, blade.name,
             `${order}${mastery.level} · ${mastery.project}专长${suited ? ' · 适合本轮' : ''}`,
@@ -205,7 +208,10 @@ export function mountTournament(root, { getSave, commit, settings, onLegacy, onF
       <span>${course.limit} 秒 · ${course.goals.map(goalText).join(' · ')}</span></div>` : '';
     if (list.length) {
       return `${task}<details class="arena-details"><summary>${list.length} 轮赛程</summary>
-        <ol>${list.map(label => `<li>${esc(label)}</li>`).join('')}</ol>
+        <ol>${list.map((label, i) => {
+          const { specialty } = courseFor({ ...entry, id: 'preview', reports: Array(i) });
+          return `<li>${esc(label)} · ${PROJECTS[specialty].name}专长</li>`;
+        }).join('')}</ol>
         <small>${entry.mode === 'national' ? '一把刀，逐轮晋级' : '三把刀各打一轮，全达标且总评 ≥ ' + APEX_GOAL}</small></details>`;
     }
     if (entry.mode === 'daily') return '<div class="arena-course-meta">30 秒 · 当日固定靶序 · 首场有效奖励</div>';
@@ -400,7 +406,7 @@ export function mountTournament(root, { getSave, commit, settings, onLegacy, onF
         ${Number.isFinite(report.swipe) ? `<div><b>${report.swipe}</b><span>一刀最多</span></div>` : ''}
         <div><b>×${report.combo}</b><span>最高连斩</span></div></div>
       ${report.goals?.length ? `<div class="arena-report-goals">${report.goals.map(goal => `<div data-met="${goal.met}">
-        <span>${esc(goal.label)}</span><b>${goal.value}${goal.unit} / ${goal.target}${goal.unit} ${goal.met ? '✓' : ''}</b>
+        <span>${esc(goal.label)}</span><b>${esc(goal.value)}${esc(goal.unit)} / ${esc(goal.target)}${esc(goal.unit)} ${goal.met ? '✓' : ''}</b>
       </div>`).join('')}</div>` : ''}
       ${record.cr || record.xp ? `<div class="report-rewards">${record.cr ? `<b>+${record.cr} CR</b>` : ''}
         ${record.xp ? `<b>工坊 +${record.xp} XP</b>` : ''}
