@@ -100,7 +100,7 @@ export function createTrial(frame, course, blade, { muted, volume, onPause, onFi
   const state = {
     screen: 'ready', score: 0, bestCombo: 0, durability: 100, time: 0,
     round: 0, waves: 0, cut: 0, hits: 0, damage: 0, targets: [], pieces: [], particles: [], rings: [],
-    slashes: [], trails: [], impacts: [], comboChain: 0, lastKillAt: -1e4,
+    slashes: [], trails: [], impacts: [], comboChain: 0, lastKillAt: -1e4, misses: 0,
     pointer: { down: false, points: [], hitTargets: new Set() },
     feel: true, intensity: strength, reducedMotion: motion.reduced(), hitstop: 0, slowRemaining: 0,
     shakeX: 0, shakeY: 0, shakeVX: 0, shakeVY: 0, flash: 0, nextWaveAt: -1,
@@ -108,6 +108,7 @@ export function createTrial(frame, course, blade, { muted, volume, onPause, onFi
   let W = 1, H = 1, DPR = 1, unit = 1, ambientDots = [];
   let backdrop, deadline, timeLeft = course.limit * 1000, lastTick, raf, sequence = 0, clock = -1;
   let currentWave, timeLeftAtClear = null, lastVerdictAt = -1000, fatalAt = -1, readyUntil = 0;
+  let waveExpiresAt = Number.POSITIVE_INFINITY;
   let scoreTimer, comboTimer, readyTimer;
 
   function updateHUD() {
@@ -159,9 +160,10 @@ export function createTrial(frame, course, blade, { muted, volume, onPause, onFi
     const step = row ? Math.min(W / (count + .25), 192 * unit) : 0;
     const scale = row ? Math.min(unit * 1.24, step / 144) : Math.min(1.4, Math.max(unit * 1.22, Math.min(W / 246, H / 368)));
     state.targets.forEach((target, i) => {
-      target.x = W / 2 + (i - (count - 1) / 2) * step;
-      // Set target feet near the lit platform. The previous offset made props float in mid-air.
-      target.y = H * (row ? .58 : .50);
+      target.baseX = W / 2 + (i - (count - 1) / 2) * step;
+      target.baseY = H * (row ? .58 : .50);
+      target.x = target.baseX;
+      target.y = target.baseY;
       target.scale = scale;
     });
   }
@@ -188,9 +190,15 @@ export function createTrial(frame, course, blade, { muted, volume, onPause, onFi
   }
 
   function spawnWave() {
-    currentWave = waves[state.round % waves.length];
+    // In a timed 30s match, each ten-second act has its own target pool.
+    // Fast cutters earn more waves; a difficult target can never stall a match.
+    const act = course.arcade
+      ? Math.min(2, Math.max(0, Math.floor((course.limit - Math.max(0, deadline - performance.now()) / 1000) / 10)))
+      : 0;
+    const index = course.arcade ? act * 3 + state.round % 3 : state.round % waves.length;
+    currentWave = waves[index % waves.length];
     const { heavy, targets } = currentWave;
-    const nextWave = waves[state.round + 1] ?? (course.timedLoop ? waves[0] : null);
+    const nextWave = waves[(index + 1) % waves.length] ?? null;
     warmTargets(targets);
     if (nextWave) warmTargets(nextWave.targets);
     const project = projects.get(currentWave.project) || { damage: 0, count: 0 };
@@ -203,18 +211,24 @@ export function createTrial(frame, course, blade, { muted, volume, onPause, onFi
         id: ++sequence, key, m, hp, maxHp: hp, heavy, alive: true, phase: rand(0, TAU), recoil: 0,
         impulseX: 0, impulseY: 0, tilt: 0, hitGlow: 0, recoilTime: 0, strikes: [], cracks: [],
         spawnT: state.time - .08, cutDepth: 0, statusText: '', statusUntil: 0,
+        motion: heavy ? 'static' : (currentWave.motion ?? course.motion ?? 'float'),
       };
     });
     state.round++;
     state.nextWaveAt = -1;
-    state.durability = Math.min(100, state.durability + (state.round > 1 ? 12 : 0));
+    waveExpiresAt = course.arcade
+      ? state.time + (act === 0 ? 3.6 : act === 1 ? 3.2 : 2.9)
+      : Number.POSITIVE_INFINITY;
+    state.durability = Math.min(100, state.durability + (state.round > 1 ? 9 : 0));
     layoutTargets();
     ui.wave.textContent = course.timedLoop ? String(state.round).padStart(2, '0') : state.round + ' / ' + waves.length;
-    ui.target.textContent = '第 ' + state.round + ' 波' + (heavy ? ' · ' + state.targets[0].m.name : '');
+    ui.target.textContent = course.arcade
+      ? (['热身', '进阶', '冲刺'][act] + ' · ' + (currentWave.cue || '连斩'))
+      : ('第 ' + state.round + ' 波' + (heavy ? ' · ' + state.targets[0].m.name : ''));
     ui.target.classList.remove('is-new');
     void ui.target.offsetWidth;
     ui.target.classList.add('is-new');
-    ui.tip.textContent = heavy ? '反复劈开重靶' : '横划连斩';
+    ui.tip.textContent = heavy ? '击碎重靶 · 追求破防' : course.arcade ? '追踪目标 · 连斩冲分' : '横划连斩';
     updateHUD();
   }
 
@@ -228,6 +242,8 @@ export function createTrial(frame, course, blade, { muted, volume, onPause, onFi
     deadline = readyUntil + timeLeft;
     lastTick = now;
     spawnWave();
+    // The ready animation must not consume the playable time for the first wave.
+    if (course.arcade) waveExpiresAt += lead / 1000;
     updateClock(lastTick);
     const ready = frame.querySelector('[data-trial-ready]');
     if (ready) {
@@ -277,7 +293,8 @@ export function createTrial(frame, course, blade, { muted, volume, onPause, onFi
     cancelAnimationFrame(raf);
     onFinish({
       reason: timeLeftAtClear !== null ? 'clear' : reason, score: state.score, combo: state.bestCombo,
-      hits: state.hits, cut: state.cut, waves: state.waves, damage: state.damage, durability: state.durability,
+      hits: state.hits, cut: state.cut, waves: state.waves, missed: state.misses,
+      damage: state.damage, durability: state.durability,
       projects: [...projects].map(([kind, item]) => ({
         kind, name: PROJECTS[kind].name, score: Math.round(item.damage / item.count * 100),
       })),
@@ -1037,6 +1054,15 @@ export function createTrial(frame, course, blade, { muted, volume, onPause, onFi
     state.shakeX=clamp(state.shakeX+state.shakeVX*seconds,-7,7)*soften;
     state.shakeY=clamp(state.shakeY+state.shakeVY*seconds,-7,7)*soften;
     for(const t of state.targets){
+      if (t.alive && t.baseX !== undefined) {
+        // Gentle arcade motion is real physics for collision purposes: draw,
+        // slash hitboxes and shadows all use the exact same animated position.
+        const phase = state.time * (t.motion === 'sweep' ? 2.35 : 1.35) + t.phase;
+        const sideways = t.motion === 'sweep' ? 20 : t.motion === 'float' ? 7 : 0;
+        const vertical = t.motion === 'sweep' ? 13 : t.motion === 'float' ? 5 : 0;
+        t.x = t.baseX + Math.sin(phase) * sideways * t.scale;
+        t.y = t.baseY + Math.cos(phase * .86) * vertical * t.scale;
+      }
       t.recoil=Math.max(0,t.recoil-seconds*7);t.recoilTime+=seconds;
       t.hitGlow=Math.max(0,t.hitGlow-seconds*7.8);
       t.tilt*=Math.max(0,1-seconds*5);
@@ -1066,6 +1092,17 @@ export function createTrial(frame, course, blade, { muted, volume, onPause, onFi
     if (state.nextWaveAt >= 0 && state.time >= state.nextWaveAt) {
       endStroke();
       if (timeLeftAtClear !== null) return finish('clear', now);
+      spawnWave();
+    } else if (course.arcade && state.nextWaveAt < 0 && state.time >= waveExpiresAt && now >= readyUntil) {
+      // Let a difficult row pass by rather than keeping players stuck at a
+      // static HP sponge. Skipped targets reset momentum but never fail a run.
+      const missed = state.targets.filter(target => target.alive).length;
+      if (missed) {
+        state.misses += missed;
+        state.comboChain = 0;
+        ui.combo.textContent = '—';
+      }
+      endStroke();
       spawnWave();
     }
     raf = requestAnimationFrame(tick);
