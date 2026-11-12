@@ -46,8 +46,8 @@ export function rankGain(mode, info = {}) {
 
 export const EVENTS = {
   practice: { name: '试刀练习', sub: '12 秒 · 自选靶具' },
-  quick: { name: '自由快赛', sub: '45 秒 · 连斩冲分' },
-  daily: { name: '每日挑战', sub: '45 秒 · 当日固定靶序' },
+  quick: { name: '自由快赛', sub: '30 秒 · 三段冲分' },
+  daily: { name: '每日挑战', sub: '30 秒 · 当日固定靶序' },
   school: { name: '流派试炼', sub: '六个流派 · 各五阶' },
   national: { name: '全国大赛', sub: '单刀出征 · 五轮淘汰' },
   apex: { name: '三刀巅峰赛', sub: '三把成刀 · 三轮接力' },
@@ -97,15 +97,19 @@ const APEX = [
   { title: '第二轮 · 精斩', school: 'composite' },
   { title: '第三轮 · 极限', school: 'overload' },
 ];
+// Thirty-second arcade flow: 0–10s warm-up, 10–20s technique, 20–30s finale.
+// Keep the original 9 materials for the formal schools; quickplay favors one-hit
+// rows and reserves heavy targets for brief punctuation, not a damage sponge.
 const QUICK_WAVES = [
-  ...SCHOOLS.edge.waves.slice(0, 2),
-  heavy('precision', 'gel'),
-  line('cutting', 'card', 'bamboo', 'pineapple', 'rope'),
-  heavy('strength', 'wood'),
-  line('precision', 'ice', 'gel', 'card'),
-  heavy('durability', 'steel'),
-  line('cutting', 'wood', 'pineapple', 'rope'),
-  heavy('extreme', 'shield'),
+  { ...line('cutting', 'card', 'rope', 'card'), cue: '热身连斩', motion: 'float' },
+  { ...line('precision', 'gel', 'pineapple', 'card'), cue: '轻快连斩', motion: 'float' },
+  { ...line('cutting', 'rope', 'card', 'gel'), cue: '连续试锋', motion: 'float' },
+  { ...line('cutting', 'card', 'pineapple', 'rope', 'gel'), cue: '移动追斩', motion: 'sweep' },
+  { ...heavy('strength', 'wood'), cue: '硬靶破防', motion: 'static' },
+  { ...line('precision', 'ice', 'gel', 'pineapple'), cue: '追踪切割', motion: 'sweep' },
+  { ...line('cutting', 'card', 'rope', 'pineapple', 'card'), cue: '四连冲分', motion: 'sweep' },
+  { ...heavy('durability', 'steel'), cue: '重劈钢桶', motion: 'static' },
+  { ...line('cutting', 'gel', 'pineapple', 'rope', 'card'), cue: '终局狂热', motion: 'sweep' },
 ];
 const TRAINING_BLADE = { id: 'training', name: '工坊试刀', grade: '借用', stats: [69, 77, 73, 65, 64, 60] };
 export const APEX_GOAL = 2700;
@@ -124,6 +128,14 @@ export function eligibleBlades(save) {
     blade.stats.every(Number.isFinite));
 }
 
+export const BLADE_MASTERY_TIERS = [
+  { xp: 0, name: '新铸', bonus: 0 },
+  { xp: 120, name: '磨合', bonus: .02 },
+  { xp: 350, name: '熟刃', bonus: .04 },
+  { xp: 700, name: '名刃', bonus: .06 },
+  { xp: 1200, name: '传世', bonus: .08 },
+];
+
 export function masteryOf(save, blade) {
   const saved = tournamentState(save).mastery[bladeId(blade)];
   const average = id => {
@@ -133,9 +145,18 @@ export function masteryOf(save, blade) {
   const specialty = Object.hasOwn(PROJECTS, saved?.specialty) ? saved.specialty :
     Object.keys(PROJECTS).reduce((best, id) => average(id) > average(best) ? id : best);
   const matches = Number.isFinite(saved?.matches) ? Math.max(0, Math.floor(saved.matches)) : 0;
-  const level = matches >= 5 ? '名刃' : matches >= 2 ? '熟刃' : '新铸';
-  const bonus = matches >= 5 ? .05 : matches >= 2 ? .02 : 0;
-  return { specialty, matches, level, bonus, project: PROJECTS[specialty].name };
+  // Older saves only had match counts. Preserve the earned rank on migration.
+  const legacyXp = matches >= 5 ? 700 : matches >= 2 ? 350 : matches * 40;
+  const xp = Number.isFinite(saved?.xp) ? Math.max(0, Math.floor(saved.xp)) : legacyXp;
+  const index = BLADE_MASTERY_TIERS.reduce((tier, item, i) => xp >= item.xp ? i : tier, 0);
+  const tier = BLADE_MASTERY_TIERS[index];
+  const next = BLADE_MASTERY_TIERS[index + 1];
+  return {
+    specialty, matches, xp, level: tier.name, levelIndex: index, bonus: tier.bonus,
+    nextLevel: next?.name ?? '', nextXp: next?.xp ?? xp,
+    progress: next ? (xp - tier.xp) / (next.xp - tier.xp) : 1,
+    project: PROJECTS[specialty].name,
+  };
 }
 
 export function gate(save, entry) {
@@ -181,9 +202,9 @@ export function courseFor(run) {
     const grade = run.mode === 'school' ? run.grade : run.mode === 'national' ? round : 4;
     return {
       title: stage?.title ?? school.name + ' · ' + GRADIENTS[grade],
-      limit: 45, waves: school.waves, combo: school.combo ?? 0, timedLoop: false,
-      hpScale: [.61, .72, .85, .98, 1.10][grade],
-      wearScale: [.38, .41, .45, .49, .53][grade],
+      limit: 30, waves: school.waves, combo: school.combo ?? 0, timedLoop: false,
+      hpScale: [.52, .62, .74, .86, .98][grade],
+      wearScale: [.34, .38, .42, .46, .50][grade],
       seed: run.id + ':' + round,
     };
   }
@@ -192,10 +213,11 @@ export function courseFor(run) {
     run.style === 'row' ? QUICK_WAVES.filter(wave => !wave.heavy) :
     run.style === 'heavy' ? QUICK_WAVES.filter(wave => wave.heavy) : QUICK_WAVES;
   return {
-    title: EVENTS[run.mode].name, limit: practice ? 12 : 45, waves,
-    combo: 0, timedLoop: true, hpScale: practice ? .68 : .74, wearScale: .30,
+    title: EVENTS[run.mode].name, limit: practice ? 12 : 30, waves,
+    combo: 0, timedLoop: true, arcade: !practice,
+    hpScale: practice ? .63 : .54, wearScale: .27,
     seed: run.mode === 'daily' ? run.date : run.id,
-    rotate: !practice,
+    rotate: false,
   };
 }
 
@@ -232,9 +254,16 @@ export function settleRound(save, id, round, result) {
   const cr = (valid && quick ? Math.min(35, 4 + Math.floor(result.score / 100)) : 0) + streakBonus;
   const xp = valid && quick ? Math.min(45, 10 + Math.floor(result.score / 75)) : 0;
   let mastery = null;
+  let masteryGain = 0;
   if (valid && !run.qualified.includes(blade.id)) {
     const before = masteryOf(save, blade);
-    data.mastery[blade.id] = { specialty: before.specialty, matches: before.matches + 1 };
+    // Blade experience is earned by using a specific knife. It never rewrites
+    // the six forged base stats; capped specialty proficiency rewards practice.
+    masteryGain = Math.min(90, 24 + Math.floor(result.score / 65) +
+      (run.mode === 'school' && result.reason === 'clear' ? 15 : 0));
+    data.mastery[blade.id] = {
+      specialty: before.specialty, matches: before.matches + 1, xp: before.xp + masteryGain,
+    };
     mastery = masteryOf({ tournament: data }, blade);
     run.qualified.push(blade.id);
   }
@@ -253,7 +282,7 @@ export function settleRound(save, id, round, result) {
   const champion = done && run.reports.length === series && (run.mode === 'national' ?
     report.win : run.mode === 'apex' && run.reports.every(item => item.win) && total >= APEX_GOAL);
   const record = {
-    id, round, mode: run.mode, title: report.title, date: run.date, blade: blade.name, cr, xp, mastery,
+    id, round, mode: run.mode, title: report.title, date: run.date, blade: blade.name, cr, xp, mastery, masteryGain,
     qualified, paidDaily: Boolean(paidDaily), done, champion, total, report, rounds: run.reports.slice(),
     streak, streakBonus,
     /* 本模式结算前的最高分，用来判断本局是刷新还是落后。 */
