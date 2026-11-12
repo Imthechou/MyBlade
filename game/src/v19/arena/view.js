@@ -1,13 +1,13 @@
 import {
   TARGET_NAMES, SCHOOLS, GRADIENTS, EVENTS, APEX_GOAL, bladeCount, bladeId, eligibleBlades, gate, roundNames,
   tournamentState, createEntry, courseFor, summarizeRound, settleRound, abandonEntry, dayKey, rankOf, RANKS,
-  masteryOf,
+  masteryOf, NATIONAL_UNLOCK,
 } from '../tournament.js';
+import { goalText } from './courses.js';
 import { createTrial, warmTrialAudio } from './trial.js';
 import { targetThumbnail, warmTargets } from './targets.js';
 import { mountBladeThumbnail, disconnectBladeThumbnails } from '../collectionThumb.js';
 import { countUp } from '../../ui/dom.js';
-import { workshopSnapshot } from '../../core/arenaV41Growth.js';
 
 const esc = value => String(value ?? '').replace(/[&<>"']/g, character => ({
   '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
@@ -21,7 +21,7 @@ const selectButton = (action, value, label, active, disabled = false) =>
 const art = (key, attrs = '') => `<img src="${targetThumbnail(key)}" alt="" ${attrs}>`;
 const eventId = () => globalThis.crypto?.randomUUID?.() ?? Date.now().toString(36) + Math.random().toString(36).slice(2);
 
-export function mountTournament(root, { getSave, commit, settings, onLegacy, hasLegacyCareer }) {
+export function mountTournament(root, { getSave, commit, settings, onLegacy, onForge, hasLegacyCareer }) {
   const entry = { mode: 'quick', school: 'edge', grade: 0, style: 'mix', material: '' };
   let chosen = [];
   let notice = '', confirming = false;
@@ -46,10 +46,10 @@ export function mountTournament(root, { getSave, commit, settings, onLegacy, has
    * 出战刀选择：不再用原生下拉框（只有一行字），改成带真实刀模的卡。
    * 单刀赛点一下即选；三刀赛（巅峰）点选切换，最多三把。
    */
-  function bladeFields(blades, data = {}) {
+  function bladeFields(blades, data, course) {
     const count = bladeCount(entry);
     const multi = count > 1;
-    const card = (id, name, meta, on, locked, mastered = 0) => `<button type="button" class="arena-blade-card${on ? ' is-picked' : ''}"
+    const card = (id, name, meta, on, locked, mastered = 0, suited = false) => `<button type="button" class="arena-blade-card${on ? ' is-picked' : ''}${suited ? ' is-suited' : ''}"
       data-arena-action="pick-blade" data-value="${esc(id)}" aria-pressed="${on}"${locked ? ' disabled' : ''}${mastered ? ` data-mastery="${mastered}"` : ''}>
       <span class="arena-blade-art" data-thumb-blade="${esc(id)}"><i class="arena-blade-fallback" aria-hidden="true"></i></span>
       <b>${esc(name)}</b><span class="arena-blade-meta">${esc(meta)}</span>
@@ -63,9 +63,11 @@ export function mountTournament(root, { getSave, commit, settings, onLegacy, has
           const on = chosen.includes(id);
           const locked = multi && !on && chosen.filter(item => item !== 'training').length >= count;
           const mastery = masteryOf({ tournament: data }, blade);
+          const suited = Boolean(course?.specialty === mastery.specialty && (!multi || chosen[0] === id));
+          const order = multi && on ? '第' + (chosen.indexOf(id) + 1) + '轮 · ' : '';
           return card(id, blade.name,
-            `${blade.grade || '成刀'} · ${mastery.level} · ${mastery.project}专长`,
-            on, locked, mastery.levelIndex);
+            `${order}${mastery.level} · ${mastery.project}专长${suited ? ' · 适合本轮' : ''}`,
+            on, locked, mastery.levelIndex, suited);
         }).join('')}
       </div>
     </div>`;
@@ -76,14 +78,14 @@ export function mountTournament(root, { getSave, commit, settings, onLegacy, has
    * 大厅不再只是"再打一局"，而是"再打几局能解锁什么"。
    */
   function goalCard(data) {
-    const best = Object.entries(data.schools).sort((a, b) => b[1] - a[1])[0] || ['edge', 0];
-    const cleared = Math.max(0, best[1]);
-    const goal = cleared < 3
-      ? { action: 'school', school: best[0], label: '进阶目标', title: `${SCHOOLS[best[0]].name} · 通关${GRADIENTS[2]}`,
-        value: Math.min(3, cleared) / 3, step: `${Math.min(3, cleared)} / 3 阶` }
+    const [school, cleared] = Object.entries(data.schools).filter(([key, value]) => SCHOOLS[key] && value > 0)
+      .sort((a, b) => b[1] - a[1])[0] || ['edge', 0];
+    const goal = cleared < NATIONAL_UNLOCK
+      ? { action: 'school', school, label: '下一站', title: `${SCHOOLS[school].name} · 通关${GRADIENTS[NATIONAL_UNLOCK - 1]}`,
+        value: cleared / NATIONAL_UNLOCK, step: `${cleared} / ${NATIONAL_UNLOCK} 阶` }
       : !data.titles.national
-        ? { action: 'national', label: '进阶目标', title: '全国大赛 · 夺冠', value: 0, step: '已解锁' }
-        : { action: 'apex', label: '进阶目标', title: '三刀巅峰赛',
+        ? { action: 'national', label: '下一站', title: '全国大赛 · 夺冠', value: 0, step: '已解锁' }
+        : { action: 'apex', label: '下一站', title: '三刀巅峰赛',
           value: data.titles.apex ? 1 : 0, step: data.titles.apex ? '已夺冠' : '已解锁' };
     return `<button type="button" class="arena-goal" data-arena-action="mode" data-value="${goal.action}"${goal.school ? ` data-school="${goal.school}"` : ''}>
       <div class="arena-goal-head"><span>${goal.label}</span><b>${esc(goal.step)}</b></div>
@@ -130,7 +132,7 @@ export function mountTournament(root, { getSave, commit, settings, onLegacy, has
   function renderHome(data, blades) {
     const loan = !blades.length;
     const dailyDone = Boolean(data.daily[dayKey()]?.rewarded);
-    const workshop = workshopSnapshot(getSave());
+    const workshop = getSave().workshop;
     const keys = ['card', 'rope', 'bamboo'];
     warmTargets(keys);
     return `<section class="arena-home">
@@ -140,13 +142,11 @@ export function mountTournament(root, { getSave, commit, settings, onLegacy, has
           <span class="arena-chip">${loan ? '12 秒试刀' : '30 秒快赛'}</span>
           <span class="arena-chip">工坊 Lv.${workshop.level}</span>
           ${data.streak >= 2 ? `<span class="arena-chip" data-hot="true">连胜 ×${data.streak}</span>` : ''}
-          ${data.best.quick ? `<span class="arena-chip">最高 ${data.best.quick}</span>` : ''}
+          ${data.best.flightQuick ? `<span class="arena-chip">最高 ${data.best.flightQuick}</span>` : ''}
           <h1 tabindex="-1">斩试场</h1>
         </div>
         <div class="arena-hero-art" aria-hidden="true">${keys.map(key => art(key)).join('')}</div>
       </header>
-      ${rankBlock(data)}
-      ${goalCard(data)}
       <div class="arena-launch">
         ${!loan ? bladeFields(blades, data) : ''}
         ${loan ? button('loan', '借刀开斩', 'primary') :
@@ -158,6 +158,7 @@ export function mountTournament(root, { getSave, commit, settings, onLegacy, has
           `data-value="daily"${dailyDone ? ' data-done="true"' : ''}`)}
         ${button('mode', '<b>练习</b><span aria-hidden="true">↗</span>', 'arena-shortcut', 'data-value="practice"')}
       </nav>
+      ${!loan ? goalCard(data) + rankBlock(data) : ''}
       ${hasLegacyCareer() ? button('legacy-career', '继续旧赛程', 'arena-text') : ''}
       ${historyList(data)}
     </section>`;
@@ -200,22 +201,22 @@ export function mountTournament(root, { getSave, commit, settings, onLegacy, has
 
   function courseNotes(course) {
     const list = roundNames(entry.mode);
+    const task = course.goals.length ? `<div class="arena-course-rule"><b>${esc(course.focus)}</b>
+      <span>${course.limit} 秒 · ${course.goals.map(goalText).join(' · ')}</span></div>` : '';
     if (list.length) {
-      return `<details class="arena-details"><summary>${list.length} 轮赛程</summary>
+      return `${task}<details class="arena-details"><summary>${list.length} 轮赛程</summary>
         <ol>${list.map(label => `<li>${esc(label)}</li>`).join('')}</ol>
         <small>${entry.mode === 'national' ? '一把刀，逐轮晋级' : '三把刀各打一轮，全达标且总评 ≥ ' + APEX_GOAL}</small></details>`;
     }
-    if (entry.mode === 'school') return `<div class="arena-course-meta">${course.limit} 秒 · 斩完三波${course.combo ? ' · 连斩 ×' + course.combo : ''}</div>`;
-    if (entry.mode === 'daily') return `<div class="arena-course-meta">30 秒三段冲分 · 当日固定靶序 · 首场有效奖励</div>`;
-    if (entry.mode === 'quick') return '<div class="arena-course-meta">30 秒 · 热身 → 进阶 → 冲刺 · 每把刀都能成长</div>';
-    return '';
+    if (entry.mode === 'daily') return '<div class="arena-course-meta">30 秒 · 当日固定靶序 · 首场有效奖励</div>';
+    return task;
   }
 
   function renderDetail(data, blades) {
     const course = courseFor({ ...entry, id: 'preview', reports: [] });
     const reason = gate(getSave(), entry);
     const blocked = data.active && entry.mode !== 'practice';
-    const bestDaily = data.daily[dayKey()]?.best;
+    const bestDaily = data.daily[dayKey()]?.flightBest;
     const targets = [...new Set(course.waves.flatMap(wave => wave.targets))].slice(0, 3);
     warmTargets(course.waves[0].targets);
     return `<section class="arena-detail">
@@ -231,9 +232,9 @@ export function mountTournament(root, { getSave, commit, settings, onLegacy, has
           <div class="arena-course-art" aria-hidden="true">${targets.map(key => art(key)).join('')}</div>
         </div>
         ${courseNotes(course)}
-        ${reason ? `<p class="arena-lock">${esc(reason)}</p>` : bladeFields(blades, data)}
+        ${reason ? `<p class="arena-lock">${esc(reason)}</p>` : bladeFields(blades, data, course)}
         ${blocked ? button('continue', '继续比赛', 'primary') : !reason ? button('register', '开斩', 'primary') :
-          !blades.length ? '<a class="primary arena-anchor" href="#/forge">去锻刀</a>' : ''}
+          !blades.length ? button('forge', '去锻刀', 'primary') : ''}
       </div>
       ${entry.mode === 'daily' ? '<a class="arena-text arena-daily-link" href="#/daily">今日工坊目标 ›</a>' : ''}
     </section>`;
@@ -275,8 +276,10 @@ export function mountTournament(root, { getSave, commit, settings, onLegacy, has
 
   function prepare(run) {
     closeBout();
+    disconnectBladeThumbnails();
     const course = courseFor(run);
-    const blade = run.roster[run.mode === 'apex' ? run.reports.length : 0];
+    const selected = run.roster[run.mode === 'apex' ? run.reports.length : 0];
+    const blade = { ...selected, mastery: masteryOf(getSave(), selected) };
     const current = bout = { run, course };
     const rounds = roundNames(run.mode);
     root.dataset.screen = 'play';
@@ -287,21 +290,22 @@ export function mountTournament(root, { getSave, commit, settings, onLegacy, has
         ${rounds.length ? `<span class="arena-round-index">${run.reports.length + 1} / ${rounds.length}</span>` : ''}
         ${button('pause', '暂停', 'quiet round-pause')}
       </div>
-      <div class="trial-frame">
-        <canvas tabindex="0" aria-label="挥刀舞台。手指滑过靶具。键盘空格横斩，数字键选斩。"></canvas>
+      <div class="trial-frame" data-act="0">
+        <canvas tabindex="0" aria-label="挥刀舞台。手指滑过飞靶。键盘空格横斩，数字键选斩。"></canvas>
         <div class="trial-hud">
           <div><small>得分</small><b data-trial="score">0000</b><em data-trial="delta"></em></div>
           <div><small>剩余</small><b data-trial="time">${course.limit}″</b></div>
           <div><small>连斩</small><b data-trial="combo">—</b></div>
         </div>
-        <div class="trial-ready" data-trial-ready hidden><b>准备</b><span>横划斩断靶具</span></div>
-        <span data-trial="wave" class="sr-only"></span>
+        <div class="trial-ready" data-trial-ready hidden><b>开斩</b><span>${esc(course.focus || '滑过飞靶，一刀多斩')}</span></div>
         <div class="trial-verdict"><span data-trial="verdict" class="cut-callout"></span></div>
-        <div class="trial-target"><b data-trial="target"></b></div>
-        <div class="trial-bottom${run.mode === 'practice' ? ' is-practice' : ''}">
-          <div><span>刀刃耐久 <b data-trial="durability">100%</b></span><progress data-trial="wear" aria-label="刀刃耐久" max="100" value="100"></progress></div>
-          <p data-trial="tip">滑过靶具</p>
-          <div><span>斩断 <b data-trial="hits">0</b></span></div>
+        ${course.limit === 30 ? '<div class="trial-phase" data-trial="phase"></div>' : ''}
+        <div class="trial-bottom">
+          ${course.goals.map((goal, i) => `<div class="trial-goal" aria-label="${esc(goalText(goal))}">
+            <span>${esc(goal.label)} <b data-trial="goal-${i}"></b></span>
+            ${goal.id === 'durability' ? '<progress data-trial="wear" aria-label="刀刃耐久" max="100" value="100"></progress>' : ''}
+          </div>`).join('')}
+          <div class="trial-cut-count"><span>斩断 <b data-trial="hits">0</b></span></div>
         </div>
         <div class="trial-cover" data-cover hidden></div>
       </div>`;
@@ -368,35 +372,58 @@ export function mountTournament(root, { getSave, commit, settings, onLegacy, has
       ids: run.roster.filter(blade => blade.id !== 'training').map(bladeId),
     } : null;
     const reason = casual ? (record.paidDaily ? '今日奖励已领取' :
-      !record.qualified && mode !== 'practice' ? '有效出战需命中至少 4 个靶具' : '') :
+      !record.qualified && mode !== 'practice' ? '斩断 4 个靶具即可获得成长奖励' : '') :
       mode === 'apex' && record.done && !record.champion ? '全轮达标且总评 ≥ ' + APEX_GOAL + ' 分夺冠' :
-      !report.win ? (report.complete ? '连斩未达标' : report.reason === 'wear' ? '耐久耗尽' : '靶具未斩完') : '';
+      !report.win ? (report.reason === 'wear' ? '耐久耗尽' : '本轮目标未达成') : '';
     root.dataset.screen = 'report';
     const shownScore = casual ? report.score : report.performance;
     const bestProject = (report.projects || []).filter(item => item.score > 0)
       .sort((a, b) => b.score - a.score)[0];
+    const borrow = mode === 'practice' && !currentBlades().length;
+    const mainAction = canContinue ? button('continue', '进入下一轮', 'primary') :
+      record.unlockedNational ? button('mode', '报名全国赛', 'primary', 'data-value="national"') :
+        borrow ? button('forge', '去锻第一把刀', 'primary') :
+          replay ? button('replay', nextGrade === null ? '再来一局' : '挑战下一阶', 'primary') : '';
     root.innerHTML = `<section class="arena-report">
       <header><span>${esc(record.title)}</span><h2 tabindex="-1">${heading}</h2>
-        <strong><span data-report-score>0</span></strong>
+        <div class="arena-score-line">
+          <strong><span data-report-score>0</span></strong>
+          ${report.medal ? `<b class="arena-medal" data-medal="${esc(report.medal)}" aria-label="${esc(report.medal)}级评价">${esc(report.medal)}</b>` : ''}
+        </div>
         <small>${casual ? '本局得分' : '评定分 / 1000'}</small>
-        ${record.best ? (shownScore > record.best
-          ? `<p class="arena-best is-new">刷新个人最佳 · 原 ${record.best}</p>`
-          : `<p class="arena-best">个人最高 <b>${record.best}</b> · 差 ${record.best - shownScore}</p>`) : ''}
+        ${Number.isFinite(record.best) && shownScore > record.best
+          ? `<p class="arena-best is-new">${record.best ? '刷新纪录 · +' + (shownScore - record.best) : '创下个人纪录'}</p>`
+          : record.best ? `<p class="arena-best">个人最高 <b>${record.best}</b></p>` : ''}
         ${reason ? `<p>${reason}</p>` : ''}
       </header>
       <div class="arena-result-metrics"><div><b>${report.cut}</b><span>斩断</span></div>
+        ${Number.isFinite(report.swipe) ? `<div><b>${report.swipe}</b><span>一刀最多</span></div>` : ''}
         <div><b>×${report.combo}</b><span>最高连斩</span></div></div>
-      ${bestProject ? `<div class="arena-best-cut"><span>表现最佳</span><b>${esc(bestProject.name)}</b><strong>${bestProject.score}%</strong></div>` : ''}
-      ${mode !== 'practice' ? `<div class="report-rewards"><b>+${record.cr} CR</b><b>+${record.xp} XP</b>${record.masteryGain ? `<span>成刀熟练度 +${record.masteryGain}</span>` : ''}${record.streak >= 2 ? `<span class="is-hot">连胜 ×${record.streak}${record.streakBonus ? ' +' + record.streakBonus : ''}</span>` : ''}</div>` : ''}
-      ${record.mastery ? `<div class="arena-blade-growth">
-        <div class="arena-blade-growth-head"><span>此刀成长 · ${esc(record.mastery.level)}</span><b>${record.mastery.xp} XP</b></div>
+      ${report.goals?.length ? `<div class="arena-report-goals">${report.goals.map(goal => `<div data-met="${goal.met}">
+        <span>${esc(goal.label)}</span><b>${goal.value}${goal.unit} / ${goal.target}${goal.unit} ${goal.met ? '✓' : ''}</b>
+      </div>`).join('')}</div>` : ''}
+      ${record.cr || record.xp ? `<div class="report-rewards">${record.cr ? `<b>+${record.cr} CR</b>` : ''}
+        ${record.xp ? `<b>工坊 +${record.xp} XP</b>` : ''}
+        ${record.streakBonus ? `<span class="is-hot">连胜 ×${record.streak} · +${record.streakBonus} CR</span>` : ''}</div>` : ''}
+      ${record.mastery ? `<div class="arena-blade-growth${record.mastery.leveled ? ' is-up' : ''}">
+        <div class="arena-blade-growth-head"><span>${esc(record.blade)} · ${esc(record.mastery.level)}</span><b>+${record.masteryGain} XP</b></div>
         <div class="arena-rank-track" aria-label="刀具成长进度"><i style="--v:${Math.round(record.mastery.progress * 100)}%"></i></div>
-        <small>${record.mastery.nextLevel ? `距${esc(record.mastery.nextLevel)}还需 ${record.mastery.nextXp - record.mastery.xp} XP` : '已达最高熟练度'} · ${esc(record.mastery.project)}专长</small>
+        <small>${record.mastery.leveled ? '熟练度升级 · ' : ''}${esc(record.mastery.project)}专长 +${Math.round(record.mastery.bonus * 100)}%
+          ${record.mastery.nextLevel ? ' · 距' + esc(record.mastery.nextLevel) + ' ' + (record.mastery.nextXp - record.mastery.xp) + ' XP' : ''}</small>
+        ${record.swipeBonus ? `<small>达成一刀 ${report.swipe} 斩 · 内含里程碑 +${record.swipeBonus} XP</small>` : ''}
+        ${record.mastery.swipeGoal ? `<p class="arena-next-swipe">下次目标 <b>一刀斩断 ${record.mastery.swipeGoal.count} 靶</b><span>+${record.mastery.swipeGoal.xp} XP</span></p>` : ''}
       </div>` : ''}
-      ${record.workshop ? `<div class="arena-workshop-growth">
-        <span>工坊 Lv.${record.workshop.level}${record.workshop.leveled ? ' · 升级！' : ''}</span>
-        <b>${record.workshop.nextXp ? `下一级还差 ${Math.max(0, record.workshop.nextXp - record.workshop.xp)} XP` : '已满级'}</b>
+      ${record.workshop?.gained ? `<div class="arena-workshop-growth">
+        <span>工坊 Lv.${record.workshop.level}${record.workshop.leveled ? ' · 升级' : ''}</span>
+        <b>${record.workshop.nextXp ? `再获 ${record.workshop.nextXp - record.workshop.xp} XP${record.workshop.nextPerk ? ' · ' + esc(record.workshop.nextPerk) : ''}` : '已满级'}</b>
       </div>` : ''}
+      ${borrow ? '<p class="arena-report-hint">锻出第一把刀，即可报名 30 秒快赛。</p>' : ''}
+      <div class="report-actions">
+        ${mainAction}
+        ${borrow ? button('replay', '再试一次') : record.workshop?.leveled && !canContinue && !record.unlockedNational ? button('forge', '去锻刀') : ''}
+        ${button('lobby', '返回大厅', mainAction ? 'secondary' : 'primary')}
+      </div>
+      ${bestProject ? `<div class="arena-best-cut"><span>表现最佳</span><b>${esc(bestProject.name)}</b><strong>${bestProject.score}%</strong></div>` : ''}
       ${record.rank?.gain ? `<div class="arena-rank-gain${record.rank.levelUp ? ' is-up' : ''}">
         <div class="arena-rank-gain-head"><span>赛事评级</span><b>${record.rank.before}</b><i aria-hidden="true">›</i><b>${record.rank.after}</b><em>+${record.rank.gain}</em></div>
         <div class="arena-rank-track" aria-hidden="true"><i style="--v:${Math.round((record.rank.progress ?? 0) * 100)}%"></i></div>
@@ -404,11 +431,6 @@ export function mountTournament(root, { getSave, commit, settings, onLegacy, has
       </div>` : ''}
       ${record.rounds?.length > 1 ? `<details class="arena-details"><summary>总评 ${record.total}${mode === 'apex' ? ' / ' + APEX_GOAL : ''}</summary>
         ${record.rounds.map(item => `<div class="arena-round-result"><span>${esc(item.title)}</span><b>${item.win ? '' : '未达标 · '}${item.performance}</b></div>`).join('')}</details>` : ''}
-      <div class="report-actions">
-        ${canContinue ? button('continue', '进入下一轮', 'primary') :
-          replay ? button('replay', nextGrade === null ? '再来一局' : '挑战下一阶', 'primary') : ''}
-        ${button('lobby', '返回大厅', canContinue || replay ? 'secondary' : 'primary')}
-      </div>
     </section>`;
     requestAnimationFrame(() => countUp(root.querySelector('[data-report-score]'), 0, shownScore, 820));
     scrollTop();
@@ -447,6 +469,7 @@ export function mountTournament(root, { getSave, commit, settings, onLegacy, has
     notice = '';
     switch (action) {
       case 'legacy-career': return onLegacy();
+      case 'forge': return onForge();
       case 'loan': return register({ mode: 'practice', style: 'mix' }, []);
       case 'pick-blade': {
         const limit = bladeCount(entry);

@@ -6,7 +6,7 @@ import { STAT_KEYS } from '../data/balance.js';
 import { KNIFE_BY_MODEL } from '../data/knifeTypes.js';
 import { addCr } from './economy.js';
 import { computeScore } from './scoring.js';
-import { workshopSnapshot } from './arenaV41Growth.js';
+import { workshopSnapshot, WORKSHOP_TIERS } from './arenaV41Growth.js';
 import { careerRewardPlan } from './arenaV41Rewards.js';
 import { specialtySnapshot } from './arenaV41Specialties.js';
 import { settle, EVENT } from './events.js';
@@ -159,6 +159,7 @@ export function tournamentView(save = get()) {
   const school = save.arena.school;
   return {
     credits: save.cr, collection: save.collection.map(toContestBlade), legacyCareer: hasLegacyCareer(save),
+    workshop: workshopSnapshot(save),
     tournament: {
       ...save.v19.arena,
       schools: Object.fromEntries(Object.keys(SCHOOLS).map(id => [id,
@@ -203,7 +204,7 @@ function settleTournament(save, run, record) {
   const workshopBefore = workshopSnapshot(save);
   let events;
   if (official) {
-    const performance = { version: 'cut-v19', result: { structure: { primary: report.progress } },
+    const performance = { version: 'cut-v19', structure: { primary: report.progress },
       rounds: [{ round, primary: report.progress, primaryCompleted: report.win, win: report.win }] };
     events = careerRewardPlan(mode, mode === 'school' ? report.win : champion, grade, performance, id, school).events.filter(grant => {
       if (grant.key === 'first:school:' + school + ':' + grade) return !save.arena.school[school]?.cleared.includes(grade);
@@ -215,10 +216,13 @@ function settleTournament(save, run, record) {
   }
   const grants = applyCareerGrants(save, events);
   const workshopAfter = workshopSnapshot(save);
+  const nextWorkshop = WORKSHOP_TIERS[workshopAfter.level];
   record.workshop = {
     level: workshopAfter.level, xp: workshopAfter.xp,
     nextXp: workshopAfter.nextXp, gained: workshopAfter.xp - workshopBefore.xp,
     leveled: workshopAfter.level > workshopBefore.level,
+    nextPerk: !nextWorkshop ? '' : nextWorkshop.discount > workshopAfter.discount ? '刀柄换选更便宜' :
+      nextWorkshop.rarity !== workshopAfter.rarity ? '更易获得稀有锻效' : '降低锻打断裂风险',
   };
   record.xp = grants.reduce((sum, grant) => sum + grant.xp, 0);
   addCr(save, grants.reduce((sum, grant) => sum + grant.cr, 0), 'cut:v19');

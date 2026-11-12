@@ -56,15 +56,15 @@ export function targetSprite(key) {
 /** null = image unavailable, boolean = whether this normalized point touches visible art.
  * Sample a single 64² cached mask with a small touch-friendly tolerance.
  */
-export function targetAlphaAt(key, x, y) {
+export function targetAlphaAt(key, x, y, tolerance = 2) {
   const alpha = images.get(key)?.mask;
   if (!alpha) return null;
   const cx = Math.floor(x * MASK_SIZE), cy = Math.floor(y * MASK_SIZE);
   if (cx < 0 || cy < 0 || cx >= MASK_SIZE || cy >= MASK_SIZE) return false;
   // A small diamond-shaped touch tolerance favors fast thumbs without hitting blank corners.
-  for (let oy = -2; oy <= 2; oy++) {
-    for (let ox = -2; ox <= 2; ox++) {
-      if (Math.abs(ox) + Math.abs(oy) > 3) continue;
+  for (let oy = -tolerance; oy <= tolerance; oy++) {
+    for (let ox = -tolerance; ox <= tolerance; ox++) {
+      if (Math.abs(ox) + Math.abs(oy) > tolerance + 1) continue;
       const px = cx + ox, py = cy + oy;
       if (px >= 0 && py >= 0 && px < MASK_SIZE && py < MASK_SIZE && alpha[py * MASK_SIZE + px] > 45) return true;
     }
