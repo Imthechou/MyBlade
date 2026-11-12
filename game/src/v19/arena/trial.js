@@ -56,12 +56,21 @@ function gameplayRng(seed) {
   return seeded(hash);
 }
 
-function rotatingWaves(waves, rng) {
-  // Keep the soft opening, and shuffle within comparable rows and heavy bouts.
+function rotatingWaves(waves, rng, arcade = false) {
   const rotateGroup = group => {
     const offset = Math.floor(rng() * group.length);
     return [...group.slice(offset), ...group.slice(0, offset)];
   };
+  if (arcade) {
+    // Shuffle only within each 10s difficulty band. Each day's seed is stable
+    // for fair daily scores; quick matches vary without changing act order.
+    const groups = [];
+    for (let start = 0; start < waves.length; start += 3) {
+      const block = waves.slice(start, start + 3);
+      groups.push(...(start ? rotateGroup(block) : [block[0], ...rotateGroup(block.slice(1))]));
+    }
+    return groups;
+  }
   const rows = rotateGroup(waves.slice(2).filter(wave => !wave.heavy));
   const heavyWaves = rotateGroup(waves.slice(2).filter(wave => wave.heavy));
   return [...waves.slice(0, 2), ...waves.slice(2).map(wave => wave.heavy ? heavyWaves.shift() : rows.shift())];
@@ -80,7 +89,7 @@ export function createTrial(frame, course, blade, { muted, volume, onPause, onFi
   const ui = Object.fromEntries([...frame.querySelectorAll('[data-trial]')].map(node => [node.dataset.trial, node]));
   const input = new AbortController();
   const rng = gameplayRng(course.seed);
-  const waves = course.rotate ? rotatingWaves(course.waves, rng) : course.waves;
+  const waves = course.rotate ? rotatingWaves(course.waves, rng, course.arcade) : course.waves;
   const stats = blade.stats.map(value => {
     const normalized = value <= 100 ? Math.round(value * 1.45) : 145 + Math.min(24, Math.log1p(value - 100) * 4.5);
     return normalized / 150;
@@ -212,6 +221,7 @@ export function createTrial(frame, course, blade, { muted, volume, onPause, onFi
         impulseX: 0, impulseY: 0, tilt: 0, hitGlow: 0, recoilTime: 0, strikes: [], cracks: [],
         spawnT: state.time - .08, cutDepth: 0, statusText: '', statusUntil: 0,
         motion: heavy ? 'static' : (currentWave.motion ?? course.motion ?? 'float'),
+        motionRate: course.motionRate ?? 1,
       };
     });
     state.round++;
@@ -1057,7 +1067,7 @@ export function createTrial(frame, course, blade, { muted, volume, onPause, onFi
       if (t.alive && t.baseX !== undefined) {
         // Gentle arcade motion is real physics for collision purposes: draw,
         // slash hitboxes and shadows all use the exact same animated position.
-        const phase = state.time * (t.motion === 'sweep' ? 2.35 : 1.35) + t.phase;
+        const phase = state.time * (t.motion === 'sweep' ? 2.35 : 1.35) * t.motionRate + t.phase;
         const sideways = t.motion === 'sweep' ? 20 : t.motion === 'float' ? 7 : 0;
         const vertical = t.motion === 'sweep' ? 13 : t.motion === 'float' ? 5 : 0;
         t.x = t.baseX + Math.sin(phase) * sideways * t.scale;
