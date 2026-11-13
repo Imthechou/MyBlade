@@ -4,6 +4,7 @@ import { FAMILIES, ORE_VARIANTS, oreMaterialOf, oreOptics, oreInspection, oreMod
 import { KNIFE_IDS, regionAt } from './regions.js';
 import { RenderBudget } from './render-budget.js';
 import { knifeDetails, makeFittingHardware } from './knife-details.js';
+import { BladeView } from './bladeView.js';
 
 const T = globalThis.THREE;
 const localAssets = new URL('../../assets/v19/', import.meta.url);
@@ -28,7 +29,7 @@ const lerp = (a, b, t) => a + (b - a) * t;
    锻打压到砧面附近，视线略抬；精炼略低看炉球；检视与鉴定回到正面。 */
 const CAMERA_FRAMES = {
   stage: { height: .53, aim: -.07, depth: 6 },
-  gallery: { height: 1.12, aim: -.09, depth: 6.4 },
+  gallery: { height: .79, aim: -.07, depth: 6.4 },
   ore: { height: .55, aim: -.08, depth: 6 },
   reveal: { height: .50, aim: -.05, depth: 6 },
   refine: { height: .53, aim: -.07, depth: 6 },
@@ -131,25 +132,49 @@ function oreSection(geometry, cut, crust = .5) {
   return slice;
 }
 
-function studio(renderer) {
+function studio(renderer, daylight = false) {
   const room = new T.Scene();
-  const floor = new T.Mesh(new T.BoxGeometry(10, 10, 10), new T.MeshBasicMaterial({ color: 0x242731, side: T.BackSide }));
+  const floor = new T.Mesh(new T.BoxGeometry(10, 10, 10), new T.MeshBasicMaterial({ color: daylight ? 0x414144 : 0x242731, side: T.BackSide }));
   room.add(floor);
-  const softbox = (x, y, z, width, height, color, energy) => {
-    const mat = new T.MeshBasicMaterial({ color, side: T.DoubleSide, toneMapped: false });
+  const softbox = (x, y, z, width, height, color, energy, map = null) => {
+    const mat = new T.MeshBasicMaterial({ color, map, side: T.DoubleSide, toneMapped: false });
     mat.color.multiplyScalar(energy);
     const object = new T.Mesh(new T.PlaneGeometry(width, height), mat);
     object.position.set(x, y, z);
     object.lookAt(0, 0, 0);
     room.add(object);
   };
-  softbox(-1.8, 2.1, 3.4, 4.6, .8, 0xffe9d0, 4.3);
-  softbox(2.8, .15, 2.8, 1.2, 4.6, 0xb0d1ff, 2.25);
-  softbox(.7, -1.3, 2.4, 5.2, .46, 0xc5dae7, 2.05);
-  softbox(-2.1, .2, -3.8, 4.2, 1.4, 0xf4a273, 1.55);
+  let diffusion;
+  if (daylight) {
+    const size = 64;
+    const values = new Uint8Array(size * size * 4);
+    for (let row = 0; row < size; row++) {
+      for (let col = 0; col < size; col++) {
+        const x = (col + .5) * 2 / size - 1;
+        const y = (row + .5) * 2 / size - 1;
+        const value = Math.round(255 * (1 - x * x) ** 1.35 * (1 - y * y) ** .82);
+        const i = (row * size + col) * 4;
+        values[i] = values[i + 1] = values[i + 2] = value;
+        values[i + 3] = 255;
+      }
+    }
+    diffusion = new T.DataTexture(values, size, size);
+    diffusion.magFilter = diffusion.minFilter = T.LinearFilter;
+    diffusion.needsUpdate = true;
+    softbox(-2.15, 2.0, 3.30, 4.3, 5.5, 0xfdfcff, 3.3, diffusion);
+    softbox(2.65, .50, 2.20, 3.15, 4.6, 0xe3e5e8, 1.48, diffusion);
+    softbox(.6, 1.70, -3.10, 4.6, 4.2, 0xefeeec, 1.60, diffusion);
+    softbox(0, -2.35, 2.20, 5.2, 3.8, 0xd9d1c5, .83, diffusion);
+  } else {
+    softbox(-1.8, 2.1, 3.4, 4.6, .8, 0xffe9d0, 4.3);
+    softbox(2.8, .15, 2.8, 1.2, 4.6, 0xb0d1ff, 2.25);
+    softbox(.7, -1.3, 2.4, 5.2, .46, 0xc5dae7, 2.05);
+    softbox(-2.1, .2, -3.8, 4.2, 1.4, 0xf4a273, 1.55);
+  }
   const generator = new T.PMREMGenerator(renderer);
   const map = generator.fromScene(room, .025, .1, 18);
   generator.dispose();
+  diffusion?.dispose();
   room.traverse(obj => { obj.geometry?.dispose(); obj.material?.dispose(); });
   return map;
 }
@@ -193,27 +218,31 @@ function radialTexture(inner = 'rgba(255,255,255,.55)', outer = 'rgba(255,255,25
 
 function makeDisplayStand() {
   const stand = new T.Group();
-  const steel = new T.MeshStandardMaterial({ color: 0x383e48, roughness: .37, metalness: .64, envMapIntensity: 1.14 });
-  const trim = new T.MeshStandardMaterial({ color: 0x626a75, roughness: .34, metalness: .62 });
-  const base = new T.Mesh(bevel([[-.69, -.23], [.69, -.23], [.68, -.16], [.56, -.075], [-.56, -.075], [-.68, -.16]], .51, .018), steel);
-  const top = new T.Mesh(bevel([[-.56, -.087], [.56, -.087], [.54, -.062], [-.54, -.062]], .43, .008), trim);
-  const seam = new T.Mesh(new T.BoxGeometry(1.32, .009, .009), trim);
-  seam.position.set(0, -.191, .272);
-  stand.add(base, top, seam);
-  const support = bevel([[.10, -.049], [.26, -.049], [.20, .19], [.12, .21]], .24, .014);
-  const innerPad = new T.MeshStandardMaterial({ color: 0x25282f, roughness: .82 });
-  for (const side of [-1, 1]) {
-    const jaw = new T.Mesh(support, trim);
-    jaw.scale.x = side;
-    const pad = new T.Mesh(new T.BoxGeometry(.026, .18, .21), innerPad);
-    pad.position.set(side * .105, .077, 0);
-    stand.add(jaw, pad);
-  }
-  const shadow = new T.Mesh(new T.PlaneGeometry(2.22, 1.22), new T.MeshBasicMaterial({
-    map: radialTexture('rgba(0,0,0,.88)'), transparent: true, depthWrite: false,
+  const shape = new T.Shape();
+  const x = .66, y = .29, r = .12;
+  shape.moveTo(-x + r, -y);
+  shape.lineTo(x - r, -y);
+  shape.quadraticCurveTo(x, -y, x, -y + r);
+  shape.lineTo(x, y - r);
+  shape.quadraticCurveTo(x, y, x - r, y);
+  shape.lineTo(-x + r, y);
+  shape.quadraticCurveTo(-x, y, -x, y - r);
+  shape.lineTo(-x, -y + r);
+  shape.quadraticCurveTo(-x, -y, -x + r, -y);
+  const slab = new T.ExtrudeGeometry(shape, { depth: .125, bevelThickness: .024, bevelSize: .024, bevelSegments: 3, curveSegments: 5 });
+  const base = new T.Mesh(slab, new T.MeshStandardMaterial({ color: 0x2d2b2c, roughness: .55, metalness: .31 }));
+  base.rotation.x = -Math.PI / 2;
+  base.position.y = -.157;
+  stand.add(base);
+  const seat = new T.Mesh(new T.CylinderGeometry(.135, .17, .043, 20), new T.MeshStandardMaterial({ color: 0x252525, roughness: .82 }));
+  seat.scale.z = .82;
+  seat.position.y = -.02;
+  stand.add(seat);
+  const shadow = new T.Mesh(new T.PlaneGeometry(2.02, 1.20), new T.MeshBasicMaterial({
+    map: radialTexture('rgba(0,0,0,.75)'), transparent: true, depthWrite: false, toneMapped: false,
   }));
   shadow.rotation.x = -Math.PI / 2;
-  shadow.position.set(0, -.25, .12);
+  shadow.position.set(.15, -.183, .02);
   stand.add(shadow);
   return stand;
 }
@@ -427,7 +456,8 @@ export class ForgeStage {
     this.camera.position.set(0, .53, 6);
     this.camera.lookAt(0, -.07, 0);
     this.gripTarget = new T.Vector3();
-    this.scene.environment = studio(this.renderer).texture;
+    this.studioEnvironment = studio(this.renderer);
+    this.scene.environment = this.studioEnvironment.texture;
     this.ambient=new T.HemisphereLight(0xd7e4ff,0x453025,.93);
     this.scene.add(this.ambient);
     this.key = light(0xffcfad, 2.9, -2.7, 3.1, 4.8, this.scene);
@@ -494,8 +524,7 @@ export class ForgeStage {
     this.mode = 'ore';
     this.want = 'ore_river_0';
     this.mesh = null;
-    this.turnX = 0;
-    this.turnY = 0;
+    this.view = new BladeView();
     this.heat = 0;
     this.entered = performance.now();
     this.raycaster = new T.Raycaster();
@@ -531,13 +560,17 @@ export class ForgeStage {
     if (Boolean(this.gallery) === enabled) return;
     this.gallery = enabled;
     if (enabled && !this.displayStand) {
+      this.galleryEnvironment = studio(this.renderer, true);
       this.displayStand = makeDisplayStand();
       this.scene.add(this.displayStand);
     }
+    this.scene.environment = (enabled ? this.galleryEnvironment : this.studioEnvironment).texture;
     if (this.displayStand) this.displayStand.visible = false;
-    this.key.position.set(enabled ? -2.2 : -2.7, enabled ? 4.5 : 3.1, 4.8);
-    this.rimLight.position.set(3.5, 1.1, enabled ? .7 : 2.5);
-    this.rimLight.color.set(enabled ? 0xffd6ab : 0xb9d8ff);
+    this.key.position.set(enabled ? -3.0 : -2.7, 3.1, enabled ? 3.9 : 4.8);
+    this.rimLight.position.set(3.5, 1.1, enabled ? -.8 : 2.5);
+    this.rimLight.color.set(enabled ? 0xf1eee7 : 0xb9d8ff);
+    this.ambient.color.set(enabled ? 0xf6f4ef : 0xd7e4ff);
+    this.ambient.groundColor.set(enabled ? 0x514b45 : 0x453025);
     this.invalidate(250);
   }
 
@@ -632,7 +665,7 @@ export class ForgeStage {
     const specimen = new T.Mesh(undefined, makeOreMaterial(null, uniforms));
     specimen.rotation.set(.20, .28, -.14);
     const scene = new T.Scene();
-    scene.environment = this.scene.environment;
+    scene.environment = this.studioEnvironment.texture;
     scene.add(specimen, new T.HemisphereLight(0xe8efff, 0x302e2b, 1.3));
     light(0xffe7d1, 3, -2, 3, 4, scene);
     light(0xc6e5ff, 1.1, 3, 1, 2, scene);
@@ -703,7 +736,7 @@ export class ForgeStage {
     const profile = id === 'molten' ? 'refine' : 'forge';
     if (!this.warmScenes.has(profile)) {
       const scene = new T.Scene();
-      scene.environment = this.scene.environment;
+      scene.environment = this.studioEnvironment.texture;
       for (const light of [this.ambient, this.key, this.rimLight, ...(profile === 'forge' ? [this.flash] : [])]) {
         const copy = light.clone(); copy.visible = true; scene.add(copy);
       }
@@ -747,7 +780,7 @@ export class ForgeStage {
       const { mesh } = await this.load(id);
       if (this.busyForWarm()) { this.warmQueue.unshift(id); requeued = true; return; }
       const temporary = new T.Scene();
-      temporary.environment = this.scene.environment;
+      temporary.environment = this.studioEnvironment.texture;
       const specimen = mesh.clone(false);
       temporary.add(specimen);
       const target = this.warmScene(id);
@@ -830,7 +863,7 @@ export class ForgeStage {
     this.invalidate(previous !== this.mode ? 760 : 300);
     if (previous !== this.mode) {
       this.entered = performance.now();
-      this.resetView();
+      this.resetView(false);
       if (this.mode !== 'broken') this.clearPieces();
       if (this.mode !== 'reveal') this.clearOrePieces();
       this.inspection = 'natural';
@@ -844,7 +877,8 @@ export class ForgeStage {
     this.refiningStep = run.refining?.step;
     if (ore) {
       if(this.inspectedOre?.id !== ore.id || this.inspectedOre?.figure !== ore.figure){
-        this.turnX=this.turnY=0; this.inspection='natural';
+        if (stone) this.resetView(false);
+        this.inspection='natural';
         this.oreCutGeometry?.dispose(); this.oreCutGeometry=null;
       }
       this.inspectedOre = ore;
@@ -1012,15 +1046,17 @@ export class ForgeStage {
     if(this.mode!=='ore' || !['natural','lamp','window'].includes(mode))return;
     this.inspection = mode;
     this.oreUniforms.oreLamp.value = mode==='lamp' ? 1 : 0;
-    if(mode==='window'){this.turnX=-.08;this.turnY=-.20;}
-    this.touched = true;
+    if (mode === 'window') {
+      this.view.reset(false);
+      this.view.turn(-.20, -.08, false);
+    }
     this.invalidate(250);
   }
 
   toggleMineralPreview() {
     if(this.mode!=='reveal')return;
     this.previewSteel=!this.previewSteel;
-    this.resetView();
+    this.resetView(false);
     this.clearOrePieces();
     this.sync(this.run,this.inspectedOre,this.fit);
     return this.previewSteel;
@@ -1039,30 +1075,28 @@ export class ForgeStage {
   turn(dx, dy) {
     const blade = this.canZoom;
     if (blade && !dx) return;
-    this.touched=true;
-    this.turnY += dx * .016;
-    if (!blade) this.turnX = clamp(this.turnX + dy * .012, -.9, .9);
+    this.view.turn(dx * (this.gallery ? .012 : .016), blade ? 0 : dy * .012, blade && !this.reduceMotion);
     this.invalidate(180);
   }
 
-  resetView() {
-    this.turnX = this.turnY = 0;
-    this.setGripFocus(false);
+  resetView(animate = this.canZoom) {
+    this.view.reset(animate && !this.reduceMotion);
+    this.invalidate(260);
   }
+
+  get gripFocus() { return this.view.target.grip > 0; }
 
   setGripFocus(enabled) {
-    this.gripFocus = enabled && this.mode === 'fit';
-    this.setZoom(this.gripFocus ? 2.35 : 1);
+    this.view.focusGrip(enabled && this.mode === 'fit', !this.reduceMotion);
+    this.invalidate(260);
   }
 
-  zoomBy(factor) {
-    if (this.canZoom && Number.isFinite(factor) && factor > 0) this.setZoom(this.camera.zoom * factor);
-  }
-
-  setZoom(value) {
-    this.camera.zoom = clamp(value, .68, 2.6);
-    this.camera.updateProjectionMatrix();
-    this.invalidate(220);
+  zoomBy(factor, from, to) {
+    if (!this.canZoom || !Number.isFinite(factor) || factor <= 0) return;
+    this.view.zoomBy(factor, {
+      from, to, min: this.gallery ? .78 : .68, max: this.gallery ? 2.25 : 2.6, animate: !this.reduceMotion,
+    });
+    this.invalidate(180);
   }
 
   project(world, rect) {
@@ -1264,9 +1298,11 @@ export class ForgeStage {
     const failedRefining = mode === 'broken' && this.run?.last?.type === 'refine-fail';
     const working = mode === 'forge' || mode === 'broken' || mode === 'refine';
     const strikeAge = now - (this.bangedAt ?? -5000);
-    const transition = (mode === 'reveal' && elapsed < 1500) || (mode === 'appraise' && elapsed < 1850 && !this.reduceMotion) ||
+    const viewMoving = this.view.advance(delta, this.reduceMotion);
+    const view = this.view.current;
+    const transition = (mode === 'reveal' && elapsed < 1500) || (!gallery && mode === 'appraise' && elapsed < 1850 && !this.reduceMotion) ||
       (this.pieces && now - this.splitAt < 2200) || now - this.swapAt < 350;
-    const continuous = (mode === 'refine' && this.refiningRunning) || this.blow || transition ||
+    const continuous = viewMoving || (mode === 'refine' && this.refiningRunning) || this.blow || transition ||
       now < this.dirtyUntil || strikeAge < 750 || this.sparks.particles.length > 0;
     const animatedIdle = !this.reduceMotion && (melt && !failedRefining ||
       mode !== 'broken' && (this.active?.uniforms.fCodes?.value.w ?? 0) > 0);
@@ -1281,14 +1317,14 @@ export class ForgeStage {
     const compression = this.reduceMotion ? 0 : impulse * .035 * (1 - clamp(strikeAge / 105, 0, 1));
     const narrow = this.aspect < 1.3;
     const upright = Boolean(this.active?.coords);
-    const startTurn = mode === 'appraise' && !this.reduceMotion ? .34 * (1 - clamp(elapsed / 1480, 0, 1)) ** 2 : 0;
+    const startTurn = !gallery && mode === 'appraise' && !this.reduceMotion ? .34 * (1 - clamp(elapsed / 1480, 0, 1)) ** 2 : 0;
     const stoneTurn = mode === 'reveal' ? 0 : .28;
     const tap = !this.reduceMotion ? Math.sin((now-(this.tappedAt ?? -5000))*.08)*Math.exp(-(now-(this.tappedAt ?? -5000))/85)*.016 : 0;
     if (upright) {
       // Roll the model upright, then spin around the world's vertical axis.
-      this.content.rotation.set(0, (gallery ? Math.PI - .20 : -.24) + this.turnY + startTurn, Math.PI / 2 + shake, 'YXZ');
+      this.content.rotation.set(0, (gallery ? Math.PI - .26 : -.24) + view.yaw + startTurn, Math.PI / 2 + shake, 'YXZ');
     } else {
-      this.content.rotation.set(.18 + this.turnX + tap, stoneTurn + this.turnY, -.18 + shake, 'XYZ');
+      this.content.rotation.set(.18 + view.pitch + tap, stoneTurn + view.yaw, -.18 + shake, 'XYZ');
     }
     this.content.position.set(stone || melt || gallery ? 0 : -.03, (stone || melt ? .04 : working ? .30 : gallery ? .27 : .21) - compression, .10);
     if (this.displayStand) this.displayStand.visible = Boolean(gallery && upright && this.content.visible);
@@ -1300,14 +1336,17 @@ export class ForgeStage {
     }
     this.oreUniforms.oreReveal.value = mode === 'reveal' ? clamp((elapsed - 130) / 590, 0, 1) : 0;
     if (this.active?.uniforms.fClock) {
-      const length = this.mesh.geometry.boundingBox.max.x - this.mesh.geometry.boundingBox.min.x;
-      const scale = (this.verticalSpan ?? 3.85) * (working ? .56 : gallery ? .78 : .74) / length;
+      const { min, max } = this.mesh.geometry.boundingBox;
+      const vertical = this.verticalSpan ?? 3.85;
+      const fullLength = vertical * (working ? .56 : gallery ? .78 : .74) / (max.x - min.x);
+      const scale = gallery ? Math.min(fullLength, vertical * this.aspect * .52 / (max.y - min.y)) : fullLength;
       this.mesh.scale.setScalar(scale);
       this.mesh.position.y = gallery ? -this.active.coords.pommel.y * scale : 0;
       if (gallery) {
         this.displayStand.scale.setScalar(Math.min(1, (this.verticalSpan ?? 3.85) / 5.65));
-        this.displayStand.position.copy(this.active.coords.pommel);
-        this.mesh.localToWorld(this.displayStand.position);
+        const bottom = this.content.position.y + this.active.coords.pommel.x * fullLength;
+        this.content.position.y = bottom - this.active.coords.pommel.x * scale;
+        this.displayStand.position.set(this.content.position.x, bottom, this.content.position.z);
       }
       const { uniforms } = this.active;
       uniforms.fClock.value = this.reduceMotion ? 0 : t;
@@ -1350,9 +1389,9 @@ export class ForgeStage {
     this.cutFill.intensity = mode === 'reveal' ? 2.5 + revealFlash * .25 : 0;
     const lampCheck=mode==='ore' && this.inspection==='lamp';
     this.oreUniforms.oreLamp.value=lampCheck ? 1 : 0;
-    this.scene.environmentIntensity=lampCheck ? .40 : gallery ? 1.18 : 1;
-    this.ambient.intensity=lampCheck ? .34 : gallery ? 1.02 : .93;
-    this.rimLight.intensity=lampCheck ? .40 : gallery ? 1.68 : 1.1;
+    this.scene.environmentIntensity=lampCheck ? .40 : gallery ? 1.27 : 1;
+    this.ambient.intensity=lampCheck ? .34 : gallery ? 1.20 : .93;
+    this.rimLight.intensity=lampCheck ? .40 : gallery ? .38 : 1.1;
     this.lampLight.intensity=lampCheck ? 34 : 0;
     this.flash.intensity = mode === 'reveal' ? revealFlash * 3.1 : impulse * (strikeAge < 33 ? 3.7 : 1.15);
     if (mode === 'reveal') this.flash.position.set(0, .1, .8);
@@ -1366,17 +1405,24 @@ export class ForgeStage {
     this.camera.position.set(cameraShake, this.camHeight, this.camDepth);
     this.camera.lookAt(0, this.camAim, 0);
     this.camera.updateMatrixWorld();
-    if (this.gripFocus && this.active?.coords) {
+    if (view.grip && this.active?.coords) {
       const target = this.mesh.localToWorld(this.gripTarget.copy(this.active.coords.gripCenter));
       this.camera.worldToLocal(target);
-      this.camera.translateX(target.x);
-      this.camera.translateY(target.y);
-      this.camera.updateMatrixWorld();
+      this.camera.translateX(target.x * view.grip);
+      this.camera.translateY(target.y * view.grip);
     }
-    this.sweep.intensity = mode === 'reveal' ? revealFlash * 2.1 : inspect ? (mode === 'appraise' ? .50 + .62 * Math.exp(-elapsed / 520) : .61) : 0;
+    this.camera.translateX(view.x * this.camera.right);
+    this.camera.translateY(view.y * this.camera.top);
+    this.camera.updateMatrixWorld();
+    const zoom = 1 / view.inverseZoom;
+    if (this.camera.zoom !== zoom) {
+      this.camera.zoom = zoom;
+      this.camera.updateProjectionMatrix();
+    }
+    this.sweep.intensity = gallery ? 0 : mode === 'reveal' ? revealFlash * 2.1 : inspect ? (mode === 'appraise' ? .50 + .62 * Math.exp(-elapsed / 520) : .61) : 0;
     this.sweep.position.x = mode === 'appraise' ? lerp(-2.8, 2.6, clamp(elapsed / 1500, 0, 1)) : .8;
-    this.key.color.set(gallery ? 0xebf3ff : stone && mode !== 'refine' ? 0xe8efff : inspect ? 0xffead8 : 0xffcfad);
-    this.key.intensity = gallery ? 3.65 : mode === 'ore' ? (this.inspection==='lamp' ? .42 : 2.65) : mode === 'refine' ? 2.25 : mode === 'appraise' ? 2.65 : mode === 'reveal' ? 2.45 + revealFlash * .65 : 2.9;
+    this.key.color.set(gallery ? 0xfffcf7 : stone && mode !== 'refine' ? 0xe8efff : inspect ? 0xffead8 : 0xffcfad);
+    this.key.intensity = gallery ? 1.03 : mode === 'ore' ? (this.inspection==='lamp' ? .42 : 2.65) : mode === 'refine' ? 2.25 : mode === 'appraise' ? 2.65 : mode === 'reveal' ? 2.45 + revealFlash * .65 : 2.9;
     const blow = this.blow;
     this.trail.visible = false;
     if (blow) {

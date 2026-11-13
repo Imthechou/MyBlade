@@ -76,14 +76,13 @@
   isolation: isolate;
   min-height: 206px;
   margin: 0 12px 14px;
-  border: 1px solid #a4b9df28;
+  border: 1px solid #b9bdce21;
   border-radius: 24px;
   background:
-    radial-gradient(ellipse 49% 11% at 50% 88%, #9eacc95b, #3c455a30 67%, transparent),
-    linear-gradient(0deg, #101521 0%, #1e2634 13%, #181f2b 18%, #141a2430 24%, transparent 29%),
-    radial-gradient(ellipse 29% 42% at 50% 0%, #a9bcdf91, #3441564d 59%, transparent),
-    linear-gradient(90deg, #141a25, #171e2a 31%, #111722 31.4%, #222c3c 32%, #1f2838 69%, #141b27 69.4%, #151b27 70%, #111722);
-  box-shadow: inset 0 1px 0 #b0c8ef17, 0 12px 34px #05091264;
+    radial-gradient(ellipse 63% 16% at 39% 85%, #aaa29724, transparent 90%),
+    linear-gradient(0deg, #141720 0%, #25262e 13%, #25262a91 20%, transparent 34%),
+    radial-gradient(ellipse 82% 87% at 27% 13%, #515252 0%, #393b3f 39%, #23262e 74%, #171a23 100%);
+  box-shadow: inset 0 1px 0 #d5d4dc0f, 0 10px 28px #0509124f;
 }
 .home-gallery #homeStage::before {
   position: absolute;
@@ -91,8 +90,7 @@
   inset: 0;
   content: '';
   pointer-events: none;
-  background: repeating-linear-gradient(90deg, #d9e6ff0a 0 1px, transparent 1px 3px);
-  mask-image: linear-gradient(transparent 5%, #0003 24%, #0003 69%, transparent 96%);
+  background: radial-gradient(ellipse at 86% 46%, #080a132c, transparent 75%);
 }
 .home-gallery-label {
   position: absolute;
@@ -175,6 +173,8 @@
 }
 .blade-reset:focus-visible { outline: 2px solid var(--accent); outline-offset: -3px; }
 .blade-reset svg { width: 19px; height: 19px; pointer-events: none; }
+.home-gallery .blade-reset { background: #161923b0; }
+.home-gallery .blade-reset:active { background: var(--control-face); }
 .blade-detail-stage:has(.blade-reset) { position: relative; }
 #v19-forge .v19-stage[data-mode="ore"] .stage-footer { inset: 11px 12px auto; }
 .blade-detail-hero:has([data-preview="blade"]) { background: var(--showcase-base); }
