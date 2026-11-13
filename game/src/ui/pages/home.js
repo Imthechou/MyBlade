@@ -1,16 +1,21 @@
 /** 首页：以真实刀具展台为中心，开始锻刀是唯一主行动。 */
 import { el, $, clear, toast } from '../dom.js';
 import { ICONS } from '../components.js';
+import { icon } from '../icons.js';
 import * as Progress from '../../core/progress.js';
 import router from '../router.js';
-import { freshRun, offers } from '../../v19/forge.js';
+import { FITS, freshRun } from '../../v19/forge.js';
 import { hasLiveFurnace, openFurnace } from '../../core/v19Progress.js';
 
 let root, body, stageHost, legacy, hero, heroSequence = 0;
-/* ★ 首页鉴赏控制（图标版，与锻造页共用 stageControls 模块）。
-   · 默认 **关**：舞台不吃指针、页面可正常滚动、也不持续重绘（性能）；
-   · 打开后才允许拖拽/缩放看细节（可玩性）。 */
 let inspectCtl = null;
+const sampleRun = freshRun(314);
+const sample = {
+  model: 'tangdao', ore: { family: 'meteor', material: 'meteor_nickel', tint: 'silver', figure: .32, clarity: 84, vein: 36 },
+  purity: 92, refinement: { quality: 86 },
+  skin: { ...sampleRun.skin, metal: 'silver', pattern: 'damascus', levels: { ...sampleRun.skin.levels, metal: 2, pattern: 1 } },
+};
+const sampleFitting = { ...FITS.find(fit => fit.id === 'ink'), color: '#302d2e', accent: '#947955' };
 const ENTRIES = [
   { label: '赛事', icon: 'arena', go: () => router.go('arena') },
   { label: '藏刀阁', icon: 'collection', go: () => import('./workshop.js').then(m => m.openTab('collection')) },
@@ -22,17 +27,22 @@ export function create({ legacy: old = null } = {}) {
   root = $('.page[data-page="home"]');
   if (!root) return;
   clear(root);
+  root.classList.toggle('home-gallery', !legacy);
   inspectCtl = legacy?.createStageInspect() ?? null;
   stageHost = el('div', { class: 'stage home-showcase', id: 'homeStage' }, [
-    el('div', { class: 'showcase-label' }, [el('i'), el('span', { text: '待你锻造' })]),
-    /* 右下角两个图标：四向箭头（开/关拖动）+ 回转箭头（复原）。 */
+    legacy ? el('div', { class: 'showcase-label' }, [el('i'), el('span')]) :
+      el('div', { class: 'home-gallery-label' }, [
+        el('span', { class: 'home-gallery-kind' }),
+        el('strong', { class: 'home-gallery-name' }),
+        el('small', { class: 'home-gallery-score', hidden: true }),
+      ]),
+    legacy ? null : el('span', { class: 'home-stage-status', role: 'status', hidden: true }),
     inspectCtl?.bar,
   ]);
   body = el('div', { id: 'homeBody', class: 'home-dashboard' });
   root.append(stageHost, body);
 }
 
-/** 首页保留展台、开锻、三个入口和生涯统计；图鉴在工坊内。 */
 export function render() {
   if (!root || !body) create();
   if (!body) return;
@@ -42,6 +52,14 @@ export function render() {
   const canResume = legacy ? !!(legacy.Game.run && !legacy.Game.run.finished) : hasLiveFurnace();
   const label = stageHost.querySelector('.showcase-label span');
   if (label) label.textContent = summary.showcase ? '代表作' : '唐刀 · 待你锻造';
+  else {
+    const record = summary.showcase;
+    stageHost.querySelector('.home-gallery-kind').textContent = record ? '代表作' : '样刀';
+    stageHost.querySelector('.home-gallery-name').textContent = record ? record.bladeName || record.name || '成刀' : '唐刀';
+    const score = stageHost.querySelector('.home-gallery-score');
+    score.hidden = !Number.isFinite(record?.score);
+    score.textContent = score.hidden ? '' : `${record.score} 分`;
+  }
 
   body.append(
     el('button', {
@@ -73,29 +91,29 @@ export function render() {
         }
       },
     }, [
-      ICONS.forge(true),
+      legacy ? ICONS.forge(true) : icon('hammer'),
       el('div', { class: 'home-start-copy' }, [
         el('span', { class: 'home-start-title', text: canResume ? '继续锻刀' : '开始锻刀' }),
         legacy ? el('small', { text: canResume ? '接续工序 · 保留当前构筑' : '十道工序 · 自由构筑' }) : null,
       ]),
-      el('b', { text: '→', 'aria-hidden': 'true' }),
+      legacy ? el('b', { text: '→', 'aria-hidden': 'true' }) : null,
     ]),
-    nextGoalRow(summary.nextGoal),
+    ...(legacy ? [nextGoalRow(summary.nextGoal)] : []),
     el('nav', { class: 'home-entry', 'aria-label': '游戏主导航' }, ENTRIES.map((entry) => el('button', {
       class: 'home-entry-btn',
       type: 'button',
       'aria-label': entry.label,
       onclick: entry.go,
     }, [ICONS[entry.icon](false), el('span', { text: entry.label })]))),
-    /* 长期进度常显：以前没有成刀时整块消失，首页底部会突然塌一截，
-       新玩家也看不到「这游戏在攒什么」。数字从 0 开始本身就是目标。 */
-    el('div', { class: 'home-stats', 'aria-label': '长期进度' }, [
+  );
+  if (legacy) {
+    body.append(el('div', { class: 'home-stats', 'aria-label': '长期进度' }, [
       summaryItem('最高评分', summary.bestScore),
       summaryItem('赛事胜场', summary.matchWins),
       summaryItem('藏刀', `${summary.collectionCount} 把`),
       summaryItem('图鉴', `${Math.round(summary.codexProgress * 100)}%`),
-    ]),
-  );
+    ]));
+  }
 
   if (!legacy) {
     void showHero(summary.showcase);
@@ -156,13 +174,15 @@ async function showHero(record) {
   hero = null;
   const current = () => router.currentKey() === 'home' && sequence === heroSequence;
   if (inspectCtl) inspectCtl.bar.hidden = true;
-  stageHost.classList.toggle('v19-ghost', !record);
+  const status = stageHost.querySelector('.home-stage-status');
+  status.textContent = '正在载入展台…';
+  status.hidden = false;
   try {
     if (!record || record.v19Visual) {
       const { showForgedBlade } = await import('../../v19/sharedStage.js');
       if (!current()) return;
-      const ghost = freshRun(135);
-      hero = showForgedBlade(stageHost, record?.v19Visual || { ...ghost, model: 'tangdao', ore: offers(ghost)[0] });
+      hero = showForgedBlade(stageHost, record?.v19Visual || sample, { gallery: true, fitting: record ? undefined : sampleFitting });
+      if (!await hero.ready) throw new Error('展示刀具载入失败');
     } else {
       const [{ default: game }, { getStage }, { createStageInspect }] = await Promise.all([
         import('../../app/game.js'), import('../../render/index.js'), import('../stageControls.js'),
@@ -170,7 +190,8 @@ async function showHero(record) {
       if (!current()) return;
       const stage = getStage();
       const mounted = stage.viewer ? { ok: true } : await stage.mount(stageHost);
-      if (!current() || !mounted?.ok) return;
+      if (!current()) return;
+      if (!mounted?.ok) throw new Error('旧档案展台载入失败');
       stage.attachTo(stageHost);
       stage.resize();
       if (!inspectCtl) {
@@ -182,8 +203,13 @@ async function showHero(record) {
       stage.loadEnvironment();
       game.showRecord(record);
     }
+    if (current()) status.hidden = true;
   } catch {
-    if (current()) stageHost.querySelector('.showcase-label span').textContent = '3D 展台暂不可用';
+    if (current()) {
+      hero?.close();
+      hero = null;
+      status.textContent = '3D 展台暂不可用';
+    }
   }
 }
 

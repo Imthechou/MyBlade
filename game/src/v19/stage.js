@@ -28,6 +28,7 @@ const lerp = (a, b, t) => a + (b - a) * t;
    锻打压到砧面附近，视线略抬；精炼略低看炉球；检视与鉴定回到正面。 */
 const CAMERA_FRAMES = {
   stage: { height: .53, aim: -.07, depth: 6 },
+  gallery: { height: 1.12, aim: -.09, depth: 6.4 },
   ore: { height: .55, aim: -.08, depth: 6 },
   reveal: { height: .50, aim: -.05, depth: 6 },
   refine: { height: .53, aim: -.07, depth: 6 },
@@ -102,6 +103,7 @@ function coordinates(geometry, id) {
       .filter(point => region(point.x, point.y).blade > .60);
   });
   return { guides, along, region, bladeRoot: bladeRoot < 1 ? bladeRoot : 0, across: (x, y) => across(along(x), y),
+    pommel: new T.Vector3(min.x, (minY[0] + maxY[0]) * .5, 0),
     gripCenter: gripBounds.getCenter(new T.Vector3()),
     crossSection: (u, v) => new T.Vector2(min.x + u * length, lerp(sample(minY, u, min.y), sample(maxY, u, max.y), v)) };
 }
@@ -187,6 +189,33 @@ function radialTexture(inner = 'rgba(255,255,255,.55)', outer = 'rgba(255,255,25
   const texture = new T.CanvasTexture(canvas);
   texture.colorSpace = T.SRGBColorSpace;
   return texture;
+}
+
+function makeDisplayStand() {
+  const stand = new T.Group();
+  const steel = new T.MeshStandardMaterial({ color: 0x383e48, roughness: .37, metalness: .64, envMapIntensity: 1.14 });
+  const trim = new T.MeshStandardMaterial({ color: 0x626a75, roughness: .34, metalness: .62 });
+  const base = new T.Mesh(bevel([[-.69, -.23], [.69, -.23], [.68, -.16], [.56, -.075], [-.56, -.075], [-.68, -.16]], .51, .018), steel);
+  const top = new T.Mesh(bevel([[-.56, -.087], [.56, -.087], [.54, -.062], [-.54, -.062]], .43, .008), trim);
+  const seam = new T.Mesh(new T.BoxGeometry(1.32, .009, .009), trim);
+  seam.position.set(0, -.191, .272);
+  stand.add(base, top, seam);
+  const support = bevel([[.10, -.049], [.26, -.049], [.20, .19], [.12, .21]], .24, .014);
+  const innerPad = new T.MeshStandardMaterial({ color: 0x25282f, roughness: .82 });
+  for (const side of [-1, 1]) {
+    const jaw = new T.Mesh(support, trim);
+    jaw.scale.x = side;
+    const pad = new T.Mesh(new T.BoxGeometry(.026, .18, .21), innerPad);
+    pad.position.set(side * .105, .077, 0);
+    stand.add(jaw, pad);
+  }
+  const shadow = new T.Mesh(new T.PlaneGeometry(2.22, 1.22), new T.MeshBasicMaterial({
+    map: radialTexture('rgba(0,0,0,.88)'), transparent: true, depthWrite: false,
+  }));
+  shadow.rotation.x = -Math.PI / 2;
+  shadow.position.set(0, -.25, .12);
+  stand.add(shadow);
+  return stand;
 }
 
 function makeGround() {
@@ -496,6 +525,26 @@ export class ForgeStage {
     this.resize();
     this.scheduleWarm();
     this.frameId = requestAnimationFrame(this.frame);
+  }
+
+  setGallery(enabled) {
+    if (Boolean(this.gallery) === enabled) return;
+    this.gallery = enabled;
+    if (enabled && !this.displayStand) {
+      this.displayStand = makeDisplayStand();
+      this.scene.add(this.displayStand);
+    }
+    if (this.displayStand) this.displayStand.visible = false;
+    this.key.position.set(enabled ? -2.2 : -2.7, enabled ? 4.5 : 3.1, 4.8);
+    this.rimLight.position.set(3.5, 1.1, enabled ? .7 : 2.5);
+    this.rimLight.color.set(enabled ? 0xffd6ab : 0xb9d8ff);
+    this.invalidate(250);
+  }
+
+  hidePresentation() {
+    this.content.visible = false;
+    if (this.displayStand) this.displayStand.visible = false;
+    this.renderer.clear();
   }
 
   load(id, priority = 'auto') {
@@ -836,6 +885,7 @@ export class ForgeStage {
       return null;
     }
     const id = this.want;
+    this.hidePresentation();
     return this.load(id).then(() => {
       if (this.want !== id) return false;
       this.show(id);
@@ -869,6 +919,7 @@ export class ForgeStage {
       this.mesh.scale.setScalar(isOreModel(id) ? 1.58 : id === 'molten' ? 1.45 : id === 'blank' ? 2.35 : 2.74);
       this.swapAt = performance.now();
     }
+    this.content.visible = true;
     if (asset.coords && this.run) {
       setSurface(asset.uniforms, this.run.ore ? this.run : {...this.run,ore:this.inspectedOre}, this.fit);
       if (this.fit && knifeDetails[id] && asset.hardware === undefined) {
@@ -1064,7 +1115,7 @@ export class ForgeStage {
   }
 
   keyboardHit() {
-    if (!this.active?.coords) return null;
+    if (!this.content.visible || !this.active?.coords) return null;
     const guides = this.active.coords.guides;
     const local = guides[Math.floor(guides.length * .47)].clone();
     const { coords } = this.active;
@@ -1205,6 +1256,7 @@ export class ForgeStage {
     if (document.hidden) return;
     const t = now / 1000;
     const mode = this.mode;
+    const gallery = this.gallery && mode === 'appraise';
     const elapsed = now - this.entered;
     const inspect = ['fit', 'appraise'].includes(mode);
     const stone = isOreModel(this.shown);
@@ -1234,11 +1286,12 @@ export class ForgeStage {
     const tap = !this.reduceMotion ? Math.sin((now-(this.tappedAt ?? -5000))*.08)*Math.exp(-(now-(this.tappedAt ?? -5000))/85)*.016 : 0;
     if (upright) {
       // Roll the model upright, then spin around the world's vertical axis.
-      this.content.rotation.set(0, -.24 + this.turnY + startTurn, Math.PI / 2 + shake, 'YXZ');
+      this.content.rotation.set(0, (gallery ? Math.PI - .20 : -.24) + this.turnY + startTurn, Math.PI / 2 + shake, 'YXZ');
     } else {
       this.content.rotation.set(.18 + this.turnX + tap, stoneTurn + this.turnY, -.18 + shake, 'XYZ');
     }
-    this.content.position.set(stone || melt ? 0 : -.03, (stone || melt ? .04 : working ? .30 : .21) - compression, .10);
+    this.content.position.set(stone || melt || gallery ? 0 : -.03, (stone || melt ? .04 : working ? .30 : gallery ? .27 : .21) - compression, .10);
+    if (this.displayStand) this.displayStand.visible = Boolean(gallery && upright && this.content.visible);
     if (melt) {
       this.meltUniforms.meltClock.value = this.reduceMotion || failedRefining ? 0 : t;
       const reveal = 1 - .20 * Math.exp(-(now - this.swapAt) / 155);
@@ -1248,7 +1301,14 @@ export class ForgeStage {
     this.oreUniforms.oreReveal.value = mode === 'reveal' ? clamp((elapsed - 130) / 590, 0, 1) : 0;
     if (this.active?.uniforms.fClock) {
       const length = this.mesh.geometry.boundingBox.max.x - this.mesh.geometry.boundingBox.min.x;
-      this.mesh.scale.setScalar((this.verticalSpan ?? 3.85) * (working ? .56 : .74) / length);
+      const scale = (this.verticalSpan ?? 3.85) * (working ? .56 : gallery ? .78 : .74) / length;
+      this.mesh.scale.setScalar(scale);
+      this.mesh.position.y = gallery ? -this.active.coords.pommel.y * scale : 0;
+      if (gallery) {
+        this.displayStand.scale.setScalar(Math.min(1, (this.verticalSpan ?? 3.85) / 5.65));
+        this.displayStand.position.copy(this.active.coords.pommel);
+        this.mesh.localToWorld(this.displayStand.position);
+      }
       const { uniforms } = this.active;
       uniforms.fClock.value = this.reduceMotion ? 0 : t;
       uniforms.fHeat.value = mode === 'refine' ? this.heat : mode === 'forge' && this.shown === 'blank' ? .15 : 0;
@@ -1290,16 +1350,16 @@ export class ForgeStage {
     this.cutFill.intensity = mode === 'reveal' ? 2.5 + revealFlash * .25 : 0;
     const lampCheck=mode==='ore' && this.inspection==='lamp';
     this.oreUniforms.oreLamp.value=lampCheck ? 1 : 0;
-    this.scene.environmentIntensity=lampCheck ? .40 : 1;
-    this.ambient.intensity=lampCheck ? .34 : .93;
-    this.rimLight.intensity=lampCheck ? .40 : 1.1;
+    this.scene.environmentIntensity=lampCheck ? .40 : gallery ? 1.18 : 1;
+    this.ambient.intensity=lampCheck ? .34 : gallery ? 1.02 : .93;
+    this.rimLight.intensity=lampCheck ? .40 : gallery ? 1.68 : 1.1;
     this.lampLight.intensity=lampCheck ? 34 : 0;
     this.flash.intensity = mode === 'reveal' ? revealFlash * 3.1 : impulse * (strikeAge < 33 ? 3.7 : 1.15);
     if (mode === 'reveal') this.flash.position.set(0, .1, .8);
     const cameraShake = !this.reduceMotion && this.lastImpact?.large ? Math.sin(strikeAge / 19) * impulse * .035 : 0;
     // 每个工序一个机位：锻打压低看砧面，精炼略低看炉球，检视回到正面。
-    const frameTarget = failedRefining ? CAMERA_FRAMES.stage : (CAMERA_FRAMES[mode] || CAMERA_FRAMES.stage);
-    const camEase = this.reduceMotion ? 1 : Math.min(1, dt * 6);
+    const frameTarget = gallery ? CAMERA_FRAMES.gallery : failedRefining ? CAMERA_FRAMES.stage : (CAMERA_FRAMES[mode] || CAMERA_FRAMES.stage);
+    const camEase = gallery || this.reduceMotion ? 1 : Math.min(1, dt * 6);
     this.camHeight += (frameTarget.height - this.camHeight) * camEase;
     this.camAim += (frameTarget.aim - this.camAim) * camEase;
     this.camDepth += (frameTarget.depth - this.camDepth) * camEase;
@@ -1315,8 +1375,8 @@ export class ForgeStage {
     }
     this.sweep.intensity = mode === 'reveal' ? revealFlash * 2.1 : inspect ? (mode === 'appraise' ? .50 + .62 * Math.exp(-elapsed / 520) : .61) : 0;
     this.sweep.position.x = mode === 'appraise' ? lerp(-2.8, 2.6, clamp(elapsed / 1500, 0, 1)) : .8;
-    this.key.color.set(stone && mode !== 'refine' ? 0xe8efff : inspect ? 0xffead8 : 0xffcfad);
-    this.key.intensity = mode === 'ore' ? (this.inspection==='lamp' ? .42 : 2.65) : mode === 'refine' ? 2.25 : mode === 'appraise' ? 2.65 : mode === 'reveal' ? 2.45 + revealFlash * .65 : 2.9;
+    this.key.color.set(gallery ? 0xebf3ff : stone && mode !== 'refine' ? 0xe8efff : inspect ? 0xffead8 : 0xffcfad);
+    this.key.intensity = gallery ? 3.65 : mode === 'ore' ? (this.inspection==='lamp' ? .42 : 2.65) : mode === 'refine' ? 2.25 : mode === 'appraise' ? 2.65 : mode === 'reveal' ? 2.45 + revealFlash * .65 : 2.9;
     const blow = this.blow;
     this.trail.visible = false;
     if (blow) {

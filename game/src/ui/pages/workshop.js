@@ -1,6 +1,7 @@
 /** 工坊：藏刀阁、成就、锻造加成与图鉴；保留长期玩法与完整检视信息。 */
 import { el, $, clear, mount, toast, sheet } from '../dom.js';
 import { icon } from '../icons.js';
+import { createViewReset } from '../viewReset.js';
 import { ICONS, rarityBadge, statRail } from '../components.js';
 import { bladeCardModel, bladeCard, bladeCardDetail, compareModels } from '../bladeCard.js';
 import * as Core from '../../core/index.js';
@@ -459,7 +460,7 @@ function inspect(blade) {
   const recipe = blade.v19Visual;
   const modelId = resolveModelId(blade, blade.knifeTypeId);
   const visual = recipe ? null : Game.resolveVisualState(blade, {}, { modelId, viewPreset: 'forge' });
-  const previewHost = el('div', { class: 'blade-detail-stage', role: recipe ? 'group' : 'img', 'aria-label': `${blade.bladeName || '成刀'}三维档案外观` });
+  const previewHost = el('div', { class: 'blade-detail-stage', role: 'group', 'aria-label': `${blade.bladeName || '成刀'}三维档案外观` });
   const previewStatus = el('div', { class: 'blade-detail-stage-status', text: BladeStage.supported ? '正在载入档案外观…' : '此设备不支持 WebGL，档案外观不可预览' });
   /* ★ rework T13.1：详情也读**同一份**展示模型（含赛事经历、工艺、风险）。
      改造前这里另拼了一套 trait/六维/履历，与卡面、赛报各说一套。 */
@@ -578,6 +579,8 @@ function inspect(blade) {
     stage.applyGlow(visual.glowCardId || null);
     try { await stage.viewer?._compilePromise; } catch (_) { /* 仍保留可用的 GLB 外形 */ }
     if (detailSequence !== sequence || !previewHost.isConnected) { stage.dispose(); return; }
+    stage.setInteractive(true);
+    previewHost.append(el('div', { class: 'blade-view-controls' }, [createViewReset(() => stage.resetView())]));
     if (environment?.ok) previewStatus.remove();
     else previewStatus.textContent = '环境反射不可用，当前档案外观为降级预览';
   })().catch(() => {

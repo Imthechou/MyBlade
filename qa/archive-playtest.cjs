@@ -1,4 +1,5 @@
 const {chromium}=require('playwright');
+const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const target=process.env.PLAYTEST_TARGET||'runtime';
 const out='audit-playtest/'+target;
@@ -36,7 +37,12 @@ async function snapshot(page,name){
      console.log('DISMISS_ONBOARDING',label);
      await onboarding.click();await snapshot(page,label+'-onboarding-dismissed');
    }
+   const view = page.locator('#homeStage .blade-view-controls');
+   await view.getByRole('button', { name: '复位视角' }).waitFor();
+   assert.equal(await view.getByRole('button').count(), 1);
    await start.click();await snapshot(page,label+'-forge');
+   const forgeView = page.locator('#v19-forge .stage-footer');
+   assert.equal(await forgeView.getByRole('button', { name: '复位视角' }).count(), 1);
    if(label==='mobile'){
     for(const [name,regex] of [['lamp',/打灯/],['knock',/敲石/],['reveal',/开石/],['refine',/去精炼/]]){
       const action=page.getByRole('button',{name:regex}).first();

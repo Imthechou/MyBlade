@@ -90,35 +90,6 @@
   align-items: center;
   gap: 8px;
 }
-.stage-inspect .stage-icon {
-  display: inline-grid;
-  place-items: center;
-  /* 可见体积匹配左下提示浮窗；扩大透明命中范围保证手机可点。 */
-  width: 32px;
-  height: 32px;
-  padding: 0;
-  position: relative;
-  border: 1px solid var(--line);
-  border-radius: 50%;
-  background: rgba(255, 255, 255, .92);
-  color: var(--face-2);
-  cursor: pointer;
-  backdrop-filter: blur(6px);
-  box-shadow: var(--shadow-1);
-  -webkit-tap-highlight-color: transparent;
-  touch-action: manipulation;
-  transition: background var(--dur-fast), color var(--dur-fast), border-color var(--dur-fast), transform var(--dur-fast);
-}
-.stage-inspect .stage-icon svg {
-  width: 18px;
-  height: 18px;
-  display: block;
-  pointer-events: none;
-}
-.stage-inspect .stage-icon::after { content:''; position:absolute; inset:-6px; }
-.stage-inspect .stage-icon:active { transform: scale(.94); }
-.stage-inspect .stage-icon:focus-visible { outline: 2px solid var(--accent-cool); outline-offset: 2px; }
-
 /* S4 / S7 游戏手势独占舞台时暂不开放镜头复位。 */
 .page[data-page="forge"].is-no-drag .stage-inspect-reset {
   opacity: .45;
@@ -127,10 +98,6 @@
 /* 与左下预览浮窗等高（约32px）且下沿齐平，伪元素扩展触控区域。 */
 .page[data-page="forge"] .stage-inspect { bottom: 48px; }
 
-@media (prefers-reduced-motion: reduce) {
-  .stage-inspect .stage-icon { transition: none; }
-  .stage-inspect .stage-icon:active { transform: none; }
-}
 .home-dashboard {
   flex: 0 0 auto;
   display: flex;

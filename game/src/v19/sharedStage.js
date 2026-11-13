@@ -2,7 +2,7 @@ import { ForgeStage } from './stage.js';
 import { FITS } from './forge.js';
 import { motion } from '../platform/index.js';
 import { el } from '../ui/dom.js';
-import { icon } from '../ui/icons.js';
+import { createViewReset } from '../ui/viewReset.js';
 
 let stage;
 let host;
@@ -10,7 +10,7 @@ let canvas;
 
 motion.subscribe(reduced => { if (stage) stage.reduceMotion = reduced; });
 
-export function attachForgeStage(next, initialModels) {
+export function attachForgeStage(next, initialModels, { gallery = false } = {}) {
   canvas ??= Object.assign(document.createElement('canvas'), { id: 'scene', tabIndex: 0 });
   canvas.className = 'v19-canvas';
   canvas.setAttribute('aria-label', '3D 预览，方向键旋转，刀具可用加减键缩放，Home 键复位');
@@ -18,6 +18,7 @@ export function attachForgeStage(next, initialModels) {
   try {
     stage ??= new ForgeStage(canvas, initialModels);
     stage.reduceMotion = motion.reduced();
+    stage.setGallery(gallery);
     host = next;
     stage.setRendering(true);
     stage.resize();
@@ -31,37 +32,12 @@ export function attachForgeStage(next, initialModels) {
 export function releaseForgeStage(owner) {
   if (host !== owner) return;
   stage.setRendering(false);
+  stage.hidePresentation();
   canvas.remove();
   host = null;
 }
 
-function viewButton(symbol, label, action, zoom = false) {
-  const button = el('button', { type: 'button', class: zoom ? 'blade-zoom' : 'blade-reset', title: label, 'aria-label': label }, [icon(symbol)]);
-  let lastTouch = -Infinity;
-  button.addEventListener('click', event => {
-    if (event.detail && performance.now() - lastTouch < 500) return;
-    action();
-  });
-  button.addEventListener('pointerup', event => {
-    // A touch immediately after a canvas drag may not synthesize a click.
-    if (event.pointerType === 'touch' && event.isPrimary &&
-      document.elementFromPoint(event.clientX, event.clientY) === button) {
-      lastTouch = performance.now();
-      action();
-    }
-  });
-  return button;
-}
-
 const zoomStep = 1.2;
-
-export function createBladeTools({ zoom, reset }) {
-  return el('div', { class: 'blade-view-tools', role: 'group', 'aria-label': '视角控制' }, [
-    viewButton('minus', '缩小刀具', () => zoom(1 / zoomStep), true),
-    viewButton('plus', '放大刀具', () => zoom(zoomStep), true),
-    viewButton('refresh', '复位视角', reset),
-  ]);
-}
 
 export function bindStageInput(stage, {
   signal, enabled = () => true, canAdjust = () => true, reset = () => stage.resetView(), onTap,
@@ -130,17 +106,16 @@ export function bindStageInput(stage, {
   });
 }
 
-export function showForgedBlade(host, visual, { fractured = false } = {}) {
-  const stage = attachForgeStage(host);
+export function showForgedBlade(host, visual, { fractured = false, gallery = false, fitting = FITS.find(item => item.id === visual.fit) } = {}) {
+  const stage = attachForgeStage(host, undefined, { gallery });
   const abort = new AbortController();
   bindStageInput(stage, { signal: abort.signal });
-  const tools = createBladeTools({ zoom: factor => stage.zoomBy(factor), reset: () => stage.resetView() });
-  const controls = el('div', { class: 'blade-view-controls' }, [el('span', { text: '横拖旋转' }), tools]);
+  const controls = el('div', { class: 'blade-view-controls' }, [createViewReset(() => stage.resetView())]);
   host.dataset.preview = 'blade';
   host.append(controls);
   stage.resetView();
   const phase = fractured ? 'broken' : 'appraise';
-  const ready = stage.sync({ ...visual, phase }, visual.ore, FITS.find(item => item.id === visual.fit));
+  const ready = stage.sync({ ...visual, phase }, visual.ore, fitting);
   const close = () => {
     abort.abort();
     controls.remove();

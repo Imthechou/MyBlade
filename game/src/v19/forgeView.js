@@ -5,7 +5,8 @@ import {
   fitOptions, refreshFittings, signature, signaturePerk, inspectOre, mineralHeritage, oreInspection, oreModelId,
   markLamp, tapOreProbe, oreClues, clueCount, probeBudget, oreStatFocus,
 } from './forge.js';
-import { attachForgeStage, bindStageInput, createBladeTools, releaseForgeStage } from './sharedStage.js';
+import { attachForgeStage, bindStageInput, releaseForgeStage } from './sharedStage.js';
+import { createViewReset } from '../ui/viewReset.js';
 import { forgeMarkup } from './forgeMarkup.js';
 import { ForgeSound } from './sound.js';
 import { get as getProgress } from '../core/progress.js';
@@ -73,12 +74,9 @@ export function mountForge(root, { onArena, onCollection }) {
     stage.resetView();
     renderGripFocus();
   };
-  const viewTools = createBladeTools({
-    zoom: factor => { if (!busy) stage?.zoomBy(factor); },
-    reset: resetView,
-  });
-  viewTools.hidden = true;
-  get('stage-hint').after(viewTools);
+  const viewReset = createViewReset(resetView);
+  viewReset.hidden = true;
+  get('stage-hint').after(viewReset);
   function showStorageNotice(message) {
     const notice = get('save-notice');
     notice.textContent = message;
@@ -295,8 +293,7 @@ export function mountForge(root, { onArena, onCollection }) {
     } else {
       setStageLoading(false);
     }
-    viewTools.hidden = !stage || !['reveal', 'forge', 'fit', 'appraise'].includes(phase);
-    viewTools.dataset.zoom = String(Boolean(stage?.canZoom));
+    viewReset.hidden = !stage || !['ore', 'reveal', 'forge', 'fit', 'appraise'].includes(phase);
     renderGripFocus();
     renderTools(run, ore);
     renderTray(run, fit);
@@ -314,7 +311,7 @@ export function mountForge(root, { onArena, onCollection }) {
     const button = get('grip-focus');
     button.hidden = save.run.phase !== 'fit' || !stage || webglError;
     button.setAttribute('aria-pressed', String(Boolean(stage?.gripFocus)));
-    button.querySelector('span').textContent = stage?.gripFocus ? '查看全刀' : '查看刀柄';
+    button.textContent = stage?.gripFocus ? '查看全刀' : '查看刀柄';
   }
 
   const CLUE_LABEL = { vein: '脉', crack: '整', grain: '密', purity: '纯' };
@@ -396,7 +393,6 @@ export function mountForge(root, { onArena, onCollection }) {
     control.setAttribute('aria-pressed', String(Boolean(preview)));
     control.querySelector('strong').textContent = preview ? '看切面 ›' : '看刀纹 ›';
     get('stage-hint').textContent = preview ? '横拖旋转' : '拖动看切面';
-    viewTools.dataset.zoom = String(Boolean(preview));
   }
 
   function renderTray(run, fit) {
@@ -945,7 +941,7 @@ export function mountForge(root, { onArena, onCollection }) {
         stageInput = new AbortController();
         bindStageInput(stage, {
           signal: stageInput.signal,
-          enabled: () => active && ['ore', 'reveal', 'forge', 'fit', 'appraise'].includes(save.run.phase),
+          enabled: () => active && stage.content.visible && ['ore', 'reveal', 'forge', 'fit', 'appraise'].includes(save.run.phase),
           canAdjust: () => !busy,
           reset: resetView,
           onTap: event => {
