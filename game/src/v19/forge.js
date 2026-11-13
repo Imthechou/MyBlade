@@ -101,16 +101,22 @@ export const oreOptics = ore => {
     clarityName:clarity<.35 ? '浑浊' : clarity<.70 ? '雾润' : '清透',
   };
 };
-export const oreInspection = ore => {
-  const optics=oreOptics(ore);
-  const shell=Math.max(0,Math.min(1,(ore?.crust ?? 50)/100));
-  const transmission=Math.max(.04,Math.min(.96,
-    .04+Math.pow(optics.clarity,1.4)*.92*(1.-shell*.82)+optics.exposure*.10+(ore?.window ? .22 : 0)));
+export function oreInspection(ore, optics = oreOptics(ore)) {
+  const grade = clamp(ore?.grade ?? 0, 0, 2);
+  const purity = clamp((ore?.purity ?? 60) / 100, 0, 1);
+  const vein = clamp((ore?.vein ?? 52) / 100, 0, 1);
+  const shell = clamp((ore?.crust ?? 50) / 100, 0, 1);
+  const opticalDepth = optics.clarity ** 1.4 * (1 - shell * .82) + optics.exposure * .14;
+  const integrity = clamp(((ore?.stability ?? 60) - 38) / 40, 0, 1);
+  const flaw = clamp((ore?.flaw ?? 43) / 100, 0, 1);
   return {
-    transmission,
-    lamp:transmission>=.60 ? '色晕透入 · 内层较清' : transmission>=.26 ? '浅层散光 · 石皮仍有遮挡' : '光停在表皮 · 内芯未透出',
+    // Give each grade a distinct vein and mineral coverage range. Tint and
+    // optical clarity vary within that range, even for an opaque rare core.
+    transmission: .11 + grade * .27 + opticalDepth * .14 + vein * .08,
+    deposit: .04 + grade * .34 + purity * .22,
+    fractures: (1 - integrity) * .86 + flaw * .14,
   };
-};
+}
 export const oreModelId = ore => `ore_${FAMILIES.some(f => f.id === ore?.family) ? ore.family : 'river'}_${Math.max(0, Math.min(3, Math.floor(ore?.variant || 0)))}`;
 export const mineralHeritage = ore => {
   const mineral = oreMaterialOf(ore);
@@ -123,65 +129,22 @@ export const mineralHeritage = ore => {
     name: ['水纹层钢', '霜晶钢纹', '赤铜熔脉', '陨铁镍纹', '赭金叠层'][FAMILIES.findIndex(f => f.id === mineral.family)],
   };
 };
-/* ── 选料探测档案 ─────────────────────────────────────────
-   打灯 / 敲石 / 擦窗原来只吐一句瞬时提示，1.5 秒后就被清掉；切到另一块石头
-   再回来又要重敲，于是三块石头永远无法横向比较。这里按石头 id 记住探明状态，
-   让线索沉淀成可以对照的档案。 */
-
-/** 取（或初始化）某块石头的探测档案。老存档只有 inspections[id]=true，初始化时继承过来。 */
-export function probeOf(run, id) {
-  const map = (run.probes ??= {});
-  return (map[id] ??= { lamp: false, taps: 0, window: Boolean(run.inspections?.[id]) });
+function oreProbe(run, id) {
+  const probe = run.probes?.[id];
+  return {
+    lamp: Boolean(probe?.lamp),
+    taps: probe?.taps >= 1 ? 1 : 0,
+    window: Boolean(probe?.window || run.inspections?.[id]),
+  };
 }
 
-/**
- * 探测预算：一整局锻造（含「换一批」后的所有批次）打灯 / 敲石 / 擦窗各只有一次。
- * 三块石头 × 三批共九块候选，却只有三次探测——这才是选料真正要做的取舍：
- * 集中验一块，还是分散粗筛三块。
- */
-export function probeBudget(run) {
-  const used = (run.probeUsed ??= { lamp: false, tap: false, window: false });
-  return { used, lamp: !used.lamp, tap: !used.tap, window: !used.window };
+function recordProbe(run, id, field, value) {
+  const first = run.batch * LOT_SIZE;
+  if (run.phase !== 'ore' || !Number.isInteger(id) || id < first || id >= first + LOT_SIZE) return false;
+  (run.probes ??= {})[id] = { ...oreProbe(run, id), [field]: value };
+  return true;
 }
 
-const level = (value, low, high) => value >= high ? 3 : value >= low ? 2 : 1;
-
-/**
- * 四条线索，未探明返回 null。
- * 打灯看脉（纯度倾向）、敲石一下同时听出完整性与颗粒密度、
- * 擦窗给真实纯度区间——工具各只有一次，所以每条线索都稀缺。
- */
-export const oreClues = ore => {
-  const probe = ore?.probe || { lamp: false, taps: 0, window: false };
-  const signals = oreSignals(ore);
-  const vein = ore?.vein ?? 52, flaw = ore?.flaw ?? 40, density = ore?.density ?? 55;
-  const purity = ore?.purity ?? 62;
-  const lo = Math.max(0, purity - 6), hi = Math.min(100, purity + 6);
-  return {
-    vein: probe.lamp ? { key: '脉', text: signals.vein, level: level(vein, 48, 72), hint: '纯度倾向' } : null,
-    crack: probe.taps >= 1 ? { key: '整', text: signals.shell, level: level(100 - flaw, 45, 65), hint: '锻造不断' } : null,
-    grain: probe.taps >= 1 ? { key: '密', text: signals.density, level: level(density, 49, 73), hint: '评分稳定' } : null,
-    purity: probe.window ? { key: '纯', text: `纯度 ${lo}~${hi}`, level: level(purity, 58, 72), hint: '评分上限' } : null,
-  };
-};
-
-/** 已探明几条线索（0~4），卡片用四个点表示。 */
-export const clueCount = clues => ['vein', 'crack', 'grain', 'purity'].filter(k => clues[k]).length;
-
-export const oreSignals = ore => {
-  const vein = ore?.vein ?? Math.round((ore?.purity ?? 62) * .8);
-  const flaw = ore?.flaw ?? Math.round(90 - (ore?.stability ?? 60));
-  const luster = ore?.luster ?? 45;
-  const density = ore?.density ?? Math.round(ore?.stability ?? 60);
-  const crust = ore?.crust ?? 50;
-  return {
-    vein: vein >= 72 ? '矿脉清晰' : vein >= 48 ? '矿脉可辨' : '矿脉隐约',
-    shell: flaw >= 55 ? '裂隙较多' : flaw >= 35 ? '可见细裂' : '裂隙较少',
-    glow: luster >= 69 ? '亮点明显' : luster >= 43 ? '局部微光' : '表面暗哑',
-    density: density >= 73 ? '颗粒密实' : density >= 49 ? '密实中等' : '质地疏松',
-    crust: crust >= 70 ? '石皮厚重' : crust >= 42 ? '石皮适中' : '石皮较薄',
-  };
-};
 export const STAT_NAMES = ['强度', '韧性', '锋利', '工艺', '设计', '灵性'];
 export const STAT_CAP = 150;
 export function oreStatFocus(ore) {
@@ -267,7 +230,7 @@ const pick = (array, roll) => array[Math.floor(roll() * array.length)];
 
 export function freshRun(seed) {
   return {
-    seed, phase: 'ore', batch: 0, selected: 0, inspections: {}, probes: {}, probeUsed: {}, ore: null, purity: 0, stability: 60, refining: null, refinement: null,
+    seed, phase: 'ore', batch: 0, selected: 0, probes: {}, ore: null, purity: 0, stability: 60, refining: null, refinement: null,
     hits: 0, work: 0, hammerWork: {}, cracks: 0, changedShape: false, model: 'blank', marks: {}, highlights: [],
     fit: null, refreshed: false, last: null, record: null,
     skin: { metal: 'raw', pattern: 'none', film: 'none', fx: 'none', levels: { metal: 1, pattern: 0, film: 0, fx: 0 }, seed: rngFor(seed, 'surface')() },
@@ -308,8 +271,7 @@ export function offers(run) {
     const exposureRoll=optical();
     const exposure=exposureRoll<.34 ? 'hidden' : exposureRoll<.70 ? 'veiled' : 'open';
     const clarity=Math.round(8+optical()*86);
-    /* 探测档案只读：真正的写入发生在打灯/敲石/擦窗时，避免 renders 里产生副作用。 */
-    const probe = run.probes?.[id] || { lamp: false, taps: 0, window: Boolean(run.inspections?.[id]) };
+    const probe = oreProbe(run, id);
     return { id, family: family.id, material, variant, price, grade, clue, figure, purity, stability, tier,
       vein, flaw, luster, density, crust, tint, exposure, clarity,
       probe, window: probe.window, number: String(id + 1).padStart(2, '0') };
@@ -319,36 +281,11 @@ export function offers(run) {
 export const familyOf = (id) => FAMILIES.find(family => family.id === id) || FAMILIES[0];
 export const stabilityOf = value => value < 50 ? '偏脆' : value >= 70 ? '稳定' : '中等';
 
-/** 打灯：整局一次。灯本身不收费，贵的是这一次机会。 */
-export function markLamp(save, id) {
-  const budget = probeBudget(save.run);
-  if (!budget.lamp) return null;
-  save.run.probeUsed.lamp = true;
-  const probe = probeOf(save.run, id);
-  probe.lamp = true;
-  return probe;
-}
+export const markLamp = ({ run }, id) => recordProbe(run, id, 'lamp', true);
+export const tapOreProbe = ({ run }, id) => recordProbe(run, id, 'taps', 1);
 
-/** 敲石：整局一次，一下同时听出裂隙（整）与颗粒密度（密）——两次机会压缩成一次。 */
-export function tapOreProbe(save, id) {
-  const probe = probeOf(save.run, id);
-  if (!probeBudget(save.run).tap) return { probe, added: null };
-  save.run.probeUsed.tap = true;
-  probe.taps = Math.max(1, probe.taps);
-  return { probe, added: 'both' };
-}
-
-// A window reveals the real purity band. Free in credits, but it is one of only
-// three probes you get for the whole run.
-export function inspectOre(save) {
-  const run = save.run;
-  if (run.phase !== 'ore') return false;
-  const ore = offers(run)[run.selected];
-  if (!ore || ore.window || !probeBudget(run).window) return false;
-  run.probeUsed.window = true;
-  (run.inspections ??= {})[ore.id] = true;
-  probeOf(run, ore.id).window = true;
-  return true;
+export function inspectOre({ run }) {
+  return recordProbe(run, run.batch * LOT_SIZE + run.selected, 'window', true);
 }
 
 export function modelCandidates(run) {

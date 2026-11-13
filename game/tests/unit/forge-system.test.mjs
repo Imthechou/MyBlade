@@ -2,7 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   PHASES, LOT_SIZE, FAMILIES, ORE_MATERIALS, LOOKS, MODELS, STAT_CAP, STAT_NAMES, FITS,
-  appraise, finishForge, freshRun, strike,
+  appraise, buyOre, finishForge, freshRun, inspectOre, markLamp, offers, oreInspection, strike,
+  tapOreProbe,
 } from '../../src/v19/forge.js';
 import {TARGET_NAMES,EVENTS,RANKS} from '../../src/v19/tournament.js';
 
@@ -18,6 +19,51 @@ test('current product assets are actually enumerated',()=>{
   assert.ok(FITS.length>=6);
   for(const slot of ['metal','pattern','film','fx'])assert.ok(Object.keys(LOOKS[slot]).length>=6,slot);
 });
+
+test('all tools can inspect every candidate repeatedly without changing ore or credits', () => {
+  const run = freshRun(1771);
+  // An active furnace from before the change may have all three tools spent.
+  run.probeUsed = { lamp: true, tap: true, window: true };
+  run.inspections = { 0: true };
+  const save = { run, credits: 50 };
+  assert.equal(offers(run)[0].window, true);
+  for (let batch = 0; batch < 3; batch++) {
+    run.batch = batch;
+    const original = offers(run);
+    for (let index = 0; index < LOT_SIZE; index++) {
+      run.selected = index;
+      const { id } = original[index];
+      for (let count = 0; count < 3; count++) {
+        assert.ok(markLamp(save, id));
+        assert.ok(tapOreProbe(save, id));
+        assert.ok(inspectOre(save));
+      }
+      assert.deepEqual(offers(run)[index], {
+        ...original[index], probe: { lamp: true, taps: 1, window: true }, window: true,
+      });
+    }
+    assert.equal(markLamp(save, (batch + 1) * LOT_SIZE), false);
+  }
+  assert.equal(Object.keys(run.probes).length, 9);
+  assert.equal(save.credits, 50);
+  const selected = offers(run)[run.selected];
+  assert.ok(buyOre(save));
+  assert.equal(save.credits, 50 - selected.price);
+  assert.deepEqual(run.ore, selected);
+  assert.equal(inspectOre(save), false);
+});
+
+test('mineral grades have separated inspection ranges even when purity and optical clarity overlap', () => {
+  const opaqueRich = { grade: 2, purity: 72, clarity: 8, crust: 96, vein: 46, exposure: 'hidden' };
+  const clearLean = { grade: 0, purity: 64, clarity: 94, crust: 7, vein: 71, exposure: 'open' };
+  const rich = oreInspection(opaqueRich);
+  const lean = oreInspection(clearLean);
+  assert.ok(rich.transmission - lean.transmission > .35);
+  assert.ok(rich.deposit - lean.deposit > .60);
+  assert.ok(oreInspection({ stability: 43, flaw: 20 }).fractures >
+    oreInspection({ stability: 76, flaw: 65 }).fractures);
+});
+
 test('tournament supplies nine targets, practice and progression',()=>{
   assert.equal(Object.keys(TARGET_NAMES).length,9);
   for(const mode of ['practice','quick','daily','school','national','apex']) assert.ok(EVENTS[mode],mode);

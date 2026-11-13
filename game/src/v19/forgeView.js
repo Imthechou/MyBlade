@@ -3,7 +3,7 @@ import {
   offers, familyOf, stabilityOf, buyOre, beginRefining, advanceHeat, pourRefining, heatBand, refinementRank,
   REFINEMENT_RESULTS, REFINEMENT_FAILURES, fractureRisk, strike, finishForge,
   fitOptions, refreshFittings, signature, signaturePerk, inspectOre, mineralHeritage, oreInspection, oreModelId,
-  markLamp, tapOreProbe, oreClues, probeBudget, oreStatFocus,
+  markLamp, tapOreProbe, oreStatFocus,
 } from './forge.js';
 import { ensureThreeRuntime } from './threeRuntime.js';
 import { createViewReset } from '../ui/viewReset.js';
@@ -298,6 +298,7 @@ export function mountForge(root, { onArena, onCollection }) {
       actions.innerHTML = button('restart', '再开一炉');
     }
     renderTools(run, ore);
+    if (phase === 'ore' && webglError) describeProbe(ore, inspectionMode);
     const loadSeq = ++stageLoadSeq;
     const pendingStage = stage?.sync(run, ore, fit);
     if (phase === 'ore') stage?.setInspection(inspectionMode);
@@ -328,12 +329,22 @@ export function mountForge(root, { onArena, onCollection }) {
   }
 
   function describeProbe(ore, probe) {
-    const clues = oreClues(ore);
-    get('announcer').textContent = {
-      lamp: clues.vein ? clues.vein.text + '，' + oreInspection(ore).lamp : '',
-      tap: [clues.crack?.text, clues.grain?.text].filter(Boolean).join('，'),
-      window: clues.purity?.text,
-    }[probe] || '';
+    let result = '';
+    if (probe === 'lamp') result = ['矿脉零散', '矿脉成束', '矿脉连贯'][ore.grade];
+    if (probe === 'window') result = ['石杂较多', '矿芯较净', '矿芯连续纯净'][ore.grade];
+    if (probe === 'tap') {
+      const { fractures } = oreInspection(ore);
+      result = fractures > .65 ? '裂隙较多' : fractures > .34 ? '可见细裂' : '质地紧实';
+    }
+    get('announcer').textContent = result;
+    if (webglError) get('stage-hint').textContent = result;
+  }
+
+  function setInspection(mode, ore, replay = false) {
+    inspectionMode = mode;
+    stage?.setInspection(mode, { replay });
+    renderTools(save.run, ore);
+    describeProbe(ore, mode);
   }
 
   function renderTools(run, ore) {
@@ -346,23 +357,12 @@ export function mountForge(root, { onArena, onCollection }) {
     }
     const key = run.seed + '|' + ore.id;
     if (toolStone !== key) {
-      inspectionMode = ore.probe?.lamp ? 'lamp' : 'natural';
+      inspectionMode = ore.window ? 'window' : ore.probe.lamp ? 'lamp' : 'natural';
       toolStone = key;
     }
     stageBox.dataset.inspection = inspectionMode;
-    const budget = probeBudget(run);
-    const lamp = root.querySelector('[data-action="inspect-light"]');
-    const tap = root.querySelector('[data-action="tap-ore"]');
-    const windowButton = get('window-ore');
-    lamp.disabled = !budget.lamp && !ore.probe?.lamp;
-    lamp.setAttribute('aria-pressed', String(inspectionMode === 'lamp'));
-    lamp.setAttribute('aria-label', lamp.disabled ? '打灯，已在另一块原石使用' : '打灯');
-    tap.disabled = !budget.tap;
-    tap.dataset.inspected = String(Boolean(ore.probe?.taps));
-    tap.setAttribute('aria-label', tap.disabled ? '敲石，已用' : '敲石');
-    windowButton.disabled = !budget.window;
-    windowButton.dataset.inspected = String(Boolean(ore.window));
-    windowButton.setAttribute('aria-label', ore.window ? '擦窗，已露出矿芯' : windowButton.disabled ? '擦窗，已用' : '擦窗');
+    root.querySelector('[data-action="inspect-light"]').setAttribute('aria-pressed', String(inspectionMode === 'lamp'));
+    get('window-ore').dataset.inspected = String(inspectionMode === 'window');
   }
 
   function toggleOreBlade(control) {
@@ -735,30 +735,28 @@ export function mountForge(root, { onArena, onCollection }) {
       case 'open-collection': return onCollection();
       case 'inspect-light': {
         if (run.phase !== 'ore') return;
-        const stone = offers(run)[run.selected];
-        if (!stone.probe?.lamp && !apply(draft => markLamp(draft, stone.id))) return;
-        inspectionMode = inspectionMode === id ? 'natural' : id;
-        stage?.setInspection(inspectionMode);
-        const current = offers(save.run)[save.run.selected];
-        if (inspectionMode === 'lamp') describeProbe(current, 'lamp');
-        return renderTools(save.run, current);
+        const ore = offers(run)[run.selected];
+        if (!ore.probe.lamp && !apply(draft => markLamp(draft, ore.id))) return;
+        const mode = inspectionMode !== 'lamp' ? 'lamp' : ore.window ? 'window' : 'natural';
+        return setInspection(mode, ore);
       }
       case 'tap-ore': {
         if (run.phase !== 'ore') return;
-        const stone = offers(run)[run.selected];
-        if (!apply(draft => tapOreProbe(draft, stone.id).added)) return;
-        const current = offers(save.run)[save.run.selected];
+        const ore = offers(run)[run.selected];
+        if (!ore.probe.taps && !apply(draft => tapOreProbe(draft, ore.id))) return;
         stage?.tapOre();
-        sound.inspect(current);
-        describeProbe(current, 'tap');
-        return renderTools(save.run, current);
+        sound.inspect(ore);
+        describeProbe(ore, 'tap');
+        return;
       }
-      case 'window-ore':
-        if (!apply(inspectOre)) return;
-        inspectionMode = 'window';
+      case 'window-ore': {
+        if (run.phase !== 'ore') return;
+        const ore = offers(run)[run.selected];
+        if (!ore.window && !apply(inspectOre)) return;
+        setInspection('window', ore, true);
         sound.play('polish', .75);
-        describeProbe(offers(save.run)[save.run.selected], 'window');
-        break;
+        return;
+      }
       case 'preview-mineral': return toggleOreBlade(control);
       case 'select-ore':
       case 'next-batch':

@@ -460,7 +460,7 @@ const oreUniformHead = `
 uniform float oreSeed, oreReveal, oreGrade, oreHeat, oreFamily, oreMaterial;
 uniform float oreVein, oreFlaw, oreLuster, oreDensity, oreCrust, oreRoughness, oreMetalness;
 uniform float orePurity, oreWindow, oreLamp, oreExposure, oreClarity, oreTransmission;
-uniform float oreKnock;
+uniform float oreKnock, oreScrape, oreDeposit, oreFractures;
 uniform vec3 oreTint, oreBaseColor, oreVeinColor, oreCoreColor, oreHostVein;
 `;
 
@@ -468,7 +468,7 @@ export function makeOreMaterial(original, uniforms, family = 'river') {
   const material = new T.MeshStandardMaterial({
     color: 0xffffff, roughness: .86, metalness: .13, envMapIntensity: .8,
   });
-  material.customProgramCacheKey = () => 'bladelab-mineral-inspection';
+  material.customProgramCacheKey = () => 'bladelab-mineral-inspection-contrast';
   material.onBeforeCompile = shader => {
     Object.assign(shader.uniforms, uniforms);
     shader.vertexShader = 'varying vec3 vOre; varying vec3 vOreView;\n' +
@@ -498,46 +498,73 @@ export function makeOreMaterial(original, uniforms, family = 'river') {
       vec3 outcrop=mix(oreCoreColor*(.67+grain*.32),oreVeinColor,.22*(1.-oreClarity));
       stone=mix(stone,outcrop,clamp(exposed*1.6,0.,.92));
       stone*=1.-crack*.51-pore*.17;
-      float window=0.;
+      float window=0., coreCoverage=0., relief=0.;
+      vec3 inspectionGlow=vec3(0.);
       if(oreWindow>.5){
-        vec2 windowOffset=(p.xy-vec2(.12,.08))*vec2(1.,1.15);
-        window=(1.-smoothstep(.192,.273,length(windowOffset)+.048*(weather-.5)))*smoothstep(.15,.35,p.z);
+        vec2 windowOffset=(p.xy-vec2(.08,.01))*vec2(.90,1.28);
+        float edge=length(windowOffset)+.078*(weather-.5)+.026*(grain-.5);
+        window=(1.-smoothstep(.246,.302,edge))*smoothstep(.10,.27,p.z);
+        if(oreScrape>0.){
+          float sweep=oreScrape*1.18-.58-windowOffset.x-windowOffset.y*.39;
+          inspectionGlow+=vec3(.43,.40,.35)*window*exp(-abs(sweep)*29.)*.18;
+          window*=smoothstep(-.06,.10,sweep);
+        }
         if(window>.001){
           vec4 deposit=mineralField(p,oreFamily,oreMaterial,oreSeed);
-          float presence=smoothstep(.74-orePurity*.50,.91-orePurity*.45,n);
-          vec3 polished=mix(oreBaseColor*.44,oreCoreColor*(.75+.65*deposit.y),presence);
-          polished=mix(polished,oreVeinColor*.88,deposit.x*.35*presence);
-          float cloud=(1.-oreClarity)*smoothstep(.28,.77,weather);
-          polished=mix(polished,mix(oreCoreColor,vec3(.46),.32),cloud*.56);
+          float matrix=weather*.52+n*.32+grain*.16;
+          coreCoverage=smoothstep(.80-oreDeposit*.78,.93-oreDeposit*.78,matrix);
+          float inclusions=(1.-coreCoverage)*smoothstep(.32,.78,grain);
+          vec3 host=mix(oreBaseColor*.42+vec3(.008),oreBaseColor*1.17+vec3(.054,.048,.041),matrix);
+          host*=1.-.44*inclusions;
+          float layers=forgeBand(p.y*6.8+p.x*1.6+weather*.82,.10);
+          float facets=.42+.48*deposit.y+.31*matrix+(grain-.5)*.15;
+          vec3 mineral=mix(oreCoreColor,oreVeinColor,.26)*facets;
+          mineral=mix(mineral,mix(oreBaseColor,vec3(.22,.24,.26),.34),
+            (1.-oreClarity)*(1.-oreDeposit*.64)*smoothstep(.32,.75,weather)*.56);
+          mineral=mix(mineral,oreVeinColor*.86,deposit.x*.22+layers*.14);
+          vec3 polished=mix(host,mineral,coreCoverage);
+          float lip=smoothstep(.228,.285,edge);
+          float grit=smoothstep(.52,.81,grain)*(1.-smoothstep(.013,.048,abs(edge-.264)));
+          polished=polished*(1.-lip*.23)+mix(oreBaseColor,vec3(.23,.21,.18),.45)*grit*.29;
           stone=mix(stone,polished,window);
+          relief=inclusions*.00135+deposit.w*.00050+layers*coreCoverage*.00024;
+          inspectionGlow+=mineral*window*coreCoverage*(.035+.14*oreDeposit);
         }
       }
-      vec3 inspectionGlow=vec3(0.);
       float lampBeam=0.;
       if(oreLamp>.5){
-        vec2 spot=(vOreView.xy-vec2(-.28,.32))*vec2(.83,1.12);
-        lampBeam=1.-smoothstep(.10,.82,length(spot));
-        float scatter=oreTransmission*(.58+.42*weather);
-        float fold=p.y*1.9+p.z*.68+weather*.55+p.x*.87;
-        float ridge=abs(fract(fold)-.5);
-        float width=mix(.040,.23,oreVein)*mix(.85,1.2,oreClarity);
-        float seam=(1.-smoothstep(width,width+.11,ridge))*smoothstep(.31,.69,n);
-        float mineral=lampBeam*scatter*seam*(.28+.72*oreVein);
-        stone=mix(stone,oreCoreColor*(.58+.49*n),clamp(mineral*2.1,0.,.84));
-        inspectionGlow=oreCoreColor*(mineral*1.16+scatter*lampBeam*.028);
+        vec2 spot=(vOreView.xy-vec2(-.25,.28))*vec2(.70,1.04);
+        lampBeam=1.-smoothstep(.13,1.02,length(spot));
+        float transmission=oreTransmission;
+        float layer=p.y+p.x*.32+(weather-.5)*.25+(n-.5)*.058;
+        float edgeFade=1.-smoothstep(.34,.76,abs(p.x+(weather-.5)*.26));
+        float continuousVein=smoothstep(.68-transmission*.57,.91-transmission*.56,n*.70+weather*.30);
+        float width=mix(.012,.057,transmission)*mix(.67,1.28,weather);
+        float seam=1.-smoothstep(width,width+.028,abs(layer-.043));
+        float branch=1.-smoothstep(width*.33,width*.46+.020,abs(layer+(p.x+.06)*.24+.105));
+        float mineral=lampBeam*edgeFade*continuousVein*(seam+branch*.43)*transmission;
+        vec3 veinColor=mix(oreCoreColor,oreVeinColor,.57)*(.61+.29*grain+.29*n);
+        stone=mix(stone,veinColor,clamp(mineral*1.38,0.,.84));
+        inspectionGlow+=veinColor*mineral*.66;
       }
       if(oreKnock>0.){
-        float response=smoothstep(0.,.75,oreKnock);
-        float fault=weather*.84 + .18*n + .068*(p.x-p.y);
-        float fractures=(1.-smoothstep(.009,.031,abs(fault-.51)))*smoothstep(.45-oreFlaw*.15,.65,n);
-        float looseGrain=smoothstep(.68,.90,grain)*(1.-oreDensity);
-        inspectionGlow+=vec3(.36,.43,.49)*response*(fractures*oreFlaw*.50+looseGrain*.15)*(1.-window);
+        float response=smoothstep(.0,.58,oreKnock);
+        float fault=weather*.78+.18*n+.11*(p.x-p.y);
+        float damage=smoothstep(.27,.87,oreFractures);
+        float join=smoothstep(.68-damage*.45,.83-damage*.50,n);
+        float width=mix(.004,.023,damage);
+        float fracture=1.-smoothstep(width*.40,width,abs(fault-.49));
+        float branch=1.-smoothstep(width*.26,width*.81,abs(fault+.14*p.x+.12*p.y-.52));
+        float split=max(fracture,branch*damage)*join*(1.-window);
+        stone*=1.-split*response*damage*.68;
+        inspectionGlow+=vec3(.49,.59,.67)*split*response*damage*.42;
       }
       diffuseColor.rgb=stone;
-      float oreM=mix(clamp(oreMetalness+exposed*.33+glint*.20,.06,.65),mix(.19,.12,oreClarity),window);
-      float oreR=mix(clamp(oreRoughness+pore*.07-exposed*.28-glint*.18,.35,.98),mix(.47,.12,oreClarity),window);
+      float oreM=mix(clamp(oreMetalness+exposed*.33+glint*.20,.06,.65),mix(.07,.23,coreCoverage),window);
+      float oreR=mix(clamp(oreRoughness+pore*.07-exposed*.28-glint*.18,.35,.98),
+        mix(.87,.35-oreClarity*.14,coreCoverage),window);
       oreR=clamp(oreR-lampBeam*.09,.18,.98);
-      float rockHeight=((micro-.5)*.00045+(grain-.5)*.004-crack*.005-pore*.003)*(1.-window*.92);
+      float rockHeight=((micro-.5)*.00045+(grain-.5)*.004-crack*.005-pore*.003)*(1.-window*.92)-relief*window;
     `).replace('#include <roughnessmap_fragment>', 'float roughnessFactor = oreR;')
       .replace('#include <metalnessmap_fragment>', 'float metalnessFactor = oreM;')
       .replace('#include <normal_fragment_maps>', '#include <normal_fragment_maps>\nnormal = rockBump(normal,rockHeight,vViewPosition);')
