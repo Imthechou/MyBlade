@@ -63,9 +63,7 @@ function ensureStage() {
       opacity: '0', pointerEvents: 'none', contain: 'strict',
     });
     document.body.appendChild(canvasHost);
-    stage = new ForgeStage(canvasHost);
-    // 这台舞台只为离屏出图存在，不需要常驻渲染循环。
-    stage.setRendering(false);
+    stage = new ForgeStage(canvasHost, { offscreen: true });
     return stage;
   } catch (error) {
     console.warn('[collection] V19 preview stage unavailable', error);

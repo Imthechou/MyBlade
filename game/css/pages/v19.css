@@ -227,9 +227,27 @@
   box-shadow: 0 0 18px var(--stage-shadow);
   pointer-events: none;
 }
-#v19-forge .v19-stage[data-mode="ore"][data-inspection="lamp"] {
-  background: var(--stage-lamp);
+#v19-forge[data-phase="ore"] { gap: 6px; padding-top: 8px; }
+#v19-forge[data-phase="ore"] .workspace { gap: 4px; }
+#v19-forge .v19-stage[data-mode="ore"] {
+  height: clamp(190px, calc(100dvh - 262px - var(--safe-t) - var(--safe-b)), 760px);
+  border-color: var(--glass-border);
+  background:
+    radial-gradient(ellipse 40% 60% at 42% -3%, #b0bddb2e, #7c90b918 56%, transparent 100%),
+    radial-gradient(ellipse 95% 74% at 48% 34%, var(--base-2), var(--showcase-base) 65%, transparent),
+    var(--base-0);
+  box-shadow: inset 0 1px var(--line-2);
 }
+#v19-forge .v19-stage[data-mode="ore"]::after { content: none; }
+#v19-forge .v19-stage[data-mode="ore"][data-inspection="lamp"] {
+  background:
+    radial-gradient(ellipse 38% 65% at 38% -8%, #dccfb246, #abb0bd1d 56%, transparent 100%),
+    radial-gradient(ellipse 92% 74% at 48% 34%, var(--base-2), var(--showcase-base) 65%, transparent),
+    var(--base-0);
+}
+#v19-forge [data-mode="ore"] .v19-canvas { touch-action: none; cursor: grab; }
+#v19-forge [data-mode="ore"] .v19-canvas:active { cursor: grabbing; }
+#v19-forge [data-mode="ore"] .v19-canvas:focus-visible { outline: 2px solid var(--accent); outline-offset: -3px; }
 #v19-forge .v19-stage[data-mode="refine"] {
   height: clamp(174px, 39dvh, 355px);
   background: var(--stage-warm);
@@ -246,7 +264,7 @@
 #v19-forge .v19-stage[data-mode="refine"] {
   box-shadow: var(--shadow-2), inset 0 0 74px rgba(28, 10, 4, .38);
 }
-#v19-forge .v19-stage.is-phase-in .v19-canvas { animation: v19-phase-in .5s cubic-bezier(.2, .8, .3, 1) both; }
+#v19-forge .v19-stage.is-phase-in:not([data-mode="ore"]) .v19-canvas { animation: v19-phase-in .5s cubic-bezier(.2, .8, .3, 1) both; }
 @keyframes v19-phase-in {
   from { filter: brightness(1.45) saturate(.55); transform: scale(1.015); }
   to { filter: none; transform: none; }
@@ -415,46 +433,16 @@
   100% { transform: translateY(-5px); opacity: 0; }
 }
 
-#v19-forge .ore-tools {
-  position: absolute;
-  z-index: 4;
-  inset: auto 10px 10px;
-  display: grid;
-  justify-items: center;
-  gap: 5px;
-  pointer-events: none;
-}
-#v19-forge #inspection-note {
-  display: grid;
-  gap: 4px;
-  justify-items: center;
-  max-width: 100%;
-  color: var(--face-2);
-  text-align: center;
-  font-size: 11px;
-  text-shadow: 0 0 5px var(--base-1), 0 0 8px var(--base-1);
-}
-/* 四条线索：脉打灯、裂与密靠敲石递进、纯要擦窗。未探明显示「—」。 */
-#v19-forge .ore-clues { display: flex; flex-wrap: wrap; justify-content: center; gap: 5px; }
-#v19-forge .ore-clue {
-  display: inline-flex; align-items: center; gap: 3px;
-  padding: 2px 7px; border: 1px solid var(--line); border-radius: 999px;
-  background: var(--control-face); color: var(--face-3); font-size: 11px;
-}
-#v19-forge .ore-clue b { font-weight: 650; }
-#v19-forge .ore-clue i { font-style: normal; font-family: var(--v19-mono); letter-spacing: 0; }
-/* 只有满格才用强调色：探明 ≠ 好，弱信号保持中性，避免把「已查到」误读成「品质好」。 */
-#v19-forge .ore-clue.is-on { border-color: var(--line); background: var(--control-face); color: var(--face-2); }
-#v19-forge .ore-clue.is-on[data-level="2"] { color: var(--face); border-color: var(--line-firm, var(--line)); }
-#v19-forge .ore-clue.is-on[data-level="3"] { border-color: var(--accent-line); background: var(--accent-soft); color: var(--accent); }
+#v19-forge .ore-tools { display: grid; justify-items: center; gap: 5px; }
 #v19-forge .inspection-tools {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  width: min(100%, 366px);
   gap: 2px;
-  padding: 3px;
+  padding: 2px;
   border: 1px solid var(--line);
   border-radius: 13px;
   background: var(--control-face);
-  pointer-events: auto;
 }
 #v19-forge .inspection-tools button, #v19-forge .grip-focus {
   min-width: 65px;
@@ -470,10 +458,12 @@
   color: var(--face-2);
   font-size: 12px;
 }
-#v19-forge :is(.inspection-tools button, .grip-focus)[aria-pressed="true"] {
+#v19-forge :is(.inspection-tools button, .grip-focus)[aria-pressed="true"],
+#v19-forge .inspection-tools button[data-inspected="true"] {
   background: var(--accent-soft);
   color: var(--accent-deep);
   border-color: var(--accent-line);
+  opacity: 1;
 }
 #v19-forge .inspection-tools svg {
   width: 16px;
@@ -489,25 +479,6 @@
   background: var(--glass-bg);
   white-space: nowrap;
 }
-#v19-forge .ore-echo {
-  position: absolute;
-  z-index: 3;
-  left: 50%;
-  top: 43%;
-  width: 80px;
-  height: 80px;
-  border: 1px solid #c3edf4;
-  border-radius: 50%;
-  opacity: 0;
-  transform: translate(-50%, -50%);
-  pointer-events: none;
-}
-#v19-forge .ore-echo.is-echoing { animation: v19-echo var(--ring, 1s) ease-out both; }
-@keyframes v19-echo {
-  from { opacity: .9; transform: translate(-50%, -50%) scale(.65); }
-  to { opacity: 0; transform: translate(-50%, -50%) scale(2.2); }
-}
-
 #v19-forge .panel {
   display: grid;
   gap: 8px;
@@ -521,55 +492,59 @@
 #v19-forge #bench-meta { flex-shrink: 0; color: var(--accent-deep); font-size: 11px; font-weight: 700; }
 #v19-forge #description { margin: 3px 0 0; color: var(--face-3); font-size: 11px; }
 #v19-forge :is(#description, #bench-meta, .tray, #readout):empty { display: none; }
-#v19-forge :is(.ore-grid, .fit-grid) { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
-#v19-forge :is(.ore-card, .fit-card) {
+#v19-forge :is(.ore-grid, .fit-grid) {
   display: grid;
-  align-content: start;
-  gap: 3px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+#v19-forge .ore-grid { width: min(100%, 256px); }
+#v19-forge .ore-card {
+  position: relative;
   min-width: 0;
-  padding: 6px 6px 7px;
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  background: var(--control-face);
-  text-align: left;
+  height: 59px;
+  padding: 0 2px 5px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
 }
-#v19-forge :is(.ore-card, .fit-card, .heritage-preview)[aria-pressed="true"] {
-  border-color: var(--accent);
-  background: var(--accent-soft);
-  box-shadow: inset 0 0 0 1px var(--accent-soft);
+#v19-forge .ore-card[aria-pressed="true"]::after {
+  content: "";
+  position: absolute;
+  inset: auto 24% 1px;
+  height: 3px;
+  border-radius: 3px;
+  background: var(--accent);
 }
-#v19-forge .ore-thumbnail { position: relative; display: block; height: 61px; border-radius: 8px; background: var(--showcase-surface); }
+#v19-forge .ore-thumbnail { position: relative; display: block; height: 100%; }
 #v19-forge .ore-thumbnail img { display: block; width: 100%; height: 100%; object-fit: contain; opacity: 0; }
 #v19-forge .ore-thumbnail.is-loaded img { opacity: 1; }
 #v19-forge .ore-thumbnail i {
   position: absolute;
-  inset: 27% 33%;
+  inset: 25% 20%;
   background: var(--ore-color, #a6b2c5);
   opacity: .65;
   clip-path: polygon(11% 32%, 43% 7%, 85% 21%, 97% 59%, 74% 94%, 20% 82%, 2% 60%);
 }
 #v19-forge .ore-thumbnail.is-loaded i { display: none; }
-#v19-forge :is(.ore-card-name, .fit-card b) { font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-#v19-forge .ore-card-footer { display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; column-gap: 3px; line-height: 1.25; }
-#v19-forge .ore-card-footer strong { color: var(--accent-deep); font: 750 11px var(--v19-mono); }
-#v19-forge :is(.ore-card-footer span, .fit-card small) { color: var(--face-2); font-size: 11px; }
-
-/* 矿质三档：1/2/3 颗矿芯，比“稀质 12%”一行小字更快比较三块石头。 */
-#v19-forge .ore-tier { display: inline-flex; align-items: center; gap: 3px; }
-#v19-forge .ore-tier i {
-  width: 6px;
-  height: 6px;
-  rotate: 45deg;
-  border-radius: 1px;
-  background: #ffffff24;
-  box-shadow: inset 0 0 0 1px #ffffff1a;
+#v19-forge .fit-card {
+  display: grid;
+  align-content: start;
+  gap: 5px;
+  min-width: 0;
+  min-height: 66px;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--control-face);
+  text-align: left;
 }
-#v19-forge .ore-tier[data-tier="0"] i:first-child { background: #93a0b8; }
-#v19-forge .ore-tier[data-tier="1"] i:nth-child(-n+2) { background: #7fc8e8; }
-#v19-forge .ore-tier[data-tier="2"] i { background: #e0a81c; box-shadow: 0 0 6px #e0a81c55; }
-/* 擦过窗的矿：缩略图描一圈已探明的边，不再用文字标注状态。 */
-#v19-forge .ore-card.is-windowed .ore-thumbnail { box-shadow: inset 0 0 0 1px var(--accent-line); }
-#v19-forge .fit-card { gap: 5px; min-height: 66px; padding: 8px; }
+#v19-forge :is(.fit-card, .heritage-preview)[aria-pressed="true"] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  box-shadow: inset 0 0 0 1px var(--accent-soft);
+}
+#v19-forge .fit-card b { font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#v19-forge .fit-card small { color: var(--face-2); font-size: 11px; }
 #v19-forge .fit-colors { display: flex; gap: 3px; }
 #v19-forge .fit-colors i { width: 24px; height: 6px; border-radius: 5px; background: var(--sample); box-shadow: inset 0 1px #ffffff46; }
 #v19-forge .fit-detail { margin: 0; color: var(--face-3); font-size: 11px; line-height: 1.45; }
@@ -879,12 +854,11 @@
   #v19-forge .v19-stage { height: clamp(172px, 34dvh, 225px); }
   #v19-forge .v19-stage[data-mode="refine"] { height: clamp(150px, 31dvh, 208px); }
   #v19-forge .v19-stage[data-mode="forge"] { height: clamp(190px, 39dvh, 255px); }
-  #v19-forge .ore-thumbnail { height: 47px; }
+  #v19-forge .ore-card { height: 51px; }
 }
 @container app (max-width: 350px) {
   .v19-surface { padding-inline: 8px; }
   #v19-forge .panel { padding-inline: 0; }
-  #v19-forge .ore-card-footer span { font-size: 9px; }
 }
 @media (prefers-reduced-motion: reduce) {
   .v19-surface *, .v19-surface *::before, .v19-surface *::after { scroll-behavior: auto; animation-duration: .01ms; transition-duration: .01ms; }
@@ -906,18 +880,6 @@
 .v19-collection-art svg { width: 24px; height: 24px; }
 .v19-collection-art span { font-size: 10px; }
 .page[data-load-error]::before { content: attr(data-load-error); padding: 16px; color: var(--v19-danger); }
-/* 卡片上的探明指示：四点代表脉 / 裂 / 密 / 纯，三块石头同一位置可直接横比已查过什么。 */
-#v19-forge .ore-probes { display: flex; gap: 4px; justify-content: center; padding-top: 1px; }
-#v19-forge .ore-probes i { width: 5px; height: 5px; border-radius: 50%; border: 1px solid var(--line); background: transparent; }
-#v19-forge .ore-probes i.is-on { border-color: var(--accent); background: var(--accent); }
-/* 探测工具整局各一次：用掉就锁死，用虚线框与压暗和「可用但未按」区分开。 */
-#v19-forge .inspection-tools button[data-spent="true"] {
-  color: var(--face-3);
-  border-color: var(--line);
-  border-style: dashed;
-  opacity: .55;
-}
-
 
 /* Arena lobby, setup and loadout */
 #v19-arena { padding-bottom: calc(10px + var(--safe-b)); }

@@ -10,13 +10,15 @@ let canvas;
 
 motion.subscribe(reduced => { if (stage) stage.reduceMotion = reduced; });
 
-export function attachForgeStage(next, initialModels, { gallery = false } = {}) {
+export function attachForgeStage(next, { gallery = false } = {}) {
+  if (host === next) return stage;
   canvas ??= Object.assign(document.createElement('canvas'), { id: 'scene', tabIndex: 0 });
   canvas.className = 'v19-canvas';
   canvas.setAttribute('aria-label', '3D 预览，方向键旋转，刀具可用加减键缩放，Home 键复位');
+  stage?.suspendPresentation();
   next.prepend(canvas);
   try {
-    stage ??= new ForgeStage(canvas, initialModels);
+    stage ??= new ForgeStage(canvas);
     stage.reduceMotion = motion.reduced();
     stage.setGallery(gallery);
     host = next;
@@ -25,6 +27,7 @@ export function attachForgeStage(next, initialModels, { gallery = false } = {}) 
     return stage;
   } catch (error) {
     canvas.remove();
+    host = null;
     throw error;
   }
 }
@@ -32,7 +35,7 @@ export function attachForgeStage(next, initialModels, { gallery = false } = {}) 
 export function releaseForgeStage(owner) {
   if (host !== owner) return;
   stage.setRendering(false);
-  stage.hidePresentation();
+  stage.suspendPresentation();
   canvas.remove();
   host = null;
 }
@@ -132,7 +135,7 @@ export function bindStageInput(stage, {
 }
 
 export function showForgedBlade(host, visual, { fractured = false, gallery = false, fitting = FITS.find(item => item.id === visual.fit) } = {}) {
-  const stage = attachForgeStage(host, undefined, { gallery });
+  const stage = attachForgeStage(host, { gallery });
   const abort = new AbortController();
   bindStageInput(stage, { signal: abort.signal });
   const controls = el('div', { class: 'blade-view-controls' }, [createViewReset(() => stage.resetView())]);

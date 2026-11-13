@@ -1,11 +1,11 @@
 import {
-  LOT_SIZE, BATCHES, HEAT, fittingPrice, PHASES, GRADES, rareOdds, oreMaterialOf, MODELS, LOOKS, FITS, STAT_CAP, STAT_NAMES,
+  LOT_SIZE, BATCHES, HEAT, fittingPrice, PHASES, GRADES, oreMaterialOf, MODELS, LOOKS, FITS, STAT_CAP, STAT_NAMES,
   offers, familyOf, stabilityOf, buyOre, beginRefining, advanceHeat, pourRefining, heatBand, refinementRank,
   REFINEMENT_RESULTS, REFINEMENT_FAILURES, fractureRisk, strike, finishForge,
   fitOptions, refreshFittings, signature, signaturePerk, inspectOre, mineralHeritage, oreInspection, oreModelId,
-  markLamp, tapOreProbe, oreClues, clueCount, probeBudget, oreStatFocus,
+  markLamp, tapOreProbe, oreClues, probeBudget, oreStatFocus,
 } from './forge.js';
-import { attachForgeStage, bindStageInput, releaseForgeStage } from './sharedStage.js';
+import { ensureThreeRuntime } from './threeRuntime.js';
 import { createViewReset } from '../ui/viewReset.js';
 import { forgeMarkup } from './forgeMarkup.js';
 import { ForgeSound } from './sound.js';
@@ -16,7 +16,6 @@ import { hint as showHint } from '../ui/tutorial.js';
 import { countUp } from '../ui/dom.js';
 
 const PHASE_HINTS = {
-  ore: ['v19-ore', '打灯、敲石、擦窗整局各只有一次——用在最像样的那块上。'],
   refine: ['v19-refine', '按住鼓风升温，松手降温；指针进入绿区才开始积累精炼。'],
   forge: ['v19-forge', '刀腹偏强韧，刃侧偏锋利，刀尖偏设计与灵性。6 锤后可收。'],
   fit: ['v19-fit', '配件只改变六维倾向，不会抹掉已经打出的刀纹。'],
@@ -31,6 +30,10 @@ export function mountForge(root, { onArena, onCollection }) {
   const stageBox = get('stage');
   const actions = get('actions');
   const tray = get('tray');
+  const oreOptions = get('ore-options');
+  oreOptions.addEventListener('load', event => {
+    if (event.target.tagName === 'IMG') event.target.parentElement.classList.add('is-loaded');
+  }, true);
   const readout = get('readout');
   const msg = get('stage-message');
   const sound = new ForgeSound();
@@ -42,6 +45,8 @@ export function mountForge(root, { onArena, onCollection }) {
   let save;
   let active = false;
   let stageInput;
+  let stageModule;
+  let stageEntry = 0;
   let frameId;
   let revealTimer;
   let revealStampTimer;
@@ -58,10 +63,10 @@ export function mountForge(root, { onArena, onCollection }) {
   let heatHud;
   let saveTask;
   let trayKey;
+  let oreBatchKey;
   let webglError = false;
   let inspectionMode = 'natural';
   let toolStone = '';
-  let echoTimer;
   let messageTimer;
   let missTimer;
   let floatTimer;
@@ -178,11 +183,18 @@ export function mountForge(root, { onArena, onCollection }) {
     get('stage-state').textContent = webglError ? '3D 暂不可用' : '';
     const hints = { reveal: '拖动看切面', forge: '点刀落锤', fit: '横拖旋转', appraise: '横拖旋转' };
     get('stage-hint').textContent = hints[phase] || '';
+    get('panel').hidden = phase === 'ore';
     if (phase === 'ore') {
-      title('挑一块原石', '第 ' + (run.batch + 1) + ' / ' + BATCHES + ' 批', ore.price > save.credits ? '余额不足，换一块原石' : '');
-      readout.replaceChildren();
-      actions.innerHTML = button('buy', '开石 · ' + ore.price + ' CR', { off: ore.price > save.credits }) +
-        button('next-batch', '换一批', { kind: 'secondary', off: run.batch === BATCHES - 1 });
+      if (changedPhase || !actions.querySelector('[data-action="buy"]')) {
+        actions.innerHTML = button('buy', '') + button('next-batch', '换一批', { kind: 'secondary' });
+      }
+      const buy = actions.querySelector('[data-action="buy"]');
+      const canAfford = ore.price <= save.credits;
+      buy.textContent = (canAfford ? '开石' : '余额不足') + ' · ' + ore.price + ' CR';
+      buy.disabled = !canAfford;
+      const refresh = actions.querySelector('[data-action="next-batch"]');
+      refresh.disabled = run.batch === BATCHES - 1;
+      refresh.setAttribute('aria-label', '换一批，第 ' + (run.batch + 1) + ' / ' + BATCHES + ' 批');
     } else if (phase === 'reveal') {
       if (revealPending) {
         title('开石见芯');
@@ -285,17 +297,18 @@ export function mountForge(root, { onArena, onCollection }) {
         `<div${tone ? ` data-tone="${tone}"` : ''}><span>${label}</span><b>${value}</b><i style="--v:${Math.min(100, value)}%"></i></div>`).join('')}</div>`;
       actions.innerHTML = button('restart', '再开一炉');
     }
+    renderTools(run, ore);
     const loadSeq = ++stageLoadSeq;
     const pendingStage = stage?.sync(run, ore, fit);
+    if (phase === 'ore') stage?.setInspection(inspectionMode);
     if (pendingStage?.then) {
       setStageLoading(true);
       pendingStage.finally(() => { if (loadSeq === stageLoadSeq) setStageLoading(false); });
-    } else {
+    } else if (stage || webglError) {
       setStageLoading(false);
     }
     viewReset.hidden = !stage || !['ore', 'reveal', 'forge', 'fit', 'appraise'].includes(phase);
     renderGripFocus();
-    renderTools(run, ore);
     renderTray(run, fit);
     if (changedPhase) root.closest('.page').scrollTop = 0;
   }
@@ -314,78 +327,42 @@ export function mountForge(root, { onArena, onCollection }) {
     button.textContent = stage?.gripFocus ? '查看全刀' : '查看刀柄';
   }
 
-  const CLUE_LABEL = { vein: '脉', crack: '整', grain: '密', purity: '纯' };
-  const TOOL_NAME = { lamp: '打灯', tap: '敲石', window: '擦窗' };
-
-  /** 线索芯片：未探明是「—」，探明后按信号强度点亮 1~3 格，三块石头同一位置可直接比。 */
-  function paintClues(ore) {
-    const host = get('ore-clues');
-    if (!host) return;
+  function describeProbe(ore, probe) {
     const clues = oreClues(ore);
-    host.innerHTML = ['vein', 'crack', 'grain', 'purity'].map(key => {
-      const clue = clues[key];
-      const dots = clue ? '●'.repeat(clue.level) + '○'.repeat(3 - clue.level) : '—';
-      const title = clue ? ` title="${clue.text} · 看${clue.hint}"` : ' title="还没探明"';
-      return `<span class="ore-clue${clue ? ' is-on' : ''}" data-level="${clue ? clue.level : 0}"${title}><b>${CLUE_LABEL[key]}</b><i>${dots}</i></span>`;
-    }).join('');
+    get('announcer').textContent = {
+      lamp: clues.vein ? clues.vein.text + '，' + oreInspection(ore).lamp : '',
+      tap: [clues.crack?.text, clues.grain?.text].filter(Boolean).join('，'),
+      window: clues.purity?.text,
+    }[probe] || '';
   }
 
-  function setNote(text) {
-    const note = get('inspection-note');
-    const main = note?.querySelector('.ore-note-main');
-    if (main) main.textContent = text;
-    else if (note) note.textContent = text;
-  }
-
-  /** 工具状态：用掉了就锁死，并把「已用」写在按钮上，免得玩家以为换块石头能再用。 */
-  function setTool(button, label, spent, disabled, aria) {
-    const span = button.querySelector('span');
-    if (span) span.textContent = spent ? label + ' · 已用' : label;
-    button.dataset.spent = String(spent);
-    button.disabled = disabled;
-    if (aria) button.setAttribute('aria-label', aria);
-  }
-
-  function renderTools(run,ore) {
-    get('ore-tools').hidden=run.phase!=='ore';
-    stageBox.dataset.inspection=run.phase==='ore' ? inspectionMode : 'natural';
-    if(run.phase!=='ore')return;
-    const key=run.seed+'|'+ore.id;
-    if(toolStone!==key){inspectionMode='natural';toolStone=key;}
-    stageBox.dataset.inspection=inspectionMode;
-    const checked=oreInspection(ore);
-    const clues=oreClues(ore);
-    const probed=clueCount(clues);
-    const budget=probeBudget(run);
-    const left=['lamp','tap','window'].filter(k=>budget[k]);
-    /* 没打灯就不该看到透光判读——预算用在别块时，光只照亮石头，不给线索。 */
-    setNote(inspectionMode === 'lamp' && clues.vein ? checked.lamp
-      : clues.purity ? clues.purity.text + ' · ' + GRADES[ore.grade]
-      : probed ? '已探明 ' + probed + ' / 4 条线索' + (left.length ? '' : ' · 本局用尽')
-      : left.length === 3 ? '打灯 / 敲石 / 擦窗 · 整局各一次'
-      : left.length ? '还剩 ' + left.map(k => TOOL_NAME[k]).join(' · ')
-      : '本局探测已用尽 · 换批也不重置');
-    paintClues(ore);
-    root.querySelectorAll('[data-action="inspect-light"]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.id===inspectionMode)));
-
-    root.querySelectorAll('[data-action="inspect-light"]').forEach(button=>{
-      const self=Boolean(ore.probe?.lamp);
-      const locked=!budget.lamp;
-      setTool(button, '打灯', locked, locked,
-        self ? '这块原石已经打过灯' : locked ? '打灯本局已用在别处' : '打灯，整局只有一次');
-    });
-    const tapButton=root.querySelector('[data-action="tap-ore"]');
-    if(tapButton){
-      const locked=!budget.tap;
-      setTool(tapButton, '敲石', locked, locked,
-        locked ? '敲石本局已用在别处' : '敲击原石，整局只有一次，一下听出裂隙与颗粒');
+  function renderTools(run, ore) {
+    const selecting = run.phase === 'ore';
+    get('ore-tools').hidden = !selecting;
+    if (!selecting) {
+      stageBox.dataset.inspection = 'natural';
+      toolStone = '';
+      return;
     }
-    const windowButton=get('window-ore');
-    windowButton.disabled=ore.window || !budget.window;
-    windowButton.dataset.spent=String(!budget.window && !ore.window);
-    windowButton.querySelector('span').textContent=ore.window ? '已擦窗' : budget.window ? '擦窗' : '擦窗 · 已用';
-    windowButton.setAttribute('aria-label', ore.window ? '这块原石已经擦窗'
-      : budget.window ? '擦开一小块石皮，看清真实纯度，整局只有一次' : '擦窗本局已用在别处');
+    const key = run.seed + '|' + ore.id;
+    if (toolStone !== key) {
+      inspectionMode = ore.probe?.lamp ? 'lamp' : 'natural';
+      toolStone = key;
+    }
+    stageBox.dataset.inspection = inspectionMode;
+    const budget = probeBudget(run);
+    const lamp = root.querySelector('[data-action="inspect-light"]');
+    const tap = root.querySelector('[data-action="tap-ore"]');
+    const windowButton = get('window-ore');
+    lamp.disabled = !budget.lamp && !ore.probe?.lamp;
+    lamp.setAttribute('aria-pressed', String(inspectionMode === 'lamp'));
+    lamp.setAttribute('aria-label', lamp.disabled ? '打灯，已在另一块原石使用' : '打灯');
+    tap.disabled = !budget.tap;
+    tap.dataset.inspected = String(Boolean(ore.probe?.taps));
+    tap.setAttribute('aria-label', tap.disabled ? '敲石，已用' : '敲石');
+    windowButton.disabled = !budget.window;
+    windowButton.dataset.inspected = String(Boolean(ore.window));
+    windowButton.setAttribute('aria-label', ore.window ? '擦窗，已露出矿芯' : windowButton.disabled ? '擦窗，已用' : '擦窗');
   }
 
   function toggleOreBlade(control) {
@@ -395,39 +372,31 @@ export function mountForge(root, { onArena, onCollection }) {
     get('stage-hint').textContent = preview ? '横拖旋转' : '拖动看切面';
   }
 
+  function renderOreOptions(run) {
+    const stones = offers(run);
+    const batchKey = run.seed + '|' + run.batch;
+    if (oreBatchKey !== batchKey) {
+      oreBatchKey = batchKey;
+      oreOptions.innerHTML = stones.map((stone, index) => {
+        const rock = familyOf(stone.family);
+        const image = new URL('../../assets/v19/ore-previews/' + oreModelId(stone) + '.webp', import.meta.url);
+        return '<button type="button" class="ore-card" data-action="select-ore" data-id="' + index +
+          '" aria-label="' + rock.name + '，' + stone.price + ' CR"><span class="ore-thumbnail" style="--ore-color:' + rock.color +
+          '"><img src="' + image.href + '" alt="" decoding="async"><i></i></span></button>';
+      }).join('');
+    }
+    [...oreOptions.children].forEach((button, index) => {
+      button.setAttribute('aria-pressed', String(run.selected === index));
+    });
+  }
+
   function renderTray(run, fit) {
     const { phase } = run;
-    const key = [run.seed, phase, run.batch, run.selected, run.refreshed, run.fit, JSON.stringify(run.inspections), JSON.stringify(run.probes)].join('|');
+    if (phase === 'ore') renderOreOptions(run);
+    const key = [run.seed, phase, run.refreshed, run.fit].join('|');
     if (key === trayKey) return;
     trayKey = key;
-    if (phase === 'ore') {
-      const stones = offers(run);
-      tray.innerHTML = `<div class="ore-grid">${stones.map((stone, index) => {
-        const rock = familyOf(stone.family);
-        const selected = index === run.selected;
-        const odds = rareOdds(run, stone.tier);
-        const windowed = Boolean(stone.window);
-        const clues = oreClues(stone);
-        const probed = ['vein', 'crack', 'grain', 'purity'].filter(key => clues[key]).length;
-        return `<button type="button" class="ore-card ${selected ? 'is-selected' : ''}${windowed ? ' is-windowed' : ''}" data-action="select-ore" data-id="${index}" aria-pressed="${selected}"
-            aria-label="${rock.name}，${stone.price} CR，矿芯概率 ${odds}%，已探明 ${probed} / 4 条线索${windowed ? '，已擦窗' : ''}">
-          <span class="ore-thumbnail" style="--ore-color:${rock.color}"><img data-stone="${stone.id}" alt=""><i></i></span>
-          <b class="ore-card-name">${rock.name}</b>
-          <span class="ore-probes" aria-hidden="true">${['vein', 'crack', 'grain', 'purity'].map(key => `<i class="${clues[key] ? 'is-on' : ''}"></i>`).join('')}</span>
-          <span class="ore-card-footer"><strong>${stone.price} CR</strong>
-            <span class="ore-tier" data-tier="${stone.tier}" title="矿芯概率 ${odds}%"><i></i><i></i><i></i></span></span>
-        </button>`;
-      }).join('')}</div>`;
-      const { batch, seed } = run;
-      for (const stone of stones) stage?.oreThumbnail(stone).then(src => {
-        if (!active || save.run.phase !== 'ore' || save.run.seed !== seed || save.run.batch !== batch) return;
-        const img = tray.querySelector(`img[data-stone="${stone.id}"]`);
-        if (img) {
-          img.src = src;
-          img.closest('.ore-thumbnail').classList.add('is-loaded');
-        }
-      }).catch(error => console.warn('Specimen preview', error));
-    } else if (phase === 'fit') {
+    if (phase === 'fit') {
       tray.innerHTML = `<div class="fit-grid">${fitOptions(run).map(item => {
         const best = Math.max(...item.delta);
         return `<button type="button" class="fit-card" data-action="select-fit" data-id="${item.id}" aria-pressed="${fit?.id === item.id}">
@@ -765,50 +734,36 @@ export function mountForge(root, { onArena, onCollection }) {
       case 'enter-tournament': return onArena(run.resultId);
       case 'open-collection': return onCollection();
       case 'inspect-light': {
+        if (run.phase !== 'ore') return;
+        const stone = offers(run)[run.selected];
+        if (!stone.probe?.lamp && !apply(draft => markLamp(draft, stone.id))) return;
         inspectionMode = inspectionMode === id ? 'natural' : id;
         stage?.setInspection(inspectionMode);
-        if (inspectionMode !== 'natural') {
-          const stone = offers(run)[run.selected];
-          markLamp(save, stone.id);
-          renderTray(run);
-        }
-        return renderTools(run, offers(run)[run.selected]);
+        const current = offers(save.run)[save.run.selected];
+        if (inspectionMode === 'lamp') describeProbe(current, 'lamp');
+        return renderTools(save.run, current);
       }
       case 'tap-ore': {
+        if (run.phase !== 'ore') return;
         const stone = offers(run)[run.selected];
-        const tapped = tapOreProbe(save, stone.id);
-        if (!tapped.added) return;
+        if (!apply(draft => tapOreProbe(draft, stone.id).added)) return;
+        const current = offers(save.run)[save.run.selected];
         stage?.tapOre();
-        sound.inspect(stone);
-        const echo = get('ore-echo');
-        echo.classList.remove('is-echoing');
-        void echo.offsetWidth;
-        echo.classList.add('is-echoing');
-        echo.style.setProperty('--ring', (.35 + stone.density / 100) + 's');
-        const fresh = offers(run)[run.selected];
-        renderTools(run, fresh);
-        /* 一整局只敲得了一次，所以这一下同时交代裂隙与颗粒。 */
-        const freshClues = oreClues(fresh);
-        setNote(freshClues.crack.text + ' · ' + freshClues.grain.text);
-        paintClues(fresh);
-        renderTray(run);
-        clearTimeout(echoTimer);
-        echoTimer = setTimeout(() => {
-          echo.classList.remove('is-echoing');
-          if (save.run.phase === 'ore') renderTools(save.run, offers(save.run)[save.run.selected]);
-        }, 1500);
-        return;
+        sound.inspect(current);
+        describeProbe(current, 'tap');
+        return renderTools(save.run, current);
       }
       case 'window-ore':
         if (!apply(inspectOre)) return;
         inspectionMode = 'window';
-        stage?.setInspection('window');
         sound.play('polish', .75);
+        describeProbe(offers(save.run)[save.run.selected], 'window');
         break;
       case 'preview-mineral': return toggleOreBlade(control);
       case 'select-ore':
       case 'next-batch':
         if (!apply(({ run }) => selectOre(run, action, id))) return;
+        if (action === 'next-batch' && stage) stage.prefetchOres(offers(save.run));
         break;
       case 'buy': {
         if (!apply(buyOre)) return;
@@ -919,6 +874,36 @@ export function mountForge(root, { onArena, onCollection }) {
     if ([' ', 'Enter'].includes(event.key) && heatInput && event.target.id === 'heat-button') releaseHeat();
   });
 
+  async function mountStage(entry) {
+    try {
+      await ensureThreeRuntime();
+      if (!active || entry !== stageEntry) return;
+      stageModule ??= await import('./sharedStage.js');
+      if (!active || entry !== stageEntry) return;
+      const run = save.run;
+      const ore = run.phase === 'ore' ? offers(run)[run.selected] : null;
+      stage = stageModule.attachForgeStage(stageBox);
+      if (ore) stage.prefetchOres([ore, ...offers(run)]);
+      stageInput = new AbortController();
+      stageModule.bindStageInput(stage, {
+        signal: stageInput.signal,
+        enabled: () => active && stage.content.visible && ['ore', 'reveal', 'forge', 'fit', 'appraise'].includes(save.run.phase),
+        canAdjust: () => !busy,
+        reset: resetView,
+        onTap: event => {
+          if (save.run.phase === 'forge') hitBlade(stage.hit(event.clientX, event.clientY));
+        },
+      });
+    } catch (error) {
+      if (!active || entry !== stageEntry) return;
+      stageModule?.releaseForgeStage(stageBox);
+      console.warn('[forge] 3D stage unavailable', error);
+      stage = null;
+      webglError = true;
+    }
+    render();
+  }
+
   return {
     pause() {
       if (save?.run.refining?.step !== 'cast') pauseHeat();
@@ -934,26 +919,12 @@ export function mountForge(root, { onArena, onCollection }) {
       }
       sound.configure(getProgress().settings);
       stageInput?.abort();
-      try {
-        const stones = save.run.phase === 'ore' ? offers(save.run) : [];
-        const models = stones.length ? [stones[save.run.selected], ...stones].map(oreModelId) : [];
-        stage = attachForgeStage(stageBox, models);
-        stageInput = new AbortController();
-        bindStageInput(stage, {
-          signal: stageInput.signal,
-          enabled: () => active && stage.content.visible && ['ore', 'reveal', 'forge', 'fit', 'appraise'].includes(save.run.phase),
-          canAdjust: () => !busy,
-          reset: resetView,
-          onTap: event => {
-            if (save.run.phase === 'forge') hitBlade(stage.hit(event.clientX, event.clientY));
-          },
-        });
-        webglError = false;
-      } catch {
-        stage = null;
-        webglError = true;
-      }
+      const entry = ++stageEntry;
+      stage = null;
+      webglError = false;
+      setStageLoading(true);
       render();
+      void mountStage(entry);
       if (save.run.phase === 'refine' && save.run.refining.step === 'cast') startHeat(false);
     },
     leave() {
@@ -963,7 +934,6 @@ export function mountForge(root, { onArena, onCollection }) {
       clearTimeout(revealTimer);
       clearTimeout(revealStampTimer);
       clearTimeout(sealTimer);
-      clearTimeout(echoTimer);
       clearTimeout(messageTimer);
       clearTimeout(missTimer);
       clearTimeout(floatTimer);
@@ -972,7 +942,9 @@ export function mountForge(root, { onArena, onCollection }) {
       revealPending = busy = resultPause = queuedStop = false;
       queuedHit = undefined;
       stageInput?.abort();
-      releaseForgeStage(stageBox);
+      stageEntry++;
+      stageModule?.releaseForgeStage(stageBox);
+      stage = null;
       active = false;
     },
   };
