@@ -542,7 +542,8 @@ export class ForgeStage {
   }
 
   hidePresentation() {
-    if (this.mesh) this.mesh.visible = false;
+    this.content.visible = false;
+    if (this.displayStand) this.displayStand.visible = false;
     this.renderer.clear();
   }
 
@@ -918,7 +919,7 @@ export class ForgeStage {
       this.mesh.scale.setScalar(isOreModel(id) ? 1.58 : id === 'molten' ? 1.45 : id === 'blank' ? 2.35 : 2.74);
       this.swapAt = performance.now();
     }
-    this.mesh.visible = true;
+    this.content.visible = true;
     if (asset.coords && this.run) {
       setSurface(asset.uniforms, this.run.ore ? this.run : {...this.run,ore:this.inspectedOre}, this.fit);
       if (this.fit && knifeDetails[id] && asset.hardware === undefined) {
@@ -1114,7 +1115,7 @@ export class ForgeStage {
   }
 
   keyboardHit() {
-    if (!this.active?.coords) return null;
+    if (!this.content.visible || !this.active?.coords) return null;
     const guides = this.active.coords.guides;
     const local = guides[Math.floor(guides.length * .47)].clone();
     const { coords } = this.active;
@@ -1290,7 +1291,7 @@ export class ForgeStage {
       this.content.rotation.set(.18 + this.turnX + tap, stoneTurn + this.turnY, -.18 + shake, 'XYZ');
     }
     this.content.position.set(stone || melt || gallery ? 0 : -.03, (stone || melt ? .04 : working ? .30 : gallery ? .27 : .21) - compression, .10);
-    if (this.displayStand) this.displayStand.visible = Boolean(gallery && upright && this.mesh?.visible);
+    if (this.displayStand) this.displayStand.visible = Boolean(gallery && upright && this.content.visible);
     if (melt) {
       this.meltUniforms.meltClock.value = this.reduceMotion || failedRefining ? 0 : t;
       const reveal = 1 - .20 * Math.exp(-(now - this.swapAt) / 155);

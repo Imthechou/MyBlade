@@ -941,7 +941,7 @@ export function mountForge(root, { onArena, onCollection }) {
         stageInput = new AbortController();
         bindStageInput(stage, {
           signal: stageInput.signal,
-          enabled: () => active && ['ore', 'reveal', 'forge', 'fit', 'appraise'].includes(save.run.phase),
+          enabled: () => active && stage.content.visible && ['ore', 'reveal', 'forge', 'fit', 'appraise'].includes(save.run.phase),
           canAdjust: () => !busy,
           reset: resetView,
           onTap: event => {
