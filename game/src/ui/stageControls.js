@@ -4,29 +4,13 @@
  */
 import { el } from './dom.js';
 import { getStage } from '../render/index.js';
-
-function resetIcon() {
-  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-  for (const [key, value] of Object.entries({
-    viewBox: '0 0 24 24', 'aria-hidden': 'true', fill: 'none',
-    stroke: 'currentColor', 'stroke-width': '1.8',
-    'stroke-linecap': 'round', 'stroke-linejoin': 'round',
-  })) svg.setAttribute(key, value);
-  const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-  path.setAttribute('d', 'M20 11a8 8 0 1 0-2.35 5.66M20 4v7h-7');
-  svg.appendChild(path);
-  return svg;
-}
+import { createViewReset } from './viewReset.js';
 
 export function createStageInspect({ canDrag = () => true } = {}) {
   let blocked = false;
 
-  const button = el('button', {
-    class: 'stage-icon stage-inspect-reset', type: 'button',
-    'aria-label': '复位3D刀具视角',
-    title: '一键复位刀具视角',
-    onclick: () => { if (!blocked) getStage()?.resetView?.(); },
-  }, [resetIcon()]);
+  const button = createViewReset(() => { if (!blocked) getStage()?.resetView?.(); });
+  button.classList.add('stage-inspect-reset');
   const bar = el('div', {
     class: 'stage-inspect', role: 'group', 'aria-label': '3D视角控制',
   }, [button]);
