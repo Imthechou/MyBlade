@@ -45,9 +45,29 @@ export function bindStageInput(stage, {
   const { canvas } = stage;
   const pointers = new Map();
   let mode;
+  let pinchFrame = 0;
+  let pinchStart;
   let moved = false;
   const threshold = 7;
   const listen = (type, handle, options) => canvas.addEventListener(type, handle, { signal, ...options });
+  const framePoint = (x, y) => {
+    const box = canvas.getBoundingClientRect();
+    if (!box.width || !box.height) return undefined;
+    return { x: (x - box.left) / box.width * 2 - 1, y: 1 - (y - box.top) / box.height * 2 };
+  };
+  const pinch = () => {
+    const [a, b] = pointers.values();
+    return { distance: Math.hypot(a.x - b.x, a.y - b.y), center: framePoint((a.x + b.x) * .5, (a.y + b.y) * .5) };
+  };
+  function applyPinch() {
+    if (pinchFrame) cancelAnimationFrame(pinchFrame);
+    pinchFrame = 0;
+    if (!pinchStart || pointers.size !== 2 || stage.mode !== mode || !enabled()) return;
+    const next = pinch();
+    if (canAdjust()) stage.zoomBy(Math.max(16, next.distance) / Math.max(16, pinchStart.distance), pinchStart.center, next.center);
+    pinchStart = next;
+  }
+  signal?.addEventListener('abort', () => cancelAnimationFrame(pinchFrame), { once: true });
 
   listen('pointerdown', event => {
     if (!enabled() || event.button !== 0 || pointers.size === 2) return;
@@ -58,6 +78,7 @@ export function bindStageInput(stage, {
     } else moved = true;
     canvas.setPointerCapture(event.pointerId);
     pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    if (pointers.size === 2) pinchStart = pinch();
   });
   listen('pointermove', event => {
     const point = pointers.get(event.pointerId);
@@ -65,9 +86,7 @@ export function bindStageInput(stage, {
     const { clientX: x, clientY: y } = event;
     const dx = x - point.x, dy = y - point.y;
     if (pointers.size === 2) {
-      const other = [...pointers.values()].find(value => value !== point);
-      const before = Math.hypot(point.x - other.x, point.y - other.y);
-      if (before > 0 && canAdjust()) stage.zoomBy(Math.hypot(x - other.x, y - other.y) / before);
+      if (!pinchFrame) pinchFrame = requestAnimationFrame(applyPinch);
     } else {
       if (!moved && Math.hypot(dx, dy) < threshold) return;
       moved = true;
@@ -79,12 +98,18 @@ export function bindStageInput(stage, {
   listen('pointerup', event => {
     const point = pointers.get(event.pointerId);
     if (!point) return;
+    if (pointers.size === 2) applyPinch();
     pointers.delete(event.pointerId);
+    pinchStart = undefined;
     if (!moved && stage.mode === mode && enabled() &&
       Math.hypot(event.clientX - point.x, event.clientY - point.y) < threshold) onTap?.(event);
   });
   const cancel = event => {
-    if (pointers.delete(event.pointerId)) moved = true;
+    if (!pointers.delete(event.pointerId)) return;
+    cancelAnimationFrame(pinchFrame);
+    pinchFrame = 0;
+    pinchStart = undefined;
+    moved = true;
   };
   listen('pointercancel', cancel);
   listen('lostpointercapture', cancel);
@@ -92,8 +117,8 @@ export function bindStageInput(stage, {
     if (!enabled() || !stage.canZoom || !canAdjust()) return;
     event.preventDefault();
     const unit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? canvas.clientHeight : 1;
-    const delta = Math.max(-300, Math.min(300, event.deltaY * unit));
-    stage.zoomBy(Math.exp(-delta * .0026));
+    const delta = Math.max(-180, Math.min(180, event.deltaY * unit));
+    stage.zoomBy(Math.exp(-delta * .0017), framePoint(event.clientX, event.clientY));
   }, { passive: false });
   listen('keydown', event => {
     if (!enabled() || !canAdjust()) return;
@@ -113,7 +138,7 @@ export function showForgedBlade(host, visual, { fractured = false, gallery = fal
   const controls = el('div', { class: 'blade-view-controls' }, [createViewReset(() => stage.resetView())]);
   host.dataset.preview = 'blade';
   host.append(controls);
-  stage.resetView();
+  stage.resetView(false);
   const phase = fractured ? 'broken' : 'appraise';
   const ready = stage.sync({ ...visual, phase }, visual.ore, fitting);
   const close = () => {
