@@ -138,15 +138,26 @@ export class ForgeSound {
   }
 
   inspect(ore) {
-    this.play('ore',.66+(ore.density ?? 55)*.006);
-    if(this.muted || !this.context || this.context.state!=='running')return;
-    const oscillator=this.context.createOscillator(),gain=this.context.createGain();
-    const now=this.context.currentTime,density=(ore.density ?? 55)/100;
-    oscillator.frequency.value=310+density*610;
-    gain.gain.setValueAtTime(.065,now);
-    gain.gain.exponentialRampToValueAtTime(.0001,now+.10+density*.48);
-    oscillator.connect(gain);gain.connect(this.master);
-    oscillator.start(now);oscillator.stop(now+.65);
-    oscillator.onended=()=>{oscillator.disconnect();gain.disconnect();};
+    const density = (ore.density ?? 55) / 100;
+    const integrity = Math.max(0, Math.min(1, ((ore.stability ?? 60) - 38) / 40));
+    this.play('ore', .68 + integrity * .37 + density * .15);
+    if (this.muted || !this.context || this.context.state !== 'running') return;
+    const oscillator = this.context.createOscillator(), gain = this.context.createGain();
+    const now = this.context.currentTime;
+    const decay = .09 + integrity * .41;
+    this.oreTone?.stop(now);
+    this.oreTone = oscillator;
+    oscillator.frequency.value = 270 + integrity * 510 + density * 155;
+    gain.gain.setValueAtTime(.026 + integrity * .056, now);
+    gain.gain.exponentialRampToValueAtTime(.0001, now + decay);
+    oscillator.connect(gain);
+    gain.connect(this.master);
+    oscillator.start(now);
+    oscillator.stop(now + decay);
+    oscillator.onended = () => {
+      if (this.oreTone === oscillator) this.oreTone = null;
+      oscillator.disconnect();
+      gain.disconnect();
+    };
   }
 }

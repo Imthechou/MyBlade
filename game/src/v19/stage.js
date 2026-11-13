@@ -19,6 +19,8 @@ const modelFiles = {
 };
 const doubleEdge = new Set(['gladius', 'kris', 'skull']);
 const finishSlots = ['metal', 'pattern', 'film', 'fx'];
+const oreKnockTime = 920;
+const oreScrapeTime = 460;
 const oreProfiles = { river: [1.54, 1.50, 1.54], frost: [1.55, 1.35, 1.55], coal: [1.62, 1.50, 1.57], meteor: [1.72, 1.53, 1.62], ochre: [1.58, 1.73, 1.57] };
 const familyOrder = FAMILIES.map(f => f.id);
 const isOreModel = id => typeof id === 'string' && /^ore_(river|frost|coal|meteor|ochre)_[0-3]$/.test(id);
@@ -41,13 +43,16 @@ const CAMERA_FRAMES = {
 
 function setOreOptics(uniforms,ore) {
   const rock=oreMaterialOf(ore),optics=oreOptics(ore);
+  const { transmission, deposit, fractures } = oreInspection(ore, optics);
   uniforms.oreCoreColor.value.set(optics.core);
   uniforms.oreTint.value.set(optics.core);
   uniforms.oreHostVein.value.set(rock.vein);
   uniforms.oreVeinColor.value.set(optics.core).lerp(new T.Color('#e2e8e4'),.30);
   uniforms.oreExposure.value=optics.exposure;
   uniforms.oreClarity.value=optics.clarity;
-  uniforms.oreTransmission.value=oreInspection(ore).transmission;
+  uniforms.oreTransmission.value = transmission;
+  uniforms.oreDeposit.value = deposit;
+  uniforms.oreFractures.value = fractures;
   return optics;
 }
 
@@ -513,7 +518,8 @@ export class ForgeStage {
       oreCoreColor: { value: new T.Color('#a6bfc5') }, oreHostVein: { value: new T.Color('#bbc8c7') },
       oreExposure: { value: .55 }, oreClarity: { value: .5 },
       oreTransmission: { value: .3 }, oreWindow: { value: 0 }, oreLamp: { value: 0 },
-      oreKnock: { value: 0 },
+      oreDeposit: { value: .5 }, oreFractures: { value: .5 },
+      oreKnock: { value: 0 }, oreScrape: { value: 0 },
     };
     this.meltUniforms = { meltClock: { value: 0 }, meltHeat: { value: .65 }, meltClean: { value: 0 }, meltFailed: { value: 0 }, meltTint: { value: new T.Color() }, meltSeed: { value: .5 } };
     this.inspection = 'natural';
@@ -878,6 +884,7 @@ export class ForgeStage {
       if (this.mode !== 'broken') this.clearPieces();
       if (this.mode !== 'reveal') this.clearOrePieces();
       this.inspection = 'natural';
+      this.tappedAt = this.scrapedAt = undefined;
       this.previewSteel = false;
     }
     const stone = this.mode === 'ore' || this.mode === 'reveal' || run.refining?.step === 'ore';
@@ -890,14 +897,14 @@ export class ForgeStage {
       if(this.inspectedOre?.id !== ore.id || this.inspectedOre?.figure !== ore.figure){
         if (stone) this.resetView(false);
         this.inspection='natural';
-        this.tappedAt = undefined;
+        this.tappedAt = this.scrapedAt = undefined;
         this.oreCutGeometry?.dispose(); this.oreCutGeometry=null;
       }
       this.inspectedOre = ore;
       const rock = oreMaterialOf(ore);
       const optics=setOreOptics(this.oreUniforms,ore);
       this.oreUniforms.oreBaseColor.value.set(rock.base);
-      this.oreUniforms.oreWindow.value=ore.window ? 1 : 0;
+      this.oreUniforms.oreWindow.value = Number(this.mode === 'ore' ? this.inspection === 'window' : Boolean(ore.window));
       this.oreUniforms.oreLamp.value=this.mode==='ore' && this.inspection==='lamp' ? 1 : 0;
       this.oreUniforms.oreMaterial.value = rock.style;
       this.oreUniforms.oreRoughness.value = rock.roughness;
@@ -1055,13 +1062,15 @@ export class ForgeStage {
     }
   }
 
-  setInspection(mode) {
-    if (this.mode !== 'ore' || this.inspection === mode) return;
+  setInspection(mode, { replay = false } = {}) {
+    if (this.mode !== 'ore' || this.inspection === mode && !replay) return;
     this.inspection = mode;
-    this.oreUniforms.oreLamp.value = mode==='lamp' ? 1 : 0;
+    this.oreUniforms.oreWindow.value = Number(mode === 'window');
+    this.scrapedAt = undefined;
     if (mode === 'window') {
       this.view.reset(false);
       this.view.turn(-.20, -.08, false);
+      if (replay && !this.reduceMotion) this.scrapedAt = performance.now();
     }
     this.invalidate(250);
   }
@@ -1078,7 +1087,7 @@ export class ForgeStage {
   tapOre() {
     if (this.mode !== 'ore') return;
     this.tappedAt = performance.now();
-    this.invalidate(760);
+    this.invalidate(oreKnockTime);
   }
 
   get canZoom() {
@@ -1323,12 +1332,16 @@ export class ForgeStage {
       now < this.dirtyUntil || strikeAge < 750 || this.sparks.particles.length > 0;
     const animatedIdle = !this.reduceMotion && (melt && !failedRefining ||
       mode !== 'broken' && (this.active?.uniforms.fCodes?.value.w ?? 0) > 0);
-    const knocking = mode === 'ore' && now - this.tappedAt < 720;
-    const oreMoving = this.oreViewDirty || knocking || this.oreUniforms.oreKnock.value > 0;
+    const tapAge = now - (this.tappedAt ?? -5000);
+    const scrapeAge = now - (this.scrapedAt ?? -5000);
+    const knocking = mode === 'ore' && tapAge < oreKnockTime;
+    const scraping = mode === 'ore' && scrapeAge < oreScrapeTime;
+    const oreMoving = this.oreViewDirty || knocking || scraping ||
+      this.oreUniforms.oreKnock.value > 0 || this.oreUniforms.oreScrape.value > 0;
     const renderDue = this.onScreen && (mode === 'ore'
       ? oreMoving
       : continuous || animatedIdle && now - (this.lastRender || 0) >= 1000 / 30);
-    const needsFrame = mode === 'ore' ? knocking : continuous || this.onScreen && animatedIdle;
+    const needsFrame = mode === 'ore' ? knocking || scraping : continuous || this.onScreen && animatedIdle;
     if (this.rendering && needsFrame) this.frameId = requestAnimationFrame(this.frame);
     if (!renderDue && !continuous) return;
     if (renderDue && continuous && mode !== 'ore') {
@@ -1342,8 +1355,7 @@ export class ForgeStage {
     const upright = Boolean(this.active?.coords);
     const startTurn = !gallery && mode === 'appraise' && !this.reduceMotion ? .34 * (1 - clamp(elapsed / 1480, 0, 1)) ** 2 : 0;
     const stoneTurn = mode === 'reveal' ? 0 : .28;
-    const tapAge = now - (this.tappedAt ?? -5000);
-    const tap = !this.reduceMotion && mode === 'ore' ? Math.sin(tapAge * .08) * Math.exp(-tapAge / 85) * .025 : 0;
+    const tap = knocking && !this.reduceMotion ? Math.sin(tapAge * .08) * Math.exp(-tapAge / 85) * .025 : 0;
     if (upright) {
       // Roll the model upright, then spin around the world's vertical axis.
       this.content.rotation.set(0, (gallery ? Math.PI - .26 : -.24) + view.yaw + startTurn, Math.PI / 2 + shake, 'YXZ');
@@ -1360,7 +1372,8 @@ export class ForgeStage {
       this.mesh.scale.set(1.45 * reveal / breathe, 1.45 * reveal * breathe, 1.45 * reveal);
     }
     this.oreUniforms.oreReveal.value = mode === 'reveal' ? clamp((elapsed - 130) / 590, 0, 1) : 0;
-    this.oreUniforms.oreKnock.value = mode === 'ore' ? clamp(1 - tapAge / 680, 0, 1) : 0;
+    this.oreUniforms.oreKnock.value = knocking ? 1 - tapAge / oreKnockTime : 0;
+    this.oreUniforms.oreScrape.value = scraping ? Math.max(.001, scrapeAge / oreScrapeTime) : 0;
     if (this.active?.uniforms.fClock) {
       const { min, max } = this.mesh.geometry.boundingBox;
       const vertical = this.verticalSpan ?? 3.85;

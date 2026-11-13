@@ -23,7 +23,7 @@ export const forgeMarkup = `
       <div id="ore-tools" class="ore-tools" hidden>
         <div id="ore-options" class="ore-grid" role="group" aria-label="候选原石"></div>
         <div class="inspection-tools">
-          <button type="button" data-action="inspect-light" data-id="lamp" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 18 5-5 4 4-5 5zM12 11l7-5M14 13l7-1M10 9l2-7"/></svg><span>打灯</span></button>
+          <button type="button" data-action="inspect-light" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 18 5-5 4 4-5 5zM12 11l7-5M14 13l7-1M10 9l2-7"/></svg><span>打灯</span></button>
           <button type="button" data-action="tap-ore"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m3 7 4-4 8 8-4 4zM12 14l7 7M17 6l2-2M19 10h3"/></svg><span>敲石</span></button>
           <button type="button" data-action="window-ore" id="window-ore"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m3 15 8-10 9 7-7 9-10-6zM7 17l10-9M4 21h17"/></svg><span>擦窗</span></button>
         </div>
