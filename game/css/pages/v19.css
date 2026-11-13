@@ -472,7 +472,7 @@
   color: var(--accent-deep);
   border-color: var(--accent-line);
 }
-#v19-forge :is(.inspection-tools, .grip-focus) svg {
+#v19-forge .inspection-tools svg {
   width: 16px;
   height: 16px;
   fill: none;
@@ -484,7 +484,7 @@
 #v19-forge .grip-focus {
   border-color: var(--line);
   background: var(--glass-bg);
-  pointer-events: auto;
+  white-space: nowrap;
 }
 #v19-forge .ore-echo {
   position: absolute;
@@ -513,6 +513,7 @@
 }
 #v19-forge[data-phase="refine"] .panel { contain: paint; }
 #v19-forge .forge-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 7px; }
+#v19-forge .forge-heading-tools { display: flex; align-items: center; gap: 7px; }
 #v19-forge h1 { min-width: 0; margin: 0; font-size: 23px; font-weight: 800; line-height: 1.24; overflow-wrap: anywhere; }
 #v19-forge #bench-meta { flex-shrink: 0; color: var(--accent-deep); font-size: 11px; font-weight: 700; }
 #v19-forge #description { margin: 3px 0 0; color: var(--face-3); font-size: 11px; }

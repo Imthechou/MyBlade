@@ -311,7 +311,7 @@ export function mountForge(root, { onArena, onCollection }) {
     const button = get('grip-focus');
     button.hidden = save.run.phase !== 'fit' || !stage || webglError;
     button.setAttribute('aria-pressed', String(Boolean(stage?.gripFocus)));
-    button.querySelector('span').textContent = stage?.gripFocus ? '查看全刀' : '查看刀柄';
+    button.textContent = stage?.gripFocus ? '查看全刀' : '查看刀柄';
   }
 
   const CLUE_LABEL = { vein: '脉', crack: '整', grain: '密', purity: '纯' };

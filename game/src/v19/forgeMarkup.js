@@ -5,9 +5,6 @@ export const forgeMarkup = `
         <div class="stage-top">
           <div class="forge-progress" id="steps" role="status"></div>
           <span class="live" id="stage-state" hidden></span>
-          <button type="button" id="grip-focus" class="grip-focus" data-action="focus-grip" aria-pressed="false" hidden>
-            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="5.5"/><path d="m15 15 4.5 4.5M8 10.5h5m-2.5-2.5v5"/></svg><span>查看刀柄</span>
-          </button>
         </div>
         <div class="stage-message" id="stage-message" aria-hidden="true"></div>
         <div class="stage-float" id="stage-float" aria-hidden="true"></div>
@@ -38,7 +35,13 @@ export const forgeMarkup = `
 
       <section class="panel" id="panel" aria-labelledby="title">
         <div class="panel-top">
-          <div class="forge-heading"><h1 id="title"></h1><span id="bench-meta"></span></div>
+          <div class="forge-heading">
+            <h1 id="title"></h1>
+            <div class="forge-heading-tools">
+              <span id="bench-meta"></span>
+              <button type="button" id="grip-focus" class="grip-focus" data-action="focus-grip" aria-pressed="false" hidden>查看刀柄</button>
+            </div>
+          </div>
           <p id="description"></p>
         </div>
         <div id="tray" class="tray" aria-label="工作台选项"></div>
