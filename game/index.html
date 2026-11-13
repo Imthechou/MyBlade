@@ -23,6 +23,8 @@
   ⚠ 页面样式只允许读 token，不允许再声明 :root。
 -->
 <link rel="stylesheet" href="/__styles.css" />
+<link rel="preload" href="src/render/legacy/three.bundle.js" as="script" fetchpriority="low" />
+<link rel="preload" href="src/render/legacy/three.addons.js" as="script" fetchpriority="low" />
 </head>
 <body>
 
@@ -62,16 +64,6 @@
         否则底部会留下一条死区（比不做更糟）。
   -->
 </div>
-
-<!--
-  ══ Three.js（经典脚本）════════════════════════════════
-  src/render/legacy/** 在模块求值时读 `global.THREE`。
-  defer 脚本与 module 脚本同属延迟队列，按文档顺序执行：
-  这两个先跑完，bootstrap.js 才会求值，THREE 一定已就位。
-  收益：670KB 的解析不再阻塞 HTML 解析与首屏绘制。
--->
-<script src="src/render/legacy/three.bundle.js" defer></script>
-<script src="src/render/legacy/three.addons.js" defer></script>
 
 <!-- 应用层入口（ESM）。⚠ ES Module 需经 HTTP 访问，file:// 会被 CORS 拦截。 -->
 <script type="module" src="src/app/bootstrap.js"></script>

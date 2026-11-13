@@ -7,6 +7,12 @@ import * as Home from '../ui/pages/home.js';
 import * as Shell from '../ui/shell.js';
 import * as Tutorial from '../ui/tutorial.js';
 import router from '../ui/router.js';
+import { ensureThreeRuntime } from '../v19/threeRuntime.js';
+
+async function load3DPage(load) {
+  await ensureThreeRuntime();
+  return load();
+}
 
 function lazyPage(load) {
   let page;
@@ -44,7 +50,7 @@ function start() {
   globalThis.addEventListener('pointerdown', () => audio.unlock(), { once: true });
   Home.create();
   const forge = lazyPage(() => import('../ui/pages/v19Forge.js'));
-  const arena = lazyPage(() => import('../ui/pages/v19Arena.js'));
+  const arena = lazyPage(() => load3DPage(() => import('../ui/pages/v19Arena.js')));
   Shell.create(document.getElementById('topbar'), {
     onBack: () => router.currentKey() === 'arena' && arena.back(),
     beforeSettings() {
@@ -56,9 +62,9 @@ function start() {
   router.register('forge', forge);
   router.register('arena', arena);
   router.register('legacy-arena', {
-    ...lazyPage(() => import('../ui/pages/arena.js')), canEnter: hasLegacyCareer,
+    ...lazyPage(() => load3DPage(() => import('../ui/pages/arena.js'))), canEnter: hasLegacyCareer,
   });
-  router.register('workshop', lazyPage(() => import('../ui/pages/workshop.js')));
+  router.register('workshop', lazyPage(() => load3DPage(() => import('../ui/pages/workshop.js'))));
   router.register('daily', lazyPage(() => import('../ui/pages/daily.js')));
   router.onNavigate(key => Shell.sync(key));
   bus.on(EVENTS.CR_CHANGED, () => Shell.sync(router.currentKey()));

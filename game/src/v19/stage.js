@@ -30,7 +30,7 @@ const lerp = (a, b, t) => a + (b - a) * t;
 const CAMERA_FRAMES = {
   stage: { height: .53, aim: -.07, depth: 6 },
   gallery: { height: .79, aim: -.07, depth: 6.4 },
-  ore: { height: .55, aim: -.08, depth: 6 },
+  ore: { height: .63, aim: -.08, depth: 6 },
   reveal: { height: .50, aim: -.05, depth: 6 },
   refine: { height: .53, aim: -.07, depth: 6 },
   forge: { height: .02, aim: -.30, depth: 5.5 },
@@ -49,6 +49,17 @@ function setOreOptics(uniforms,ore) {
   uniforms.oreClarity.value=optics.clarity;
   uniforms.oreTransmission.value=oreInspection(ore).transmission;
   return optics;
+}
+
+function oreWorldWidth(geometry, [x, y, z]) {
+  // Fit the whole silhouette even when the specimen rotates.
+  const points = geometry.attributes.position;
+  let radius = 0;
+  for (let i = 0; i < points.count; i++) {
+    const a = points.getX(i) * x, b = points.getY(i) * y, c = points.getZ(i) * z;
+    radius = Math.max(radius, a * a + b * b + c * c);
+  }
+  return 2 * Math.sqrt(radius);
 }
 
 function coordinates(geometry, id) {
@@ -435,15 +446,13 @@ function makeSparks() {
 }
 
 export class ForgeStage {
-  constructor(canvas, initialModels = []) {
+  constructor(canvas, { offscreen = false } = {}) {
     this.canvas = canvas;
     this.renderer = new T.WebGLRenderer({ canvas, antialias: true, alpha: true, powerPreference: 'high-performance' });
     this.loader = new T.GLTFLoader();
     this.cache = new Map();
     this.pending = new Map();
     this.prefetchedModels = new Map();
-    // Start the offered specimens while the renderer builds the studio lighting.
-    for (const id of initialModels) this.load(id).catch(() => {});
     this.renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5));
     this.budget = new RenderBudget(this.renderer.getPixelRatio());
     this.renderer.setClearColor(0x000000, 0);
@@ -456,8 +465,6 @@ export class ForgeStage {
     this.camera.position.set(0, .53, 6);
     this.camera.lookAt(0, -.07, 0);
     this.gripTarget = new T.Vector3();
-    this.studioEnvironment = studio(this.renderer);
-    this.scene.environment = this.studioEnvironment.texture;
     this.ambient=new T.HemisphereLight(0xd7e4ff,0x453025,.93);
     this.scene.add(this.ambient);
     this.key = light(0xffcfad, 2.9, -2.7, 3.1, 4.8, this.scene);
@@ -465,9 +472,9 @@ export class ForgeStage {
     this.sweep = light(0xe9fbff, 0, -2.7, 1.5, 1.5, this.scene);
     this.flash = new T.PointLight(0xff8b44, 0, 3, 1.8);
     this.scene.add(this.flash);
-    this.lampLight=new T.SpotLight(0xfff0d4,0,8,.23,.58,1.7);
-    this.lampLight.position.set(.20,.25,2.1);
-    this.lampLight.target.position.set(.16,.09,0);
+    this.lampLight=new T.SpotLight(0xfff0d4,0,8,.34,.76,1.7);
+    this.lampLight.position.set(-.7,1.35,2.85);
+    this.lampLight.target.position.set(-.28,.23,0);
     this.scene.add(this.lampLight,this.lampLight.target);
     this.cutFill = new T.PointLight(0xf3e7d7, 0, 5.5, 1.65);
     this.cutFill.position.set(0, .35, 2.7);
@@ -475,17 +482,7 @@ export class ForgeStage {
     this.content = new T.Group();
     this.content.position.y = .13;
     this.scene.add(this.content);
-    this.anvil = makeAnvil();
-    this.crucible = makeCrucible();
-    this.hammer = makeHammer();
     this.hammerHome = new T.Vector3(1.17, .54, .56);
-    this.ground = makeGround();
-    this.workshop = makeWorkshop();
-    this.ember = new T.PointLight(0xff7a33, 0, 4.2, 1.7);
-    this.ember.position.set(-1.25, .55, -.45);
-    this.smoke = makeSmoke();
-    this.workshop.add(this.smoke.group, this.ember);
-    this.scene.add(this.ground, this.workshop);
     this.dentLocal = new T.Vector3();
     this.dentAt = -9999;
     this.dentPower = 0;
@@ -498,14 +495,13 @@ export class ForgeStage {
     this.trail = new T.Line(trailGeometry, new T.LineBasicMaterial({ color: 0xffcf9a, transparent: true, opacity: 0, depthWrite: false }));
     this.trail.frustumCulled = false;
     this.trail.visible = false;
-    this.scene.add(this.anvil, this.crucible, this.hammer, this.sparks.view, this.trail);
+    this.scene.add(this.sparks.view, this.trail);
     this.warmed = new Set();
     this.warmQueue = [];
     this.warmQueued = new Set();
     this.warmBusy = false;
     this.warmTicket = null;
     this.warmScenes = new Map();
-    this.thumbnailCache = new Map();
     this.oreUniforms = {
       oreTint: { value: new T.Color() }, oreSeed: { value: 0 },
       oreReveal: { value: 0 }, oreGrade: { value: 0 }, oreHeat: { value: 0 }, oreClue: { value: 0 },
@@ -517,12 +513,14 @@ export class ForgeStage {
       oreCoreColor: { value: new T.Color('#a6bfc5') }, oreHostVein: { value: new T.Color('#bbc8c7') },
       oreExposure: { value: .55 }, oreClarity: { value: .5 },
       oreTransmission: { value: .3 }, oreWindow: { value: 0 }, oreLamp: { value: 0 },
+      oreKnock: { value: 0 },
     };
     this.meltUniforms = { meltClock: { value: 0 }, meltHeat: { value: .65 }, meltClean: { value: 0 }, meltFailed: { value: 0 }, meltTint: { value: new T.Color() }, meltSeed: { value: .5 } };
     this.inspection = 'natural';
     this.previewSteel = false;
     this.mode = 'ore';
-    this.want = 'ore_river_0';
+    this.want = null;
+    this.loadSequence = 0;
     this.mesh = null;
     this.view = new BladeView();
     this.heat = 0;
@@ -532,18 +530,26 @@ export class ForgeStage {
     this.dirtyUntil = 0;
     this.refiningRunning = false;
     this.onScreen = true;
-    new ResizeObserver(() => this.resize()).observe(canvas);
-    if (typeof IntersectionObserver === 'function') new IntersectionObserver(([entry]) => {
-      this.onScreen = entry.isIntersecting;
-      if (this.onScreen) this.invalidate(250);
-    }).observe(canvas);
-    this.setRendering(true);
+    if (offscreen) {
+      this.scene.environment = this.getStudioEnvironment();
+    } else {
+      new ResizeObserver(() => this.resize()).observe(canvas);
+      if (typeof IntersectionObserver === 'function') new IntersectionObserver(([entry]) => {
+        this.onScreen = entry.isIntersecting;
+        if (this.onScreen) this.invalidate(250);
+      }).observe(canvas);
+      document.addEventListener('visibilitychange', () => {
+        if (!document.hidden && this.rendering) this.invalidate();
+      });
+      this.setRendering(true);
+    }
   }
 
   setRendering(enabled) {
     if (this.rendering === enabled) return;
     this.rendering = enabled;
     cancelAnimationFrame(this.frameId);
+    this.frameId = 0;
     if (!enabled) {
       this.blow = null;
       this.refiningRunning = false;
@@ -553,7 +559,29 @@ export class ForgeStage {
     this.onScreen = true;
     this.resize();
     this.scheduleWarm();
-    this.frameId = requestAnimationFrame(this.frame);
+    this.invalidate();
+  }
+
+  getStudioEnvironment() {
+    this.studioEnvironment ??= studio(this.renderer);
+    return this.studioEnvironment.texture;
+  }
+
+  prepareWorkshop(mode) {
+    if (mode === 'refine' && !this.crucible) {
+      this.crucible = makeCrucible();
+      this.scene.add(this.crucible);
+    }
+    if (mode !== 'forge' || this.workshop) return;
+    this.anvil = makeAnvil();
+    this.hammer = makeHammer();
+    this.ground = makeGround();
+    this.workshop = makeWorkshop();
+    this.ember = new T.PointLight(0xff7a33, 0, 4.2, 1.7);
+    this.ember.position.set(-1.25, .55, -.45);
+    this.smoke = makeSmoke();
+    this.workshop.add(this.smoke.group, this.ember);
+    this.scene.add(this.anvil, this.hammer, this.ground, this.workshop);
   }
 
   setGallery(enabled) {
@@ -564,7 +592,7 @@ export class ForgeStage {
       this.displayStand = makeDisplayStand();
       this.scene.add(this.displayStand);
     }
-    this.scene.environment = (enabled ? this.galleryEnvironment : this.studioEnvironment).texture;
+    this.scene.environment = enabled ? this.galleryEnvironment.texture : this.studioEnvironment?.texture ?? null;
     if (this.displayStand) this.displayStand.visible = false;
     this.key.position.set(enabled ? -3.0 : -2.7, 3.1, enabled ? 3.9 : 4.8);
     this.rimLight.position.set(3.5, 1.1, enabled ? -.8 : 2.5);
@@ -580,13 +608,21 @@ export class ForgeStage {
     this.renderer.clear();
   }
 
+  suspendPresentation() {
+    this.want = null;
+    this.loadSequence++;
+    this.clearOrePieces();
+    this.clearPieces();
+    this.hidePresentation();
+  }
+
   load(id, priority = 'auto') {
     if (this.cache.has(id)) return Promise.resolve(this.cache.get(id));
     if (this.pending.has(id)) return this.pending.get(id);
     const name = modelFiles[id] + '.glb';
     const ore = isOreModel(id);
     const original = new URL('models/' + name, ore ? localAssets : sharedAssets);
-    const request = ore ? this.loader.loadAsync(original.href) : this.loadWorkshopModel(id, original, priority);
+    const request = this.loadModel(id, original, priority);
     const pending = request.then(({ scene }) => {
       let source;
       scene.traverse(obj => { if (obj.isMesh && !source) source = obj; });
@@ -602,6 +638,7 @@ export class ForgeStage {
         id === 'molten' ? makeMeltMaterial(uniforms) : makeBladeMaterial(source.material, uniforms, id === 'blank');
       const mesh = new T.Mesh(geometry, material);
       const asset = { mesh, coords, uniforms };
+      if (ore) asset.oreWidth = oreWorldWidth(geometry, oreProfiles[id.split('_')[1]]);
       this.cache.set(id, asset);
       if (knifeDetails[id]) {
         const knives = [...this.cache.keys()].filter(key => knifeDetails[key]);
@@ -636,81 +673,34 @@ export class ForgeStage {
 
   // Shared full-resolution GLB set: the legacy viewer and V19 now load the same files.
   // Preloading is retained so uncompressed geometry can be parsed before display.
-  async fetchWorkshopModel(id, priority) {
-    const source = new URL(`models/${modelFiles[id]}.glb`, sharedAssets);
+  async fetchModel(id, priority) {
+    const source = new URL('models/' + modelFiles[id] + '.glb', isOreModel(id) ? localAssets : sharedAssets);
     const response = await fetch(source, { priority });
     return response.ok ? response.arrayBuffer() : null;
   }
 
-  prefetchWorkshopModel(id, priority) {
+  prefetchModel(id, priority) {
     if (navigator.connection?.saveData ||
         this.cache.has(id) || this.pending.has(id) || this.prefetchedModels.has(id)) return;
-    this.prefetchedModels.set(id, this.fetchWorkshopModel(id, priority).catch(() => null));
+    this.prefetchedModels.set(id, this.fetchModel(id, priority).catch(() => null));
   }
 
-  async loadWorkshopModel(id, original, priority) {
+  prefetchOres(stones) {
+    const [selected, ...others] = new Set(stones.map(oreModelId));
+    if (selected) this.prefetchModel(selected, 'high');
+    for (const id of others) this.prefetchModel(id, 'low');
+  }
+
+  async loadModel(id, original, priority) {
     const prefetched = this.prefetchedModels.get(id);
     this.prefetchedModels.delete(id);
     try {
-      const data = await (prefetched ?? this.fetchWorkshopModel(id, priority));
+      const data = await (prefetched ?? this.fetchModel(id, priority));
       if (data) return await this.loader.parseAsync(data, original.href);
     } catch (error) {
       console.warn('[forge] preloaded GLB unavailable; using direct load', error);
     }
     return this.loader.loadAsync(original.href);
-  }
-
-  makeThumbnailStage() {
-    const uniforms = T.UniformsUtils.clone(this.oreUniforms);
-    const specimen = new T.Mesh(undefined, makeOreMaterial(null, uniforms));
-    specimen.rotation.set(.20, .28, -.14);
-    const scene = new T.Scene();
-    scene.environment = this.studioEnvironment.texture;
-    scene.add(specimen, new T.HemisphereLight(0xe8efff, 0x302e2b, 1.3));
-    light(0xffe7d1, 3, -2, 3, 4, scene);
-    light(0xc6e5ff, 1.1, 3, 1, 2, scene);
-    const camera = new T.OrthographicCamera(-1.08, 1.08, .75, -.75, .1, 10);
-    camera.position.set(0, .15, 4);
-    camera.lookAt(0, 0, 0);
-    const width = 216, height = 150;
-    const target = new T.WebGLRenderTarget(width, height);
-    target.texture.colorSpace = T.SRGBColorSpace;
-    const canvas = document.createElement('canvas');
-    canvas.width = width;
-    canvas.height = height;
-    const ctx = canvas.getContext('2d');
-    return { uniforms, specimen, scene, camera, target, canvas, ctx,
-      image: ctx.createImageData(width, height), pixels: new Uint8Array(width * height * 4) };
-  }
-
-  oreThumbnail(ore) {
-    const key = [ore.id,ore.figure,ore.material,ore.variant,ore.window,ore.tint,ore.exposure,ore.clarity].join('|');
-    if(this.thumbnailCache.has(key))return this.thumbnailCache.get(key);
-    const pending=this.load(oreModelId(ore)).then(({mesh})=>{
-      this.thumbnailStage ??= this.makeThumbnailStage();
-      const { uniforms: u, specimen, scene, camera, target, canvas, ctx, image, pixels } = this.thumbnailStage;
-      const rock=oreMaterialOf(ore);
-      for(const [name,value] of Object.entries({oreSeed:ore.figure,oreGrade:0,oreHeat:0,oreReveal:0,oreLamp:0,
-        oreFamily:familyOrder.indexOf(ore.family),oreMaterial:rock.style,oreRoughness:rock.roughness,
-        oreMetalness:rock.metalness,oreWindow:ore.window?1:0,oreVein:ore.vein/100,oreFlaw:ore.flaw/100,
-        oreLuster:ore.luster/100,oreDensity:ore.density/100,oreCrust:ore.crust/100,orePurity:ore.purity/100}))u[name].value=value;
-      u.oreBaseColor.value.set(rock.base);setOreOptics(u,ore);
-      specimen.geometry = mesh.geometry;
-      const { width, height } = target;
-      const renderer=this.renderer, old=renderer.getRenderTarget(), color=renderer.getClearColor(new T.Color()),alpha=renderer.getClearAlpha();
-      try{
-        renderer.setRenderTarget(target);renderer.setClearColor(0x000000,0);renderer.render(scene,camera);
-        renderer.readRenderTargetPixels(target,0,0,width,height,pixels);
-        for(let y=0;y<height;y++)image.data.set(pixels.subarray((height-y-1)*width*4,(height-y)*width*4),y*width*4);
-        ctx.putImageData(image,0,0);return canvas.toDataURL('image/png');
-      }finally{
-        renderer.setRenderTarget(old);renderer.setClearColor(color,alpha);
-        this.invalidate(100);
-      }
-    }).catch(error=>{this.thumbnailCache.delete(key);throw error;});
-    this.thumbnailCache.set(key,pending);
-    while(this.thumbnailCache.size>12)this.thumbnailCache.delete(this.thumbnailCache.keys().next().value);
-    return pending;
   }
 
   warm(id) {
@@ -721,7 +711,8 @@ export class ForgeStage {
   }
 
   scheduleWarm(delay = 32) {
-    if (!this.rendering || this.warmTicket != null || this.warmBusy || !this.warmQueue.length) return;
+    if (!this.rendering || this.gallery || this.mode === 'ore' || this.warmTicket != null ||
+        this.warmBusy || !this.warmQueue.length) return;
     this.warmTicket = setTimeout(() => {
       const ready = () => { this.warmTicket = null; this.pumpWarm(); };
       this.warmTicket = typeof requestIdleCallback === 'function' ? requestIdleCallback(ready, { timeout: 300 }) : setTimeout(ready, 0);
@@ -729,14 +720,15 @@ export class ForgeStage {
   }
 
   busyForWarm() {
-    return !this.rendering || document.hidden || this.blow || (this.mode === 'refine' && this.refiningRunning && this.refiningStep !== 'cast');
+    return !this.rendering || document.hidden || this.gallery || this.mode === 'ore' ||
+      this.blow || (this.mode === 'refine' && this.refiningRunning && this.refiningStep !== 'cast');
   }
 
   warmScene(id) {
     const profile = id === 'molten' ? 'refine' : 'forge';
     if (!this.warmScenes.has(profile)) {
       const scene = new T.Scene();
-      scene.environment = this.studioEnvironment.texture;
+      scene.environment = this.getStudioEnvironment();
       for (const light of [this.ambient, this.key, this.rimLight, ...(profile === 'forge' ? [this.flash] : [])]) {
         const copy = light.clone(); copy.visible = true; scene.add(copy);
       }
@@ -780,7 +772,7 @@ export class ForgeStage {
       const { mesh } = await this.load(id);
       if (this.busyForWarm()) { this.warmQueue.unshift(id); requeued = true; return; }
       const temporary = new T.Scene();
-      temporary.environment = this.studioEnvironment.texture;
+      temporary.environment = this.getStudioEnvironment();
       const specimen = mesh.clone(false);
       temporary.add(specimen);
       const target = this.warmScene(id);
@@ -811,7 +803,7 @@ export class ForgeStage {
       for (const id of this.prefetchedModels.keys()) if (!keep.has(id)) this.prefetchedModels.delete(id);
       if (run.phase === 'reveal' || run.phase === 'refine') {
         for (const id of ['molten', 'blank', normal]) {
-          this.prefetchWorkshopModel(id, id === 'molten' ? 'auto' : 'low');
+          this.prefetchModel(id, id === 'molten' ? 'auto' : 'low');
           this.warm(id);
         }
       } else if (run.phase === 'forge' && run.hits < 4) {
@@ -827,11 +819,14 @@ export class ForgeStage {
     this.meltUniforms.meltHeat.value = this.heat;
     this.meltUniforms.meltClean.value = heat.quality / 100;
     this.oreUniforms.oreHeat.value = heat.step === 'ore' ? this.heat : 0;
+    if (running) this.invalidate();
   }
 
   resize() {
     const { clientWidth: width, clientHeight: height } = this.canvas;
     if (!width || !height) return;
+    const ratio = this.renderer.getPixelRatio();
+    if (this.canvas.width === Math.floor(width * ratio) && this.canvas.height === Math.floor(height * ratio) && this.aspect === width / height) return;
     this.renderer.setSize(width, height, false);
     this.aspect = width / height;
     const vertical = this.verticalSpan = Math.max(2.0, 3.85 / this.aspect);
@@ -844,7 +839,12 @@ export class ForgeStage {
   }
 
   invalidate(duration = 180) {
+    if (this.mode === 'ore') this.oreViewDirty = true;
     this.dirtyUntil = Math.max(this.dirtyUntil || 0, performance.now() + duration);
+    if (this.rendering && !this.frameId && !document.hidden) {
+      this.previousFrame = 0;
+      this.frameId = requestAnimationFrame(this.frame);
+    }
   }
 
   sync(run, ore, fit) {
@@ -853,6 +853,16 @@ export class ForgeStage {
     const previous = this.mode;
     this.mode = run.phase;
     const failedRefining = run.last?.type === 'refine-fail';
+    if (this.mode === 'ore' && previous !== 'ore') {
+      const ratio = Math.min(devicePixelRatio, 1.5);
+      if (this.renderer.getPixelRatio() !== ratio) {
+        this.renderer.setPixelRatio(ratio);
+        this.budget = new RenderBudget(ratio);
+      }
+    }
+    if (!this.gallery) this.scene.environment = this.getStudioEnvironment();
+    if (this.mode === 'refine' || failedRefining) this.prepareWorkshop('refine');
+    if (this.mode === 'forge' || this.mode === 'broken' && !failedRefining) this.prepareWorkshop('forge');
     // Zero-intensity lights still cost a PBR lighting loop. Keep only the
     // phase's lighting types, retaining the exact active light contributions.
     this.lampLight.visible = this.mode === 'ore';
@@ -860,6 +870,7 @@ export class ForgeStage {
     this.flash.visible = ['reveal', 'forge'].includes(this.mode) || this.mode === 'broken' && !failedRefining;
     this.cutFill.visible = this.mode === 'reveal';
     if (this.mode !== 'refine') this.refiningRunning = false;
+    this.scheduleWarm();
     this.invalidate(previous !== this.mode ? 760 : 300);
     if (previous !== this.mode) {
       this.entered = performance.now();
@@ -879,6 +890,7 @@ export class ForgeStage {
       if(this.inspectedOre?.id !== ore.id || this.inspectedOre?.figure !== ore.figure){
         if (stone) this.resetView(false);
         this.inspection='natural';
+        this.tappedAt = undefined;
         this.oreCutGeometry?.dispose(); this.oreCutGeometry=null;
       }
       this.inspectedOre = ore;
@@ -914,6 +926,7 @@ export class ForgeStage {
     }
     this.want = failedRefining ? run.refinement.reason === 'unmelted' ? oreModelId(ore) : 'molten' :
       this.mode === 'reveal' && this.previewSteel ? 'straight' : stone ? oreModelId(ore) : run.refining?.step === 'molten' ? 'molten' : run.model;
+    const request = ++this.loadSequence;
     if (this.cache.has(this.want)) {
       this.show(this.want);
       return null;
@@ -921,7 +934,7 @@ export class ForgeStage {
     const id = this.want;
     this.hidePresentation();
     return this.load(id).then(() => {
-      if (this.want !== id) return false;
+      if (this.want !== id || request !== this.loadSequence || !this.rendering) return false;
       this.show(id);
       return true;
     }).catch(error => {
@@ -1043,7 +1056,7 @@ export class ForgeStage {
   }
 
   setInspection(mode) {
-    if(this.mode!=='ore' || !['natural','lamp','window'].includes(mode))return;
+    if (this.mode !== 'ore' || this.inspection === mode) return;
     this.inspection = mode;
     this.oreUniforms.oreLamp.value = mode==='lamp' ? 1 : 0;
     if (mode === 'window') {
@@ -1063,7 +1076,9 @@ export class ForgeStage {
   }
 
   tapOre() {
-    if(this.mode==='ore'){this.tappedAt=performance.now();this.invalidate(700);}
+    if (this.mode !== 'ore') return;
+    this.tappedAt = performance.now();
+    this.invalidate(760);
   }
 
   get canZoom() {
@@ -1166,6 +1181,7 @@ export class ForgeStage {
     const lift = this.hammerHome.clone().add(new T.Vector3(-.12, .26, .03));
     this.blow = { hit, onImpact, onReady, start: performance.now(), landed: false, contact: 190, stop,
       end: severe ? 560 : event.type === 'surge' ? 520 : 468, reach, lift };
+    this.invalidate();
   }
 
   impact(hit, event) {
@@ -1215,6 +1231,7 @@ export class ForgeStage {
       });
     }
     if (particles.length > this.sparks.max) particles.splice(0, particles.length - this.sparks.max);
+    this.invalidate();
   }
 
   split(local) {
@@ -1283,9 +1300,9 @@ export class ForgeStage {
   }
 
   frame = (now) => {
-    this.frameId = requestAnimationFrame(this.frame);
+    this.frameId = 0;
     const delta = now - (this.previousFrame || now);
-    const dt = Math.min(.035, delta / 1000);
+    const dt = Math.min(.035, (delta || 1000 / 60) / 1000);
     this.previousFrame = now;
     if (document.hidden) return;
     const t = now / 1000;
@@ -1306,9 +1323,15 @@ export class ForgeStage {
       now < this.dirtyUntil || strikeAge < 750 || this.sparks.particles.length > 0;
     const animatedIdle = !this.reduceMotion && (melt && !failedRefining ||
       mode !== 'broken' && (this.active?.uniforms.fCodes?.value.w ?? 0) > 0);
-    const renderDue = this.onScreen && (continuous || animatedIdle && now - (this.lastRender || 0) >= 1000 / 30);
+    const knocking = mode === 'ore' && now - this.tappedAt < 720;
+    const oreMoving = this.oreViewDirty || knocking || this.oreUniforms.oreKnock.value > 0;
+    const renderDue = this.onScreen && (mode === 'ore'
+      ? oreMoving
+      : continuous || animatedIdle && now - (this.lastRender || 0) >= 1000 / 30);
+    const needsFrame = mode === 'ore' ? knocking : continuous || this.onScreen && animatedIdle;
+    if (this.rendering && needsFrame) this.frameId = requestAnimationFrame(this.frame);
     if (!renderDue && !continuous) return;
-    if (renderDue && continuous) {
+    if (renderDue && continuous && mode !== 'ore') {
       const ratio = this.budget.sample(delta, now);
       if (ratio != null) { this.renderer.setPixelRatio(ratio); this.resize(); }
     }
@@ -1319,14 +1342,16 @@ export class ForgeStage {
     const upright = Boolean(this.active?.coords);
     const startTurn = !gallery && mode === 'appraise' && !this.reduceMotion ? .34 * (1 - clamp(elapsed / 1480, 0, 1)) ** 2 : 0;
     const stoneTurn = mode === 'reveal' ? 0 : .28;
-    const tap = !this.reduceMotion ? Math.sin((now-(this.tappedAt ?? -5000))*.08)*Math.exp(-(now-(this.tappedAt ?? -5000))/85)*.016 : 0;
+    const tapAge = now - (this.tappedAt ?? -5000);
+    const tap = !this.reduceMotion && mode === 'ore' ? Math.sin(tapAge * .08) * Math.exp(-tapAge / 85) * .025 : 0;
     if (upright) {
       // Roll the model upright, then spin around the world's vertical axis.
       this.content.rotation.set(0, (gallery ? Math.PI - .26 : -.24) + view.yaw + startTurn, Math.PI / 2 + shake, 'YXZ');
     } else {
       this.content.rotation.set(.18 + view.pitch + tap, stoneTurn + view.yaw, -.18 + shake, 'XYZ');
     }
-    this.content.position.set(stone || melt || gallery ? 0 : -.03, (stone || melt ? .04 : working ? .30 : gallery ? .27 : .21) - compression, .10);
+    const subjectY = mode === 'ore' ? .16 : stone || melt ? .04 : working ? .30 : gallery ? .27 : .21;
+    this.content.position.set(stone || melt || gallery ? 0 : -.03, subjectY - compression, .10);
     if (this.displayStand) this.displayStand.visible = Boolean(gallery && upright && this.content.visible);
     if (melt) {
       this.meltUniforms.meltClock.value = this.reduceMotion || failedRefining ? 0 : t;
@@ -1335,6 +1360,7 @@ export class ForgeStage {
       this.mesh.scale.set(1.45 * reveal / breathe, 1.45 * reveal * breathe, 1.45 * reveal);
     }
     this.oreUniforms.oreReveal.value = mode === 'reveal' ? clamp((elapsed - 130) / 590, 0, 1) : 0;
+    this.oreUniforms.oreKnock.value = mode === 'ore' ? clamp(1 - tapAge / 680, 0, 1) : 0;
     if (this.active?.uniforms.fClock) {
       const { min, max } = this.mesh.geometry.boundingBox;
       const vertical = this.verticalSpan ?? 3.85;
@@ -1364,41 +1390,45 @@ export class ForgeStage {
         }
       }
     }
-    this.anvil.visible = working && mode !== 'refine' && !failedRefining;
-    this.crucible.visible = mode === 'refine' || failedRefining;
-    this.crucible.position.set(0, narrow ? -.83 : -.73, -.12);
-    this.anvil.position.set(.10, -.28 * (this.verticalSpan ?? 3.85) - .34 - compression * .35, -.42);
-    this.anvil.rotation.z = .03;
+    if (this.crucible) {
+      this.crucible.visible = mode === 'refine' || failedRefining;
+      this.crucible.position.set(0, narrow ? -.83 : -.73, -.12);
+    }
     /* 工坊只在锻打/断裂出现：选矿、开石、精炼、鉴定都是“检视台”，保持干净背景。 */
     const shop = (mode === 'forge' || mode === 'broken') && !failedRefining;
     const anvilY = -.28 * (this.verticalSpan ?? 3.85) - .34;
     const floorY = anvilY - .13 - compression * .35;
-    this.ground.visible = shop;
-    this.workshop.visible = shop;
+    if (this.workshop) {
+      this.anvil.visible = shop;
+      this.ground.visible = shop;
+      this.workshop.visible = shop;
+      this.hammer.visible = mode === 'forge' || Boolean(this.blow);
+    }
     if (shop) {
+      this.anvil.position.set(.10, anvilY - compression * .35, -.42);
+      this.anvil.rotation.z = .03;
       this.ground.position.y = floorY;
       this.workshop.position.set(0, floorY, -.05);
       const flicker = this.reduceMotion ? 1 : .82 + Math.sin(t * 7.1) * .11 + Math.sin(t * 13.7) * .07;
       this.ember.intensity = (mode === 'forge' ? 8.5 : 11) * flicker;
       this.animateSmoke(dt, mode === 'forge');
-    } else {
+    } else if (this.ember) {
       this.ember.intensity = 0;
     }
-    this.hammer.visible = mode === 'forge' || !!this.blow;
     const revealFlash = mode === 'reveal' && !this.reduceMotion ? Math.exp(-Math.pow((elapsed - 630) / 185, 2)) : 0;
     this.cutFill.intensity = mode === 'reveal' ? 2.5 + revealFlash * .25 : 0;
     const lampCheck=mode==='ore' && this.inspection==='lamp';
     this.oreUniforms.oreLamp.value=lampCheck ? 1 : 0;
-    this.scene.environmentIntensity=lampCheck ? .40 : gallery ? 1.27 : 1;
-    this.ambient.intensity=lampCheck ? .34 : gallery ? 1.20 : .93;
-    this.rimLight.intensity=lampCheck ? .40 : gallery ? .38 : 1.1;
-    this.lampLight.intensity=lampCheck ? 34 : 0;
+    this.scene.environmentIntensity=lampCheck ? .65 : gallery ? 1.27 : 1;
+    this.ambient.intensity=lampCheck ? .77 : gallery ? 1.20 : .93;
+    this.rimLight.intensity=lampCheck ? .55 : gallery ? .38 : 1.1;
+    this.lampLight.intensity=lampCheck ? 14 : 0;
     this.flash.intensity = mode === 'reveal' ? revealFlash * 3.1 : impulse * (strikeAge < 33 ? 3.7 : 1.15);
     if (mode === 'reveal') this.flash.position.set(0, .1, .8);
     const cameraShake = !this.reduceMotion && this.lastImpact?.large ? Math.sin(strikeAge / 19) * impulse * .035 : 0;
     // 每个工序一个机位：锻打压低看砧面，精炼略低看炉球，检视回到正面。
     const frameTarget = gallery ? CAMERA_FRAMES.gallery : failedRefining ? CAMERA_FRAMES.stage : (CAMERA_FRAMES[mode] || CAMERA_FRAMES.stage);
-    const camEase = gallery || this.reduceMotion ? 1 : Math.min(1, dt * 6);
+    const camEase = gallery || mode === 'ore' || this.reduceMotion ? 1 : Math.min(1, dt * 6);
     this.camHeight += (frameTarget.height - this.camHeight) * camEase;
     this.camAim += (frameTarget.aim - this.camAim) * camEase;
     this.camDepth += (frameTarget.depth - this.camDepth) * camEase;
@@ -1414,7 +1444,10 @@ export class ForgeStage {
     this.camera.translateX(view.x * this.camera.right);
     this.camera.translateY(view.y * this.camera.top);
     this.camera.updateMatrixWorld();
-    const zoom = 1 / view.inverseZoom;
+    const width = this.verticalSpan * this.aspect;
+    const oreZoom = mode === 'ore' && stone && this.active?.oreWidth
+      ? Math.min(width * .81, this.verticalSpan * .60) / this.active.oreWidth : 1;
+    const zoom = oreZoom / view.inverseZoom;
     if (this.camera.zoom !== zoom) {
       this.camera.zoom = zoom;
       this.camera.updateProjectionMatrix();
@@ -1422,7 +1455,7 @@ export class ForgeStage {
     this.sweep.intensity = gallery ? 0 : mode === 'reveal' ? revealFlash * 2.1 : inspect ? (mode === 'appraise' ? .50 + .62 * Math.exp(-elapsed / 520) : .61) : 0;
     this.sweep.position.x = mode === 'appraise' ? lerp(-2.8, 2.6, clamp(elapsed / 1500, 0, 1)) : .8;
     this.key.color.set(gallery ? 0xfffcf7 : stone && mode !== 'refine' ? 0xe8efff : inspect ? 0xffead8 : 0xffcfad);
-    this.key.intensity = gallery ? 1.03 : mode === 'ore' ? (this.inspection==='lamp' ? .42 : 2.65) : mode === 'refine' ? 2.25 : mode === 'appraise' ? 2.65 : mode === 'reveal' ? 2.45 + revealFlash * .65 : 2.9;
+    this.key.intensity = gallery ? 1.03 : mode === 'ore' ? (lampCheck ? 1.45 : 2.65) : mode === 'refine' ? 2.25 : mode === 'appraise' ? 2.65 : mode === 'reveal' ? 2.45 + revealFlash * .65 : 2.9;
     const blow = this.blow;
     this.trail.visible = false;
     if (blow) {
@@ -1457,7 +1490,7 @@ export class ForgeStage {
         this.hammer.rotation.set(.10, -.27, lerp(-.16, -.68, p));
         if (age >= blow.end) { this.blow = null; blow.onReady(); }
       }
-    } else {
+    } else if (this.hammer?.visible) {
       this.hammer.position.copy(this.hammerHome);
       this.hammer.rotation.set(.10, -.27, -.68);
     }
@@ -1465,6 +1498,7 @@ export class ForgeStage {
     this.animateOreCut(elapsed);
     this.animateSparks(dt);
     if (renderDue) {
+      this.oreViewDirty = false;
       this.renderer.render(this.scene, this.camera);
       this.lastRender = now;
       this.observeFrame?.(performance.now(), continuous ? delta : 0, mode, blow);

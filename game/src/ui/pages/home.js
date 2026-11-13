@@ -5,6 +5,7 @@ import { icon } from '../icons.js';
 import * as Progress from '../../core/progress.js';
 import router from '../router.js';
 import { FITS, freshRun } from '../../v19/forge.js';
+import { ensureThreeRuntime } from '../../v19/threeRuntime.js';
 import { hasLiveFurnace, openFurnace } from '../../core/v19Progress.js';
 
 let root, body, stageHost, legacy, hero, heroSequence = 0;
@@ -18,8 +19,8 @@ const sample = {
 const sampleFitting = { ...FITS.find(fit => fit.id === 'ink'), color: '#302d2e', accent: '#947955' };
 const ENTRIES = [
   { label: '赛事', icon: 'arena', go: () => router.go('arena') },
-  { label: '藏刀阁', icon: 'collection', go: () => import('./workshop.js').then(m => m.openTab('collection')) },
-  { label: '工坊', icon: 'workshop', go: () => import('./workshop.js').then(m => m.openTab(legacy ? 'bonuses' : null)) },
+  { label: '藏刀阁', icon: 'collection', go: () => openWorkshop('collection') },
+  { label: '工坊', icon: 'workshop', go: () => openWorkshop(legacy ? 'bonuses' : null) },
 ];
 
 export function create({ legacy: old = null } = {}) {
@@ -158,7 +159,7 @@ function nextGoalRow(goal) {
 
 function openGoal(goal) {
   if (goal.route === 'workshop') {
-    import('./workshop.js').then(m => m.openTab(goal.tab || null));
+    void openWorkshop(goal.tab || null);
   } else {
     router.go(goal.route);
   }
@@ -166,6 +167,16 @@ function openGoal(goal) {
 
 function summaryItem(label, value) {
   return el('div', {}, [el('span', { text: label }), el('b', { text: String(value) })]);
+}
+
+async function openWorkshop(tab) {
+  try {
+    await ensureThreeRuntime();
+    const { openTab } = await import('./workshop.js');
+    if (router.currentKey() === 'home') openTab(tab);
+  } catch {
+    toast('工坊暂时无法载入，请重试', 'warn');
+  }
 }
 
 async function showHero(record) {
@@ -178,6 +189,8 @@ async function showHero(record) {
   status.textContent = '正在载入展台…';
   status.hidden = false;
   try {
+    await ensureThreeRuntime();
+    if (!current()) return;
     if (!record || record.v19Visual) {
       const { showForgedBlade } = await import('../../v19/sharedStage.js');
       if (!current()) return;
