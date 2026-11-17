@@ -651,6 +651,7 @@ export function mountForge(root, { onArena, onCollection }) {
 
   function hitBlade(hit) {
     sound.configure(getProgress().settings);
+    if (hit?.screen && stage && hit.mesh !== stage.mesh) hit = stage.hit(hit.screen.x, hit.screen.y);
     if (!hit) {
       if (save?.run.phase === 'forge' && !busy) showStageMiss();
       return;

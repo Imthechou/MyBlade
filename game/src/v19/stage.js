@@ -112,13 +112,23 @@ function coordinates(geometry, id) {
     attrib.set([t, v, grip, sharp], i * 4);
   }
   geometry.setAttribute('forgeCoord', new T.BufferAttribute(attrib, 4));
-  const guides = minY.flatMap((bottom, index) => {
-    const t = (index + .5) / binCount;
-    if (!Number.isFinite(bottom)) return [];
-    const x = min.x + t * length;
-    return [.20, .50, .80].map(fraction => new T.Vector3(x, lerp(bottom, maxY[index], fraction), max.z * .50))
-      .filter(point => region(point.x, point.y).blade > .60);
-  });
+  // Actual triangle centers cover the handle, guard and both faces without
+  // placing touch targets inside a curved blade's empty bounding box.
+  const surface = new Map();
+  const index = geometry.index;
+  const count = index?.count ?? pos.count;
+  const a = new T.Vector3(), b = new T.Vector3(), c = new T.Vector3();
+  for (let i = 0; i < count; i += 3) {
+    a.fromBufferAttribute(pos, index ? index.getX(i) : i);
+    b.fromBufferAttribute(pos, index ? index.getX(i + 1) : i + 1);
+    c.fromBufferAttribute(pos, index ? index.getX(i + 2) : i + 2);
+    point.copy(a).add(b).add(c).multiplyScalar(1 / 3);
+    const u = along(point.x), v = across(u, point.y);
+    const cell = Math.floor(u * 60) * 12 + Math.min(5, Math.floor(v * 6)) * 2 + Number(point.z >= 0);
+    const previous = surface.get(cell);
+    if (!previous || Math.abs(point.z) > Math.abs(previous.z)) surface.set(cell, point.clone());
+  }
+  const guides = [...surface.values()];
   return { guides, along, region, bladeRoot: bladeRoot < 1 ? bladeRoot : 0, across: (x, y) => across(along(x), y),
     pommel: new T.Vector3(min.x, (minY[0] + maxY[0]) * .5, 0),
     gripCenter: gripBounds.getCenter(new T.Vector3()),
@@ -401,21 +411,93 @@ function makeAnvil() {
 
 function makeHammer() {
   const group = new T.Group();
-  const iron = new T.MeshStandardMaterial({ color: 0x3c454d, metalness: .78, roughness: .42 });
-  const ring = new T.MeshStandardMaterial({ color: 0x9d775c, metalness: .62, roughness: .39 });
-  const wood = new T.MeshStandardMaterial({ color: 0x503026, roughness: .65 });
-  const head = new T.Mesh(bevel([[-.26, -.10], [-.15, -.14], [.20, -.14], [.26, -.08], [.26, .075], [.20, .13], [-.20, .13], [-.26, .075]], .26, .023), iron);
-  const face = new T.Mesh(bevel([[-.306, -.076], [-.298, -.088], [-.253, -.088], [-.253, .072],
-    [-.298, .072], [-.306, .06]], .233, .008), new T.MeshStandardMaterial({
-    color: 0x929da6, metalness: .87, roughness: .29,
-  }));
-  const shaft = new T.Mesh(new T.CylinderGeometry(.045, .055, .72, 8), wood);
-  shaft.position.set(.043, .45, 0);
-  const ferrule = new T.Mesh(new T.CylinderGeometry(.06, .06, .13, 8), ring);
-  ferrule.position.set(.043, .18, 0);
-  const pommel = new T.Mesh(new T.CylinderGeometry(.061, .057, .047, 8), ring);
-  pommel.position.set(.043, .79, 0);
-  group.add(head, face, shaft, ferrule, pommel);
+  group.name = 'Forging hammer';
+  const iron = new T.MeshStandardMaterial({ color: 0x333b41, metalness: .82, roughness: .46 });
+  const polished = new T.MeshStandardMaterial({ color: 0x9aa7af, metalness: .91, roughness: .24 });
+  // Eight-sided sections give the head a crowned face, forged cheeks and a
+  // narrow cross peen. The striking face is the local plane x = -.32.
+  const sections = [
+    [-.32, .094, .099], [-.306, .116, .121], [-.265, .116, .121],
+    [-.215, .090, .101], [-.135, .122, .131], [.10, .122, .131],
+    [.19, .095, .119], [.31, .032, .107], [.34, .027, .092],
+  ];
+  const corners = [[-1, -.67], [-.67, -1], [.67, -1], [1, -.67],
+    [1, .67], [.67, 1], [-.67, 1], [-1, .67]];
+  const vertices = [], groups = [];
+  const face = (a, b, c) => vertices.push(...a, ...b, ...c);
+  for (let ring = 0; ring < sections.length - 1; ring++) {
+    const start = vertices.length / 3;
+    const [x0, y0, z0] = sections[ring];
+    const [x1, y1, z1] = sections[ring + 1];
+    for (let side = 0; side < corners.length; side++) {
+      const [y, z] = corners[side], [nextY, nextZ] = corners[(side + 1) % corners.length];
+      const a = [x0, y * y0, z * z0], b = [x1, y * y1, z * z1];
+      const c = [x1, nextY * y1, nextZ * z1], d = [x0, nextY * y0, nextZ * z0];
+      face(a, c, b);
+      face(a, d, c);
+    }
+    groups.push([start, vertices.length / 3 - start, ring < 2 || ring === sections.length - 2 ? 1 : 0]);
+  }
+  for (const end of [0, sections.length - 1]) {
+    const [x, height, depth] = sections[end];
+    const start = vertices.length / 3;
+    for (let i = 0; i < corners.length; i++) {
+      const a = corners[i], b = corners[(i + 1) % corners.length];
+      const first = [x, a[0] * height, a[1] * depth];
+      const next = [x, b[0] * height, b[1] * depth];
+      if (end === 0) face([x, 0, 0], next, first);
+      else face([x, 0, 0], first, next);
+    }
+    groups.push([start, vertices.length / 3 - start, 1]);
+  }
+  const headGeometry = new T.BufferGeometry();
+  const ordered = [];
+  for (const material of [0, 1]) {
+    const first = ordered.length / 3;
+    for (const [start, count, index] of groups) {
+      if (index === material) ordered.push(...vertices.slice(start * 3, (start + count) * 3));
+    }
+    headGeometry.addGroup(first, ordered.length / 3 - first, material);
+  }
+  headGeometry.setAttribute('position', new T.Float32BufferAttribute(ordered, 3));
+  headGeometry.computeVertexNormals();
+  const head = new T.Mesh(headGeometry, [iron, polished]);
+  head.name = 'Forged cross-peen head';
+
+  const grain = document.createElement('canvas');
+  grain.width = 64; grain.height = 256;
+  const paint = grain.getContext('2d');
+  paint.fillStyle = '#624230';
+  paint.fillRect(0, 0, 64, 256);
+  for (let line = 0; line < 36; line++) {
+    paint.strokeStyle = line % 3 ? '#35251d55' : '#c2966950';
+    paint.lineWidth = line % 3 ? .6 : 1.2;
+    paint.beginPath();
+    for (let y = 0; y <= 256; y += 8) {
+      const x = line * 1.9 + Math.sin(y * .024 + line * 1.7) * 1.5;
+      if (y === 0) paint.moveTo(x, y);
+      else paint.lineTo(x, y);
+    }
+    paint.stroke();
+  }
+  for (const y of [29, 35, 41, 47]) {
+    paint.fillStyle = '#30251f80';
+    paint.fillRect(0, y, 64, 2);
+  }
+  const woodGrain = new T.CanvasTexture(grain);
+  woodGrain.colorSpace = T.SRGBColorSpace;
+  const wood = new T.MeshStandardMaterial({ map: woodGrain, color: 0xd4b595, roughness: .69 });
+  const handleProfile = [[0, .07], [.042, .07], [.044, .20], [.041, .31],
+    [.052, .49], [.061, .70], [.057, .77], [.039, .795], [0, .80]];
+  const shaft = new T.Mesh(new T.LatheGeometry(handleProfile.map(([r, y]) => new T.Vector2(r, y)), 12), wood);
+  shaft.scale.z = .76;
+  shaft.name = 'Tapered ash handle';
+  const socket = new T.Mesh(new T.CylinderGeometry(.057, .060, .065, 12), iron);
+  socket.scale.z = .76;
+  socket.position.y = .153;
+  const wedge = new T.Mesh(new T.BoxGeometry(.045, .014, .043), polished);
+  wedge.position.set(0, .188, 0);
+  group.add(head, shaft, socket, wedge);
   return group;
 }
 
@@ -517,7 +599,8 @@ export class ForgeStage {
     this.content.position.y = .13;
     this.scene.add(this.content);
     this.hammerHome = new T.Vector3(1.34, .57, .65);
-    this.hammerContactOffset = new T.Vector3(-.312, -.008, 0).applyEuler(new T.Euler(.10, -.27, -.16));
+    this.hammerContactOffset = new T.Vector3(-.32, 0, 0);
+    this.hammerHomeRotation = new T.Quaternion().setFromEuler(new T.Euler(.16, -.40, -.62));
     this.dentLocal = new T.Vector3();
     this.dentAt = -9999;
     this.dentPower = 0;
@@ -1019,8 +1102,6 @@ export class ForgeStage {
     this.content.visible = true;
     if (asset.coords && this.run) {
       setSurface(asset.uniforms, this.run.ore ? this.run : {...this.run,ore:this.inspectedOre}, this.fit);
-      asset.uniforms.fBare.value = Number(id !== 'blank' && !this.fit &&
-        ['forge', 'fit', 'broken'].includes(this.mode));
       if (this.fit && knifeDetails[id] && asset.hardware === undefined) {
         asset.hardware = makeFittingHardware(asset.mesh, asset.coords, knifeDetails[id].anchors);
         if (asset.hardware) asset.mesh.add(asset.hardware);
@@ -1032,7 +1113,7 @@ export class ForgeStage {
       if (this.lastImpact) {
         const { local, mesh, mark } = this.lastImpact;
         if (mesh !== this.mesh && mark) {
-          const section = asset.coords.crossSection(Math.max(asset.coords.bladeRoot + .04, mark.u), mark.v);
+          const section = asset.coords.crossSection(mark.u, mark.v);
           asset.uniforms.fHit.value.set(section.x, section.y, 0);
         } else {
           asset.uniforms.fHit.value.copy(local);
@@ -1190,8 +1271,14 @@ export class ForgeStage {
     const rect = this.canvas.getBoundingClientRect();
     if (!rect.width || !rect.height) return null;
     const put = (u, v) => {
-      const section = coords.crossSection(u, v);
-      const screen = this.project(this.mesh.localToWorld(new T.Vector3(section.x, section.y, 0)), rect);
+      let closest, score = Infinity;
+      for (const point of coords.guides) {
+        if (coords.region(point.x, point.y).blade < .6) continue;
+        const distance = Math.abs(coords.along(point.x) - u) * 2 + Math.abs(coords.across(point.x, point.y) - v) * .35;
+        if (distance < score) { closest = point; score = distance; }
+      }
+      if (!closest) return null;
+      const screen = this.project(this.mesh.localToWorld(closest.clone()), rect);
       return { x: screen.x - rect.left, y: screen.y - rect.top };
     };
     return {
@@ -1204,41 +1291,64 @@ export class ForgeStage {
   hit(clientX, clientY) {
     if (!this.content.visible || !this.mesh?.visible || !this.active?.coords || this.mode !== 'forge') return null;
     const rect = this.canvas.getBoundingClientRect();
-    this.raycaster.setFromCamera(new T.Vector2((clientX - rect.left) / rect.width * 2 - 1, 1 - (clientY - rect.top) / rect.height * 2), this.camera);
-    const impact = this.raycaster.intersectObject(this.mesh, false)[0];
-    let local = impact && this.mesh.worldToLocal(impact.point.clone());
+    if (!rect.width || !rect.height || clientX < rect.left || clientX > rect.right ||
+        clientY < rect.top || clientY > rect.bottom) return null;
+    this.mesh.updateWorldMatrix(true, false);
+    const cast = (x, y) => {
+      this.raycaster.setFromCamera(new T.Vector2((x - rect.left) / rect.width * 2 - 1,
+        1 - (y - rect.top) / rect.height * 2), this.camera);
+      return this.raycaster.intersectObject(this.mesh, false)[0];
+    };
+    let impact = cast(clientX, clientY);
     const { coords } = this.active;
-    if (local && coords.region(local.x, local.y).blade < .42) return null;
-    if (!local) {
+    if (!impact) {
       let best = Infinity;
+      let nearest;
       for (const guide of coords.guides) {
         const screen = this.project(this.mesh.localToWorld(guide.clone()), rect);
         const distance = Math.hypot(screen.x - clientX, screen.y - clientY);
-        if (distance < best) { best = distance; local = guide.clone(); }
+        if (distance < best) { best = distance; nearest = screen; }
       }
-      if (best > (matchMedia('(pointer: coarse)').matches || this.aspect < 1.35 ? 26 : 18)) return null;
+      const tolerance = matchMedia('(pointer: coarse)').matches || this.aspect < 1.35 ? 20 : 12;
+      if (best > tolerance) return null;
+      impact = cast(nearest.x, nearest.y);
     }
+    if (!impact?.face) return null;
+    const local = this.mesh.worldToLocal(impact.point.clone());
     const u = coords.along(local.x), v = coords.across(local.x, local.y);
-    const zone = u > .86 ? 'tip' : v < .30 || (doubleEdge.has(this.shown) && v > .70) ? 'edge' : 'belly';
-    return { local, world: this.mesh.localToWorld(local.clone()), zone, position: { u, v }, mesh: this.mesh };
+    const blade = coords.region(local.x, local.y).blade >= .42;
+    const zone = !blade ? 'belly' : u > .86 ? 'tip' :
+      v < .30 || (doubleEdge.has(this.shown) && v > .70) ? 'edge' : 'belly';
+    const normal = impact.face.normal.clone().transformDirection(this.mesh.matrixWorld);
+    if (normal.dot(this.raycaster.ray.direction) > 0) normal.negate();
+    return { local, world: impact.point.clone(), normal, zone, position: { u, v },
+      screen: { x: clientX, y: clientY }, mesh: this.mesh };
   }
 
   keyboardHit() {
     if (!this.content.visible || !this.active?.coords) return null;
-    const guides = this.active.coords.guides;
-    const local = guides[Math.floor(guides.length * .47)].clone();
-    const { coords } = this.active;
-    return { local, world: this.mesh.localToWorld(local.clone()), zone: 'belly', mesh: this.mesh,
-      position: { u: coords.along(local.x), v: coords.across(local.x, local.y) } };
+    const point = this.zoneAnchors().belly;
+    if (!point) return null;
+    const rect = this.canvas.getBoundingClientRect();
+    return this.hit(rect.left + point.x, rect.top + point.y);
   }
 
   swing(hit, event, onImpact, onReady) {
     const severe = event.type === 'break' || event.notable;
     const stop = severe ? 65 : event.type === 'surge' ? 53 : 34;
     if (hit.mesh === this.mesh) hit.world.copy(this.mesh.localToWorld(hit.local.clone()));
-    const reach = hit.world.clone().sub(this.hammerContactOffset);
-    const lift = this.hammerHome.clone().add(new T.Vector3(-.05, .24, -.02));
-    this.blow = { onImpact, onReady, start: performance.now(), landed: false,
+    const normal = hit.normal;
+    const tangent = new T.Vector3(.64, .77, 0);
+    tangent.addScaledVector(normal, -tangent.dot(normal));
+    if (tangent.lengthSq() < .01) tangent.set(-normal.y, normal.x, 0);
+    tangent.normalize();
+    const side = new T.Vector3().crossVectors(normal, tangent).normalize();
+    tangent.crossVectors(side, normal).normalize();
+    const contactRotation = new T.Quaternion().setFromRotationMatrix(new T.Matrix4().makeBasis(normal, tangent, side));
+    const liftRotation = contactRotation.clone().multiply(new T.Quaternion().setFromAxisAngle(new T.Vector3(0, 0, 1), -.32));
+    const reach = hit.world.clone().sub(this.hammerContactOffset.clone().applyQuaternion(contactRotation));
+    const lift = reach.clone().addScaledVector(normal, .60).addScaledVector(tangent, .18);
+    this.blow = { hit, contactRotation, liftRotation, onImpact, onReady, start: performance.now(), landed: false,
       contact: this.reduceMotion ? 76 : severe ? 162 : 138, stop,
       recovery: this.reduceMotion ? 110 : severe ? 230 : 170, reach, lift };
     this.invalidate();
@@ -1256,10 +1366,10 @@ export class ForgeStage {
     const action = event.change?.action;
     const finish = [slot, action === 'upgrade' ? 2 : action === 'fade' ? 3 : 1,
       uniforms?.fCodes?.value.w ?? 0, uniforms?.fLevels?.value.w ?? 0];
-    this.lastImpact = { local: hit.local.clone(), mesh: hit.mesh, mark: event.mark, zone: hit.zone,
+    this.lastImpact = { local: hit.local.clone(), normal: hit.normal.clone(), mesh: hit.mesh, mark: event.mark, zone: hit.zone,
       large: high || broken, wave: high || Boolean(event.change), finish };
     this.bangPower = broken ? 1.6 : high ? 1.2 : .72;
-    this.flash.position.copy(hit.world).add(new T.Vector3(0, .025, .18));
+    this.flash.position.copy(hit.world).addScaledVector(hit.normal, .14);
     this.flash.intensity = this.bangPower * 3.7;
     if (this.active?.uniforms.fHit) {
       this.active.uniforms.fHit.value.copy(hit.local);
@@ -1445,14 +1555,13 @@ export class ForgeStage {
     if (this.active?.uniforms.fClock) {
       const { min, max } = this.mesh.geometry.boundingBox;
       const { coords, uniforms } = this.active;
-      const bare = uniforms.fBare.value > .5;
-      const heel = bare ? lerp(min.x, max.x, coords.bladeRoot) : min.x;
-      const length = cast !== null ? .49 : working ? bare ? .49 : .56 : gallery ? .78 : bare ? .62 : .74;
+      const heel = min.x;
+      const length = cast !== null ? .49 : working ? .64 : gallery ? .78 : .74;
       const fullLength = vertical * length / (max.x - heel);
-      const scale = bare || gallery ? Math.min(fullLength, vertical * this.aspect * .55 / (max.y - min.y)) : fullLength;
+      const scale = Math.min(fullLength, vertical * this.aspect * .62 / (max.y - min.y));
       this.mesh.scale.setScalar(scale);
       this.mesh.position.set(
-        bare ? -(heel + max.x) * .5 * scale : 0,
+        -(min.x + max.x) * .5 * scale,
         display ? -coords.pommel.y * scale : 0,
         0,
       );
@@ -1461,11 +1570,11 @@ export class ForgeStage {
         this.content.position.y = crucibleY + .04 - heel * scale + settle;
       }
       if (gallery) {
-        const bottom = this.content.position.y + coords.pommel.x * fullLength;
-        this.content.position.y = bottom - coords.pommel.x * scale;
+        const bottom = this.content.position.y + this.mesh.position.x + coords.pommel.x * fullLength;
+        this.content.position.y = bottom - this.mesh.position.x - coords.pommel.x * scale;
       }
       if (display) {
-        const bottom = this.content.position.y + coords.pommel.x * scale;
+        const bottom = this.content.position.y + this.mesh.position.x + coords.pommel.x * scale;
         this.displayStand.scale.setScalar(Math.min(gallery ? 1 : .86, vertical / 5.65));
         this.displayStand.position.set(this.content.position.x, bottom, this.content.position.z);
       }
@@ -1481,7 +1590,7 @@ export class ForgeStage {
         const dentAge = now - this.dentAt;
         if (!this.reduceMotion && dentAge < 470) {
           const dent = this.dentPower * .026 * Math.exp(-dentAge / 105) * Math.cos(dentAge / 36);
-          uniforms.fDent.value.set(this.dentLocal.x, this.dentLocal.y, 0, dent);
+          uniforms.fDent.value.set(this.dentLocal.x, this.dentLocal.y, this.dentLocal.z, dent);
         } else if (uniforms.fDent.value.w !== 0) {
           uniforms.fDent.value.w = 0;
         }
@@ -1568,6 +1677,10 @@ export class ForgeStage {
     if (blow) {
       const age = now - blow.start;
       const reach = blow.reach;
+      if (blow.hit.mesh === this.mesh && !this.pieces) {
+        reach.copy(this.mesh.localToWorld(blow.hit.local.clone()))
+          .sub(this.hammerContactOffset.clone().applyQuaternion(blow.contactRotation));
+      }
       if (!blow.landed && age < blow.contact) {
         const p = age / blow.contact;
         const wind = .33;
@@ -1575,11 +1688,11 @@ export class ForgeStage {
           // 先抬高蓄力，再落下：没有这一下，快速点击会像“闪烁”。
           const q = p / wind;
           this.hammer.position.lerpVectors(this.hammerHome, blow.lift, Math.sin(q * Math.PI * .5));
-          this.hammer.rotation.set(.10, -.27, lerp(-.68, -.88, q));
+          this.hammer.quaternion.slerpQuaternions(this.hammerHomeRotation, blow.liftRotation, q);
         } else {
           const q = (p - wind) / (1 - wind);
           this.hammer.position.lerpVectors(blow.lift, reach, q * q * (2.15 - 1.15 * q));
-          this.hammer.rotation.set(.10, -.27, lerp(-.88, -.16, q));
+          this.hammer.quaternion.slerpQuaternions(blow.liftRotation, blow.contactRotation, q);
         }
         if (p > .65 && !this.reduceMotion) {
           const line = this.trail.geometry.attributes.position;
@@ -1598,12 +1711,12 @@ export class ForgeStage {
         }
         const p = clamp((now - blow.landedAt - blow.stop) / blow.recovery, 0, 1);
         this.hammer.position.lerpVectors(reach, this.hammerHome, 1 - (1 - p) ** 2.3);
-        this.hammer.rotation.set(.10, -.27, lerp(-.16, -.68, p));
+        this.hammer.quaternion.slerpQuaternions(blow.contactRotation, this.hammerHomeRotation, p);
         if (p === 1) { this.blow = null; blow.onReady(); }
       }
     } else if (this.hammer?.visible) {
       this.hammer.position.copy(this.hammerHome);
-      this.hammer.rotation.set(.10, -.27, -.68);
+      this.hammer.quaternion.copy(this.hammerHomeRotation);
     }
     this.animatePieces(now);
     this.animateOreCut(elapsed);

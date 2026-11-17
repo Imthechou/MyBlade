@@ -17,7 +17,6 @@ export function surfaceUniforms() {
     fFilmLayout: { value: new T.Vector4(.5, 0, 1, .5) },
     fFxLayout: { value: new T.Vector4(.5, 0, 1, .5) },
     fBladeRoot: { value: 0 },
-    fBare: { value: 0 },
     fFinishChange: { value: new T.Vector4() },
     fGrind: { value: new T.Vector3() },
     fClock: { value: 0 },
@@ -37,7 +36,7 @@ export function surfaceUniforms() {
     fPulse: { value: 0 },
     fWave: { value: 0 },
     fHit: { value: new T.Vector3() },
-    /* 落锤压痕：xy = 刀身局部坐标，w = 凹陷深度（负值回弹），z 未用。 */
+    /* xyz = 接触点，w = 局部凹陷深度。 */
     fDent: { value: new T.Vector4(0, 0, 0, 0) },
     fGrip: { value: new T.Color('#44413d') },
     fGuard: { value: new T.Color('#83828b') },
@@ -103,14 +102,14 @@ vForgePos = position;
 vForgeNormal = normalize(normalMatrix * normal);
 // 局部压痕：只影响落点附近，随 fDent.w 衰减回弹。不改变几何数据本身。
 if (fDent.w != 0.) {
-  float dentMask = 1. - smoothstep(0., .17, length(position.xy - fDent.xy));
-  transformed.z -= dentMask * fDent.w;
+  float dentMask = 1. - smoothstep(0., .15, length(position - fDent.xyz));
+  transformed -= normal * dentMask * fDent.w;
 }
 `;
 
 const fragmentHead = `
 uniform vec4 fCodes, fLevels, fFinishChange, fDent;
-uniform float fClock, fSeed, fHeat, fPurity, fRefine, fWear, fPulse, fWave, fGripStyle, fRaw, fBare, fOreTrace, fOreStyle, fOreFamily, fOreSeed, fOreClarity;
+uniform float fClock, fSeed, fHeat, fPurity, fRefine, fWear, fPulse, fWave, fGripStyle, fRaw, fOreTrace, fOreStyle, fOreFamily, fOreSeed, fOreClarity;
 uniform sampler2D fMarks;
 uniform vec3 fGrip, fGuard, fHit, fOreTone, fGrind;
 varying vec4 vForge;
@@ -291,7 +290,6 @@ vec3 gripFinish(vec2 uv, vec3 base, vec3 atlas, out float rough, out float metal
 `;
 
 const body = `
-if (fBare > .5 && vForge.z > .50) discard;
 vec2 fp = vec2(vForgePos.x, vForgePos.y + abs(vForgePos.z)*.26);
 vec2 st = vForge.xy;
 float grip = step(.5,fGripStyle)*smoothstep(.15,.88,vForge.z);
@@ -439,7 +437,7 @@ export function makeBladeMaterial(original, uniforms, raw) {
   });
   material.userData.forge = uniforms;
   if (!raw) material.defines = { ...material.defines, BLADE_DECORATION: 1 };
-  material.customProgramCacheKey = () => raw ? 'blade-lab-billet-18' : 'blade-lab-looks-18';
+  material.customProgramCacheKey = () => raw ? 'blade-lab-billet-19' : 'blade-lab-looks-19';
   material.onBeforeCompile = shader => {
     Object.assign(shader.uniforms, uniforms);
     shader.vertexShader = vertexHead + shader.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\n' + vertexBody);
@@ -452,12 +450,9 @@ export function makeBladeMaterial(original, uniforms, raw) {
         vec3 meshNormal = normal;
         #include <normal_fragment_maps>
         normal = normalize(mix(meshNormal,normal,mix(.13,.84,grip)));
-        normal = rockBump(normal,forgeHeight,vViewPosition);
-        // 压痕处的法线一起塌下去，否则只有轮廓变化、表面看不出来。
-        if (fDent.w != 0.) {
-          float dentMask = 1. - smoothstep(0., .17, length(vForgePos.xy - fDent.xy));
-          normal = normalize(mix(normal, normalize(normal + vec3(0., 0., sign(fDent.w) * 2.2)), dentMask * .85));
-        }
+        float dentMask = 1. - smoothstep(0., .15, length(vForgePos - fDent.xyz));
+        float dentHeight = -fDent.w * dentMask * dentMask;
+        normal = rockBump(normal,forgeHeight + dentHeight,vViewPosition);
       `)
       .replace('#include <emissivemap_fragment>', 'totalEmissiveRadiance += forgeGlow;');
   };
