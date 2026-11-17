@@ -32,6 +32,7 @@ async function presentedStage(page, mode, after = 0) {
     const stage = attachForgeStage(host);
     if (stage.mode !== mode || stage.shown !== stage.want || !stage.onScreen || !stage.content.visible ||
         !stage.mesh?.visible || stage.lastRender < Math.max(stage.entered, after)) return false;
+    window.testForgeStage = stage;
     return {
       mode, shown: stage.shown, bare: stage.active.uniforms.fBare?.value,
       stand: Boolean(stage.displayStand?.visible), fitting: stage.fit?.id ?? null,
@@ -115,25 +116,14 @@ async function run() {
  const cast = await saveCanvasFrame(page, 'forgeCastFrame', '05b_pour_hot_billet');
  assert.ok(cast.heat > .5, 'Manual pour should visibly produce a hot billet before forging');
  await presentedStage(page, 'forge');
- await page.getByRole('button',{name:'返回首页'}).click();
- // Seed seven blows in test storage, then perform the next strike by touch.
- const result=await page.evaluate(async()=>{
-   const {forgeSession,commitFurnace}=await import('/src/core/v19Progress.js');
-   const {strike}=await import('/src/v19/forge.js');
-   const current=forgeSession().run;
-   return commitFurnace(current,({run})=>{
-     if(run.phase!=='forge') return false;
-     for(let n=0;n<7;n++){
-       const z=['belly','edge','tip'][n%3];
-       strike(run,z,{u:.35+n*.065,v:z==='edge'?.13:.46});
-       if(run.phase==='broken') return false;
-     }
-     return true;
-   });
- });
- console.log('SEEDED_STAGE_FOR_VISUAL_REVIEW',JSON.stringify(result).slice(0,800));
- if(!result?.ok) throw new Error('Could not prepare visual forge fixture: '+JSON.stringify(result));
- await page.getByRole('button',{name:/继续锻刀|开始锻刀/}).click();
+ const scene = page.locator('#v19-forge #scene');
+ for (let hit = 1; hit <= 7; hit++) {
+   await scene.press('Space');
+   await page.waitForFunction(count => {
+     const stage = window.testForgeStage;
+     return stage.run?.hits === count && !stage.blow && stage.shown === stage.want;
+   }, hit, { timeout: 8000 });
+ }
  const forge = await presentedStage(page, 'forge');
  assert.equal(forge.bare, 1);
  assert.ok(forge.drawCalls > 1);

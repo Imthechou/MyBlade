@@ -1,6 +1,6 @@
 import { sectionContour } from './ore-section.js';
 import { makeBladeMaterial, makeCutMaterial, makeMeltMaterial, makeOreMaterial, setSurface, surfaceUniforms } from './materials.js';
-import { FAMILIES, ORE_VARIANTS, oreMaterialOf, oreOptics, oreInspection, oreModelId, familyOf, modelCandidates } from './forge.js';
+import { FAMILIES, HEAT, ORE_VARIANTS, oreMaterialOf, oreOptics, oreInspection, oreModelId, familyOf, modelCandidates } from './forge.js';
 import { KNIFE_IDS, regionAt } from './regions.js';
 import { RenderBudget } from './render-budget.js';
 import { knifeDetails, makeFittingHardware } from './knife-details.js';
@@ -1387,7 +1387,7 @@ export class ForgeStage {
     const shop = (mode === 'forge' || mode === 'broken') && !failedRefining;
     const working = shop || mode === 'refine';
     const cast = mode === 'refine' && this.refiningStep === 'cast'
-      ? clamp((now - this.castStartedAt) / 1100, 0, 1) : null;
+      ? clamp((now - this.castStartedAt) / (HEAT.cast * 1000), 0, 1) : null;
     const strikeAge = now - (this.bangedAt ?? -5000);
     const viewMoving = this.view.advance(delta, this.reduceMotion);
     const view = this.view.current;
@@ -1429,7 +1429,6 @@ export class ForgeStage {
     }
     const subjectY = mode === 'ore' ? .16 : stone || melt ? .04 : working ? .27 : gallery ? .27 : .22;
     this.content.position.set(stone || melt || gallery ? 0 : -.03, subjectY - compression, .10);
-    if (cast !== null && !this.reduceMotion) this.content.position.y += .18 * (1 - cast) ** 3;
     if (this.displayStand) this.displayStand.visible = Boolean(display && upright && this.content.visible);
     if (melt) {
       this.meltUniforms.meltClock.value = this.reduceMotion || failedRefining ? 0 : t;
@@ -1441,13 +1440,14 @@ export class ForgeStage {
     this.oreUniforms.oreKnock.value = knocking ? 1 - tapAge / oreKnockTime : 0;
     this.oreUniforms.oreScrape.value = scraping ? Math.max(.001, scrapeAge / oreScrapeTime) : 0;
     const vertical = this.verticalSpan ?? 3.85;
+    const crucibleY = narrow ? -.83 : -.73;
     let anvilY = -.28 * vertical - .34;
     if (this.active?.uniforms.fClock) {
       const { min, max } = this.mesh.geometry.boundingBox;
       const { coords, uniforms } = this.active;
       const bare = uniforms.fBare.value > .5;
       const heel = bare ? lerp(min.x, max.x, coords.bladeRoot) : min.x;
-      const length = working ? bare ? .49 : .56 : gallery ? .78 : bare ? .62 : .74;
+      const length = cast !== null ? .49 : working ? bare ? .49 : .56 : gallery ? .78 : bare ? .62 : .74;
       const fullLength = vertical * length / (max.x - heel);
       const scale = bare || gallery ? Math.min(fullLength, vertical * this.aspect * .55 / (max.y - min.y)) : fullLength;
       this.mesh.scale.setScalar(scale);
@@ -1456,6 +1456,10 @@ export class ForgeStage {
         display ? -coords.pommel.y * scale : 0,
         0,
       );
+      if (cast !== null) {
+        const settle = this.reduceMotion ? 0 : .16 * (1 - cast) ** 3;
+        this.content.position.y = crucibleY + .04 - heel * scale + settle;
+      }
       if (gallery) {
         const bottom = this.content.position.y + coords.pommel.x * fullLength;
         this.content.position.y = bottom - coords.pommel.x * scale;
@@ -1488,7 +1492,7 @@ export class ForgeStage {
     if (this.crucible) {
       const { group, rim, glow } = this.crucible;
       group.visible = mode === 'refine' || failedRefining;
-      group.position.set(0, narrow ? -.83 : -.73, -.12);
+      group.position.set(0, crucibleY, -.12);
       if (group.visible) {
         glow.material.opacity = .06 + .42 * heatGlow + .22 * castGlow;
         rim.material.color.setRGB(.27 + .68 * heatGlow + .24 * castGlow, .10 + .29 * heatGlow, .047 + .07 * heatGlow);
