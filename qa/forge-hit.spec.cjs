@@ -46,7 +46,8 @@ async function run() {
         onTap(event) {
           const hit = stage.hit(event.clientX, event.clientY);
           if (!hit) {
-            window.coverageContact = { hit: false };
+            window.coverageContact = { hit: false, mode: stage.mode, shown: stage.shown,
+              x: event.clientX, y: event.clientY, rect: stage.canvas.getBoundingClientRect().toJSON() };
             window.coverageDone++;
             return;
           }
@@ -109,7 +110,9 @@ async function run() {
               if (screen.x < rect.left + 12 || screen.x > rect.right - 12 ||
                   screen.y < rect.top + 55 || screen.y > rect.bottom - 25) continue;
               const contact = stage.hit(screen.x, screen.y);
-              if (contact && Math.abs(contact.position.u - item.u) < .06) {
+              const region = contact && coords.region(contact.local.x, contact.local.y);
+              if (contact && Math.abs(contact.position.u - item.u) < .06 &&
+                  accepts({ ...contact.position, ...region })) {
                 positions[part] = screen;
                 break;
               }
@@ -131,7 +134,8 @@ async function run() {
           await page.touchscreen.tap(point.x, point.y);
           await page.waitForFunction(done => window.coverageDone > done, before);
           const contact = await page.evaluate(() => window.coverageContact);
-          assert.ok(contact?.hit, model + ' touch missed ' + part);
+          assert.ok(contact?.hit, model + ' touch missed ' + part + ' at yaw ' + yaw + ': ' + JSON.stringify(contact));
+          if (['belly', 'edge', 'tip'].includes(part)) assert.equal(contact.zone, part, model + ' classified ' + part);
           assert.ok(contact.error < .04 && contact.alignment > .99,
             model + ' hammer failed to meet ' + part + ' at its surface angle');
           if (contact.image) {

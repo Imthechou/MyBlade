@@ -412,7 +412,7 @@ function makeAnvil() {
 function makeHammer() {
   const group = new T.Group();
   group.name = 'Forging hammer';
-  const iron = new T.MeshStandardMaterial({ color: 0x333b41, metalness: .82, roughness: .46 });
+  const iron = new T.MeshStandardMaterial({ color: 0x626b73, metalness: .78, roughness: .38 });
   const polished = new T.MeshStandardMaterial({ color: 0x9aa7af, metalness: .91, roughness: .24 });
   // Eight-sided sections give the head a crowned face, forged cheeks and a
   // narrow cross peen. The striking face is the local plane x = -.32.
@@ -1270,21 +1270,26 @@ export class ForgeStage {
     const { coords } = this.active;
     const rect = this.canvas.getBoundingClientRect();
     if (!rect.width || !rect.height) return null;
-    const put = (u, v) => {
-      let closest, score = Infinity;
+    const put = (u, v, zone) => {
+      const candidates = [];
       for (const point of coords.guides) {
         if (coords.region(point.x, point.y).blade < .6) continue;
         const distance = Math.abs(coords.along(point.x) - u) * 2 + Math.abs(coords.across(point.x, point.y) - v) * .35;
-        if (distance < score) { closest = point; score = distance; }
+        candidates.push({ point, distance });
       }
-      if (!closest) return null;
-      const screen = this.project(this.mesh.localToWorld(closest.clone()), rect);
-      return { x: screen.x - rect.left, y: screen.y - rect.top };
+      candidates.sort((a, b) => a.distance - b.distance);
+      for (const { point } of candidates.slice(0, 16)) {
+        const screen = this.project(this.mesh.localToWorld(point.clone()), rect);
+        if (this.hit(screen.x, screen.y)?.zone === zone) {
+          return { x: screen.x - rect.left, y: screen.y - rect.top };
+        }
+      }
+      return null;
     };
     return {
-      tip: put(.93, .5),
-      edge: put(.70, doubleEdge.has(this.shown) ? .86 : .10),
-      belly: put(lerp(coords.bladeRoot, .85, .48), .46),
+      tip: put(.93, .5, 'tip'),
+      edge: put(.70, doubleEdge.has(this.shown) ? .86 : .10, 'edge'),
+      belly: put(lerp(coords.bladeRoot, .85, .48), .46, 'belly'),
     };
   }
 
@@ -1302,16 +1307,19 @@ export class ForgeStage {
     let impact = cast(clientX, clientY);
     const { coords } = this.active;
     if (!impact) {
-      let best = Infinity;
-      let nearest;
+      const tolerance = matchMedia('(pointer: coarse)').matches || this.aspect < 1.35 ? 20 : 12;
+      const nearby = [];
       for (const guide of coords.guides) {
         const screen = this.project(this.mesh.localToWorld(guide.clone()), rect);
         const distance = Math.hypot(screen.x - clientX, screen.y - clientY);
-        if (distance < best) { best = distance; nearest = screen; }
+        if (distance <= tolerance && screen.x >= rect.left && screen.x <= rect.right &&
+            screen.y >= rect.top && screen.y <= rect.bottom) nearby.push({ ...screen, distance });
       }
-      const tolerance = matchMedia('(pointer: coarse)').matches || this.aspect < 1.35 ? 20 : 12;
-      if (best > tolerance) return null;
-      impact = cast(nearest.x, nearest.y);
+      nearby.sort((a, b) => a.distance - b.distance);
+      for (const point of nearby.slice(0, 8)) {
+        impact = cast(point.x, point.y);
+        if (impact) break;
+      }
     }
     if (!impact?.face) return null;
     const local = this.mesh.worldToLocal(impact.point.clone());
