@@ -1,4 +1,5 @@
 const { chromium } = require('playwright');
+const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const output = 'audit';
 fs.mkdirSync(output,{recursive:true});
@@ -47,6 +48,20 @@ async function run() {
  await shot(page,'04_reveal');
  await page.getByRole('button',{name:/去精炼/}).click();
  await shot(page,'05_refine');
+ const heatButton=page.locator('#heat-button');
+ await heatButton.focus();
+ await page.keyboard.down('Space');
+ const hotGuide=page.locator('#heat-note[data-guide="cool"]');
+ try {
+   await hotGuide.waitFor({state:'visible',timeout:4500});
+   assert.match(await hotGuide.textContent(),/松手降温/);
+ } finally {
+   await page.keyboard.up('Space');
+ }
+ const coldGuide=page.locator('#heat-note[data-guide="warm"]');
+ await coldGuide.waitFor({state:'visible',timeout:4500});
+ assert.match(await coldGuide.textContent(),/按住鼓风/);
+ await page.getByRole('button',{name:'返回首页'}).click();
  // This changes only disposable CI test storage, not the player's real saved game.
  const result=await page.evaluate(async()=>{
    const {forgeSession,commitFurnace}=await import('/src/core/v19Progress.js');
@@ -69,7 +84,6 @@ async function run() {
  });
  console.log('SEEDED_STAGE_FOR_VISUAL_REVIEW',JSON.stringify(result).slice(0,800));
  if(!result?.ok) throw new Error('Could not prepare visual forge fixture: '+JSON.stringify(result));
- await page.getByRole('button',{name:'返回首页'}).click();
  await page.getByRole('button',{name:/继续锻刀|开始锻刀/}).click();
  await page.waitForTimeout(1750);
  await shot(page,'06_forge');
@@ -118,6 +132,9 @@ async function run() {
    text:el.innerText, height:Math.round(el.getBoundingClientRect().height),
  })));
  console.log('ACTION_TOUCH_SIZES',JSON.stringify(targets));
+ await page.getByRole('button',{name:'带此刀去试斩'}).click();
+ await page.locator('.arena-blade-select [data-thumb-blade][data-state="ready"]').waitFor({timeout:14000});
+ assert.equal(await page.locator('.arena-blade-select [data-thumb-blade] img').count(),1);
  await context.close();
  const desktop=await browser.newContext({viewport:{width:1365,height:768}});
  const big=await desktop.newPage();

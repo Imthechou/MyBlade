@@ -464,6 +464,8 @@ export function mountForge(root, { onArena, onCollection }) {
     const rank = refinementRank(heat.quality);
     const outcome = REFINEMENT_RESULTS[rank];
     const paused = !heatInput && heat.step !== 'cast';
+    const guidance = paused ? (heat.elapsed ? 'resume' : '') :
+      heat.step !== 'molten' || green ? '' : heat.temperature < band.lower ? 'warm' : 'cool';
     // Keep motion and the simulation at display cadence, without relaying out the
     // panel. Numeric text is sampled separately and unchanged content is untouched.
     transform('heat-fill', `scaleX(${(heat.temperature / 100).toFixed(4)})`);
@@ -480,7 +482,7 @@ export function mountForge(root, { onArena, onCollection }) {
       heatInput.green = green;
     }
     const canPour = heat.step === 'molten' && heat.elapsed >= HEAT.minimum && heat.quality >= HEAT.minQuality;
-    const state = [heat.step, danger, rank, paused, Boolean(heatInput?.blowing), canPour].join('|');
+    const state = [heat.step, danger, rank, paused, Boolean(heatInput?.blowing), canPour, guidance].join('|');
     if (!force && state === heatHud.state && now - heatHud.updated < 80) return;
     heatHud.state = state;
     heatHud.updated = now;
@@ -494,8 +496,8 @@ export function mountForge(root, { onArena, onCollection }) {
     text('heat-quality', String(Math.floor(heat.quality)));
     put('quality-aria', Math.floor(heat.quality), value => nodes['heat-quality-meter'].setAttribute('aria-valuenow', value));
     text('heat-damage-value', Math.round(heat.damage) + '%');
-    /* 绿区本身就是目标，不再用“把炉温保持在绿区”这类句子复述；只保留真正需要立刻反应的警告。 */
-    text('heat-note', paused && heat.elapsed ? '按住续炼' : danger || heat.temperature >= 95 ? '过热，松手降温' : '');
+    text('heat-note', { resume: '按住续炼', warm: '偏冷 · 按住鼓风', cool: '偏热 · 松手降温' }[guidance] ?? '');
+    put('guide', guidance, value => { nodes['heat-note'].dataset.guide = value; });
     put('temperature-aria', temperature, value => nodes.thermo.setAttribute('aria-valuenow', value));
     put('step', heat.step, value => { stageBox.dataset.heat = value; });
     put('danger', danger, value => { stageBox.dataset.danger = String(value); });

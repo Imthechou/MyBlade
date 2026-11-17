@@ -652,6 +652,8 @@
 #v19-forge .thermo-danger { position: absolute; inset: 0 0 0 86%; background: #fb76512b; border-left: 1px solid #f28576; }
 #v19-forge .heat-caption { justify-content: space-between; color: var(--face-3); font-size: 11px; }
 #v19-forge .heat-caption b { color: var(--accent-cool-deep); font-weight: 700; }
+#v19-forge .heat-caption b[data-guide="warm"] { color: #addff8; }
+#v19-forge .heat-caption b[data-guide="cool"] { color: #ffb492; }
 #v19-forge .heat-metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 13px; margin-top: 4px; }
 #v19-forge .heat-metrics > div > div:first-child { justify-content: space-between; color: var(--face-3); font-size: 11px; }
 #v19-forge .heat-metrics b { color: var(--face); font: 750 13px var(--v19-mono); }
@@ -1151,7 +1153,11 @@
 #v19-arena .trial-hud [data-trial="score"] { color: #bdf8ea; }
 #v19-arena .trial-hud [data-trial="combo"] { color: #ffdaa9; font-size: 20px; }
 #v19-arena .trial-hud b.urgent, #v19-arena .trial-goal.is-danger b, #v19-arena .cut-callout.deflect { color: #ffab92; }
-#v19-arena .trial-hud em { position: absolute; inset: -1px 3px auto auto; color: #b2ead8; font: 700 10px var(--v19-mono); }
+#v19-arena .trial-hud em {
+  position: absolute; inset: -1px 3px auto auto; color: #b2ead8; font: 700 10px var(--v19-mono);
+  opacity: 0; transition: opacity 120ms ease-out;
+}
+#v19-arena .trial-hud em.is-visible { opacity: 1; }
 #v19-arena .round-pause {
   display: grid;
   place-items: center;

@@ -23,8 +23,19 @@
   ⚠ 页面样式只允许读 token，不允许再声明 :root。
 -->
 <link rel="stylesheet" href="/__styles.css" />
-<link rel="preload" href="src/render/legacy/three.bundle.js" as="script" fetchpriority="low" />
-<link rel="preload" href="src/render/legacy/three.addons.js" as="script" fetchpriority="low" />
+<script>
+  // Direct links to the 2D arena do not need the 3D showcase at startup.
+  if (!/^#\/?arena$/.test(location.hash)) {
+    for (const filename of ['three.bundle.js', 'three.addons.js']) {
+      const preload = document.createElement('link');
+      preload.rel = 'preload';
+      preload.as = 'script';
+      preload.href = 'src/render/legacy/' + filename;
+      preload.fetchPriority = 'low';
+      document.head.append(preload);
+    }
+  }
+</script>
 </head>
 <body>
 
