@@ -83,6 +83,11 @@ async function dismissGuide(page) {
 }
 
 async function practice(page, cdp) {
+  const threeRequests = [];
+  const trackEngine = request => {
+    if (/\/three\.(?:bundle|addons)\.js$/.test(new URL(request.url()).pathname)) threeRequests.push(request.url());
+  };
+  page.on('request', trackEngine);
   await page.goto(new URL('#/arena', target).href, { waitUntil: 'domcontentloaded' });
   await dismissGuide(page);
   const shortcuts = await page.locator('.arena-casual').boundingBox();
@@ -111,6 +116,9 @@ async function practice(page, cdp) {
   const positions = await page.evaluate(() => window.renderedTargets);
   const height = positions[0][1];
   await nativeSwipe(cdp, box, .06, .94, height);
+  const delta = await page.locator(ui('delta')).textContent();
+  const total = Number(await page.locator(ui('score')).textContent());
+  assert.equal(delta, '+' + total, 'The score feedback should add all targets hit in the swipe');
   const live = await snapshot(page, '02-arena-native-triple-cut');
   assert.ok(Number(live.hits) >= 3, 'One native swipe should break the first three light targets');
   await page.locator('.arena-report').waitFor({ timeout: 15000 });
@@ -120,6 +128,8 @@ async function practice(page, cdp) {
   assert.match(report.report, /试刀结束/);
   assert.match(report.report, /一刀最多/);
   assert.match(report.report, /表现最佳/);
+  page.off('request', trackEngine);
+  assert.deepEqual(threeRequests, [], 'A cold arena visit and practice round should make no 3D engine requests');
   await page.getByRole('button', { name: '去锻第一把刀' }).click();
   await page.locator('#v19-forge[data-phase="ore"]').waitFor();
 }

@@ -7,7 +7,7 @@ import { goalText } from './courses.js';
 import { arenaBladeStats } from './stats.js';
 import { createTrial, warmTrialAudio } from './trial.js';
 import { targetThumbnail, warmTargets } from './targets.js';
-import { mountBladeThumbnail, disconnectBladeThumbnails } from '../collectionThumb.js';
+import { ensureThreeRuntime } from '../threeRuntime.js';
 import { countUp, sheet } from '../../ui/dom.js';
 import { icon } from '../../ui/icons.js';
 
@@ -30,6 +30,7 @@ export function mountTournament(root, { getSave, commit, settings, onLegacy, onF
   let solo, practice, lineup = [];
   let notice = '', confirming = false;
   let bout, engine, replay, picker;
+  let bladeThumbnails, bladeArtsVersion = 0;
 
   const state = () => tournamentState(getSave());
   const currentBlades = () => eligibleBlades(getSave());
@@ -231,7 +232,7 @@ export function mountTournament(root, { getSave, commit, settings, onLegacy, onF
     const blades = currentBlades();
     syncSelection(blades, preferred);
     root.dataset.screen = entry.mode === 'quick' ? 'lobby' : 'detail';
-    disconnectBladeThumbnails();
+    clearBladeArts();
     root.innerHTML = `${notice ? `<p class="arena-alert" role="status">${esc(notice)}</p>` : ''}
       ${entry.mode === 'quick' ? renderHome(data, blades) : renderDetail(data, blades)}`;
     mountBladeArts(blades);
@@ -304,15 +305,35 @@ export function mountTournament(root, { getSave, commit, settings, onLegacy, onF
       value => { entry.material = value; });
   }
 
-  /** 给刀卡补上真实刀模；未出图前保留底色占位，不会出现空白洞。 */
+  function clearBladeArts(release = false) {
+    bladeArtsVersion++;
+    if (release) bladeThumbnails?.releaseBladeThumbnailStage();
+    else bladeThumbnails?.disconnectBladeThumbnails();
+  }
+
   function mountBladeArts(blades, container = root) {
-    container.querySelectorAll('[data-thumb-blade]').forEach(host => {
+    const cards = [];
+    for (const host of container.querySelectorAll('[data-thumb-blade]')) {
       const blade = blades.find(item => bladeId(item) === host.dataset.thumbBlade);
-      if (!blade?.visual) {
-        host.dataset.state = 'fallback';
-        return;
+      if (blade?.visual) cards.push({ host, record: { v19Visual: blade.visual, bladeName: blade.name } });
+      else host.dataset.state = 'fallback';
+    }
+    if (!cards.length) return;
+
+    const version = bladeArtsVersion;
+    const load = bladeThumbnails ? Promise.resolve(bladeThumbnails) :
+      ensureThreeRuntime().then(() => import('../collectionThumb.js'));
+    void load.then(module => {
+      if (version !== bladeArtsVersion) return;
+      bladeThumbnails = module;
+      for (const { host, record } of cards) {
+        if (host.isConnected) module.mountBladeThumbnail(host, record);
       }
-      mountBladeThumbnail(host, { v19Visual: blade.visual, bladeName: blade.name });
+    }).catch(() => {
+      if (version !== bladeArtsVersion) return;
+      for (const { host } of cards) {
+        if (host.isConnected) host.dataset.state = 'fallback';
+      }
     });
   }
 
@@ -329,7 +350,7 @@ export function mountTournament(root, { getSave, commit, settings, onLegacy, onF
 
   function prepare(run) {
     closeBout();
-    disconnectBladeThumbnails();
+    clearBladeArts(true);
     const course = courseFor(run);
     const selected = run.roster[run.mode === 'apex' ? run.reports.length : 0];
     const blade = { ...selected, mastery: masteryOf(getSave(), selected) };
@@ -339,7 +360,7 @@ export function mountTournament(root, { getSave, commit, settings, onLegacy, onF
     root.innerHTML = `
       <section class="arena-match" aria-label="${esc(course.title)}">
         <header class="trial-hud">
-          <div><small>得分</small><b data-trial="score">0000</b><em data-trial="delta"></em></div>
+          <div><small>得分</small><b data-trial="score">0000</b><em data-trial="delta" aria-hidden="true"></em></div>
           <div><small${course.limit === 30 ? ' data-trial="phase"' : ''}>${course.limit === 30 ? '热身' : '剩余'}</small><b data-trial="time">${course.limit}″</b></div>
           <div><small>连斩</small><b data-trial="combo">—</b></div>
           ${button('pause', symbol('pause'), 'round-pause', 'aria-label="暂停" title="暂停"')}
@@ -428,6 +449,7 @@ export function mountTournament(root, { getSave, commit, settings, onLegacy, onF
   function renderReport(record, run) {
     if (!record) return;
     closeBout();
+    clearBladeArts(true);
     const { report, mode } = record;
     const casual = ['practice', 'quick', 'daily'].includes(mode);
     const active = state().active;
@@ -622,7 +644,11 @@ export function mountTournament(root, { getSave, commit, settings, onLegacy, onF
       showLobby();
       return true;
     },
-    leave() { picker?.close(); closeBout(); },
+    leave() {
+      picker?.close();
+      closeBout();
+      clearBladeArts(true);
+    },
     pause: () => engine?.pause(),
   };
 }

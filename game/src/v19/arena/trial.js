@@ -120,16 +120,11 @@ export function createTrial(frame, course, blade, { hud = frame, muted, volume, 
     }
   }
 
-  function showScore(points) {
+  function showSwipeScore(points) {
     write(ui.delta, '+' + points);
-    ui.delta.getAnimations().forEach(animation => animation.cancel());
-    ui.delta.animate([
-      { opacity: 0, transform: 'translateY(4px)' },
-      { opacity: 1, offset: .18, transform: 'translateY(0)' },
-      { opacity: 1, offset: .68 }, { opacity: 0 },
-    ], { duration: 490 });
+    ui.delta.classList.add('is-visible');
     clearTimeout(scoreTimer);
-    scoreTimer = setTimeout(() => write(ui.delta, ''), 490);
+    scoreTimer = setTimeout(() => ui.delta.classList.remove('is-visible'), 520);
   }
 
   function showVerdict(text, kind) {
@@ -432,7 +427,7 @@ export function createTrial(frame, course, blade, { hud = frame, muted, volume, 
       hitTarget(target, contact, dx, dy, speed, tempo, i);
     }
     updateHUD();
-    if (state.score > previous) showScore(state.score - previous);
+    if (state.score > previous) showSwipeScore(state.score - pointer.scoreAtStart);
   }
 
   function clearCombo() {
@@ -443,7 +438,7 @@ export function createTrial(frame, course, blade, { hud = frame, muted, volume, 
   function beginStroke(point, id) {
     Object.assign(state.pointer, {
       down: true, id, points: [point], anchor: point, x: point.x, y: point.y,
-      kills: 0, swung: false, deflected: false, lastContact: -Infinity, soundGroup: 0,
+      kills: 0, scoreAtStart: state.score, swung: false, deflected: false, lastContact: -Infinity, soundGroup: 0,
     });
     state.pointer.hitTargets.clear();
   }

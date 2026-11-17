@@ -50,7 +50,7 @@ function start() {
   globalThis.addEventListener('pointerdown', () => audio.unlock(), { once: true });
   Home.create();
   const forge = lazyPage(() => import('../ui/pages/v19Forge.js'));
-  const arena = lazyPage(() => load3DPage(() => import('../ui/pages/v19Arena.js')));
+  const arena = lazyPage(() => import('../ui/pages/v19Arena.js'));
   Shell.create(document.getElementById('topbar'), {
     onBack: () => router.currentKey() === 'arena' && arena.back(),
     beforeSettings() {
