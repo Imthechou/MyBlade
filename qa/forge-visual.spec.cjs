@@ -25,14 +25,18 @@ async function shot(page, label) {
   scenes.push({name:label,...state});
 }
 async function presentedStage(page, mode, after = 0) {
-  const result = await page.waitForFunction(async ({ mode, after }) => {
+  await page.locator('#v19-forge #stage canvas').waitFor({ state: 'visible', timeout: 14000 });
+  await page.evaluate(async () => {
     const host = document.querySelector('#v19-forge #stage');
-    if (!host?.querySelector('canvas') || host.dataset.loading === 'true') return false;
     const { attachForgeStage } = await import('/src/v19/sharedStage.js');
-    const stage = attachForgeStage(host);
+    window.testForgeStage = attachForgeStage(host);
+  });
+  const result = await page.waitForFunction(({ mode, after }) => {
+    const stage = window.testForgeStage;
+    const host = stage.canvas.parentElement;
+    if (host?.dataset.loading === 'true') return false;
     if (stage.mode !== mode || stage.shown !== stage.want || !stage.onScreen || !stage.content.visible ||
-        !stage.mesh?.visible || stage.lastRender < Math.max(stage.entered, after)) return false;
-    window.testForgeStage = stage;
+        !stage.mesh?.visible || !(stage.lastRender >= Math.max(stage.entered, after))) return false;
     return {
       mode, shown: stage.shown, bare: stage.active.uniforms.fBare?.value,
       stand: Boolean(stage.displayStand?.visible), fitting: stage.fit?.id ?? null,
