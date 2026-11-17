@@ -38,7 +38,7 @@ async function presentedStage(page, mode, after = 0) {
     if (stage.mode !== mode || stage.shown !== stage.want || !stage.onScreen || !stage.content.visible ||
         !stage.mesh?.visible || !(stage.lastRender >= Math.max(stage.entered, after))) return false;
     return {
-      mode, shown: stage.shown, bare: stage.active.uniforms.fBare?.value,
+      mode, shown: stage.shown, gripStyle: stage.active.uniforms.fGripStyle?.value,
       stand: Boolean(stage.displayStand?.visible), fitting: stage.fit?.id ?? null,
       drawCalls: stage.renderer.info.render.calls,
     };
@@ -129,7 +129,7 @@ async function run() {
    }, hit, { timeout: 8000 });
  }
  const forge = await presentedStage(page, 'forge');
- assert.equal(forge.bare, 1);
+ assert.equal(forge.gripStyle, 0, 'The complete knife should use its forged surface before fitting');
  assert.ok(forge.drawCalls > 1);
  await shot(page,'06_forge');
  await shot(page,'06b_forge_wait');
@@ -141,9 +141,11 @@ async function run() {
    stage.observeFrame = (_, __, mode, blow) => {
      if (mode !== 'forge' || !blow?.landed) return;
      const { local, mesh } = stage.lastImpact;
-     const head = stage.hammer.position.clone().add(stage.hammerContactOffset);
+     const head = stage.hammer.localToWorld(stage.hammerContactOffset.clone());
      const touch = mesh.localToWorld(local.clone());
-     window.forgeImpactFrame = { error: head.distanceTo(touch), sparks: stage.sparks.particles.length,
+     const face = new window.THREE.Vector3(-1, 0, 0).applyQuaternion(stage.hammer.quaternion);
+     window.forgeImpactFrame = { error: head.distanceTo(touch),
+       alignment: -face.dot(stage.lastImpact.normal), sparks: stage.sparks.particles.length,
        image: stage.canvas.toDataURL() };
      stage.observeFrame = null;
    };
@@ -151,23 +153,24 @@ async function run() {
  });
  await page.touchscreen.tap(point.x, point.y);
  const impact = await saveCanvasFrame(page, 'forgeImpactFrame', '07b_hammer_contact');
- assert.ok(impact.error < .045 && impact.sparks > 0, 'Hammer face and sparks should meet the tapped steel');
+ assert.ok(impact.error < .045 && impact.alignment > .99 && impact.sparks > 0,
+   'Hammer face and sparks should meet the tapped steel at the surface angle');
  await shot(page,'07_impact');
  const hammer=await page.locator('#hit-count').textContent();
  console.log('HAMMER_RESULT',hammer);
  if(Number.parseInt(hammer,10)<8)throw new Error('Hammer did not hit');
  await page.getByRole('button',{name:/收锤/}).click();
- assert.equal((await presentedStage(page, 'fit')).bare, 1);
+ assert.equal((await presentedStage(page, 'fit')).gripStyle, 0);
  await shot(page,'08_fit');
  const beforeFit = await page.evaluate(() => performance.now());
  await page.locator('[data-action="select-fit"]').first().click();
  const fitted = await presentedStage(page, 'fit', beforeFit);
- assert.equal(fitted.bare, 0);
+ assert.ok(fitted.gripStyle > 0, 'Fitting should replace the handle surface');
  assert.ok(fitted.fitting);
  await shot(page,'09_fit_selected');
  await page.getByRole('button',{name:/确认并鉴定/}).click();
  const appraisal = await presentedStage(page, 'appraise');
- assert.equal(appraisal.bare, 0);
+ assert.ok(appraisal.gripStyle > 0);
  assert.equal(appraisal.stand, true);
  await shot(page,'10_appraise');
  console.log('FORGE_PRESENTATION', JSON.stringify({ cast, forge, impact, fitted, appraisal }));

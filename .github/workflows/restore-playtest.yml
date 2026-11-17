@@ -60,6 +60,9 @@ jobs:
       - name: Five-phase forging regression
         if: always()
         run: timeout --signal=TERM --kill-after=10s 155s node qa/forge-visual.spec.cjs
+      - name: Touch every knife on both faces
+        if: always()
+        run: timeout --signal=TERM --kill-after=10s 155s node qa/forge-hit.spec.cjs
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -68,4 +71,5 @@ jobs:
             audit-playtest/
             audit/
             audit-arena/
+            audit-forge-hit/
           if-no-files-found: ignore
