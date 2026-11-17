@@ -87,15 +87,15 @@ export class ForgeSound {
     return buffer;
   }
 
-  play(kind = 'polish', pitch = 1, delay = 0) {
+  play(kind = 'polish', pitch = 1, delay = 0, strength = 1) {
     if (this.muted || !this.context || this.context.state !== 'running') return;
     const source = this.context.createBufferSource();
     const level = this.context.createGain();
     const variation = Math.floor(Math.random() * 4);
     source.buffer = this.sample(kind, variation);
     source.playbackRate.value = pitch;
-    level.gain.value = kind === 'swish' ? .095 : kind === 'heat' ? .16 : kind === 'tension' ? .20 :
-      kind === 'break' ? .55 : kind === 'appraise' ? .31 : .39;
+    level.gain.value = strength * (kind === 'swish' ? .095 : kind === 'heat' ? .16 : kind === 'tension' ? .20 :
+      kind === 'break' ? .55 : kind === 'appraise' ? .31 : .39);
     while (this.voices.length >= 5) {
       const earliest = this.voices.shift();
       try { earliest.stop(); } catch {}
@@ -113,9 +113,11 @@ export class ForgeSound {
 
   impact(event, purity) {
     const pitch = (event.zone === 'edge' ? 1.14 : event.zone === 'tip' ? 1.06 : .94) * (.95 + purity / 1000);
-    this.play(event.type, pitch);
+    const heavy = event.type === 'surge' || event.notable;
+    const contact = event.type === 'break' || event.type === 'scar' ? event.type : 'polish';
+    this.play(contact, heavy ? pitch * .88 : pitch, 0, heavy ? 1.16 : 1);
     this.thump(event.type);
-    if (event.type === 'surge' || event.notable && event.type !== 'scar') this.play('shift', 1.27, .054);
+    if (event.type !== 'break' && event.type !== 'scar' && heavy) this.play('polish', pitch * 1.34, .045, .28);
     // Haptics are owned by platform/haptics so the player's switch is respected.
   }
 

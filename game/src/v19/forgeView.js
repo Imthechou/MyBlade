@@ -573,9 +573,7 @@ export function mountForge(root, { onArena, onCollection }) {
     drawHeat();
   }
 
-  const FINISH_WORDS = { metal: '质', pattern: '纹', film: '膜', fx: '光' };
-  /* 没有升级到新档位时，用区域对应的产出字，保证每一锤都有可见回报。 */
-  const ZONE_WORDS = { belly: '纹', edge: '膜', tip: '光' };
+  const FINISH_WORDS = { metal: '钢色', pattern: '显纹', film: '成膜', fx: '生辉', model: '成型' };
   const ZONE_FOCUS = { belly: '强度', edge: '锋利', tip: '灵性' };
 
   /** 命中浮字：贴在锤点上方，只显示“这一锤真的留下了什么”。 */
@@ -583,8 +581,7 @@ export function mountForge(root, { onArena, onCollection }) {
     const layer = get('stage-float');
     if (!layer || !stage || motion.reduced()) return;
     const word = result.type === 'break' ? '断裂'
-      : result.type === 'scar' ? '刮痕'
-        : '+' + (FINISH_WORDS[result.change?.slot] || ZONE_WORDS[hit.zone] || '');
+      : result.type === 'scar' ? '崩口' : FINISH_WORDS[result.change?.slot];
     if (!word) return;
     const canvasRect = stage.canvas.getBoundingClientRect();
     const boxRect = stageBox.getBoundingClientRect();
@@ -796,6 +793,7 @@ export function mountForge(root, { onArena, onCollection }) {
       case 'pour-refine':
         if (!apply(({ run }) => pourRefining(run))) return;
         releaseHeat();
+        render();
         startHeat(false);
         sound.play('cast');
         return;
@@ -810,6 +808,7 @@ export function mountForge(root, { onArena, onCollection }) {
           run.fit = run.fit === id ? null : id;
           return true;
         })) return;
+        sound.play('shift', .74);
         break;
       case 'refresh':
         if (!apply(refreshFittings)) return;

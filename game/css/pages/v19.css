@@ -256,18 +256,24 @@
 #v19-forge .v19-stage[data-mode="forge"] {
   height: clamp(245px, 48dvh, 435px);
   background:
-    radial-gradient(ellipse 46% 32% at 22% 76%, rgba(255, 122, 44, .20), transparent 72%),
-    radial-gradient(ellipse 72% 62% at 50% 22%, rgba(0, 0, 0, .22), transparent 74%),
-    var(--showcase-surface);
+    radial-gradient(ellipse 36% 27% at 25% 78%, #b54f262c, transparent 78%),
+    radial-gradient(ellipse 58% 72% at 49% 30%, #5b78994a, transparent 78%),
+    linear-gradient(154deg, #17202d, #111722 65%, #191513);
   box-shadow: var(--shadow-2), inset 0 0 74px rgba(8, 10, 14, .46);
 }
 #v19-forge .v19-stage[data-mode="refine"] {
   box-shadow: var(--shadow-2), inset 0 0 74px rgba(28, 10, 4, .38);
 }
-#v19-forge .v19-stage.is-phase-in:not([data-mode="ore"]) .v19-canvas { animation: v19-phase-in .5s cubic-bezier(.2, .8, .3, 1) both; }
+#v19-forge .v19-stage[data-mode="appraise"] {
+  background:
+    radial-gradient(ellipse 47% 77% at 53% 34%, #7697b63d, transparent 78%),
+    radial-gradient(ellipse 50% 25% at 52% 88%, #141a28, transparent 85%),
+    linear-gradient(160deg, #182130, #10141e 74%);
+}
+#v19-forge .v19-stage.is-phase-in:not([data-mode="ore"]) .v19-canvas { animation: v19-phase-in .32s ease-out both; }
 @keyframes v19-phase-in {
-  from { filter: brightness(1.45) saturate(.55); transform: scale(1.015); }
-  to { filter: none; transform: none; }
+  from { opacity: .76; }
+  to { opacity: 1; }
 }
 #v19-forge .v19-stage[data-mode="broken"] {
   background: var(--stage-warm);
