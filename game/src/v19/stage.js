@@ -305,9 +305,14 @@ function makeWorkshop() {
   /* 锻炉：体块 + 炉口发光面 + 烟囱 */
   const furnace = new T.Group();
   furnace.add(new T.Mesh(new T.BoxGeometry(1.18, 1.16, .82), stone));
-  const mouth = new T.Mesh(new T.PlaneGeometry(.52, .44), new T.MeshBasicMaterial({ color: 0xff7f38, toneMapped: false }));
+  const mouth = new T.Mesh(new T.PlaneGeometry(.56, .46), new T.MeshBasicMaterial({ color: 0x241510 }));
   mouth.position.set(0, -.1, .42);
-  furnace.add(mouth);
+  const fire = new T.Mesh(new T.PlaneGeometry(.54, .42), new T.MeshBasicMaterial({
+    map: radialTexture('rgba(255,164,80,.96)', 'rgba(255,83,22,0)'),
+    transparent: true, depthWrite: false, toneMapped: false,
+  }));
+  fire.position.set(0, -.18, .425);
+  furnace.add(mouth, fire);
   const lintel = new T.Mesh(new T.BoxGeometry(1.28, .12, .9), iron);
   lintel.position.y = .62;
   furnace.add(lintel);
@@ -396,29 +401,40 @@ function makeAnvil() {
 
 function makeHammer() {
   const group = new T.Group();
-  const iron = new T.MeshStandardMaterial({ color: 0x555359, metalness: .82, roughness: .34 });
+  const iron = new T.MeshStandardMaterial({ color: 0x3c454d, metalness: .78, roughness: .42 });
   const ring = new T.MeshStandardMaterial({ color: 0x9d775c, metalness: .62, roughness: .39 });
   const wood = new T.MeshStandardMaterial({ color: 0x503026, roughness: .65 });
   const head = new T.Mesh(bevel([[-.26, -.10], [-.15, -.14], [.20, -.14], [.26, -.08], [.26, .075], [.20, .13], [-.20, .13], [-.26, .075]], .26, .023), iron);
+  const face = new T.Mesh(bevel([[-.306, -.076], [-.298, -.088], [-.253, -.088], [-.253, .072],
+    [-.298, .072], [-.306, .06]], .233, .008), new T.MeshStandardMaterial({
+    color: 0x929da6, metalness: .87, roughness: .29,
+  }));
   const shaft = new T.Mesh(new T.CylinderGeometry(.045, .055, .72, 8), wood);
   shaft.position.set(.043, .45, 0);
   const ferrule = new T.Mesh(new T.CylinderGeometry(.06, .06, .13, 8), ring);
   ferrule.position.set(.043, .18, 0);
   const pommel = new T.Mesh(new T.CylinderGeometry(.061, .057, .047, 8), ring);
   pommel.position.set(.043, .79, 0);
-  group.add(head, shaft, ferrule, pommel);
+  group.add(head, face, shaft, ferrule, pommel);
   return group;
 }
 
-function makeCrucible() {  const group = new T.Group();
+function makeCrucible() {
+  const group = new T.Group();
   const profile = [[.13,-.27],[.48,-.27],[.70,-.18],[.87,.06],[.87,.14],[.81,.16],[.75,.11],[.69,-.045],[.49,-.17],[.13,-.17]];
   const ceramic = new T.MeshStandardMaterial({ color: 0x3e312b, roughness: .72, metalness: .24, side: T.DoubleSide });
   group.add(new T.Mesh(new T.LatheGeometry(profile.map(([r,y]) => new T.Vector2(r,y)), 32), ceramic));
   const rim = new T.Mesh(new T.TorusGeometry(.81, .015, 6, 32), new T.MeshBasicMaterial({ color: 0xb86d40, toneMapped: false }));
   rim.rotation.x = Math.PI / 2;
   rim.position.y = .145;
-  group.add(rim);
-  return group;
+  const glow = new T.Sprite(new T.SpriteMaterial({
+    map: radialTexture('rgba(255,193,119,.72)', 'rgba(255,111,37,0)'),
+    opacity: 0, depthWrite: false, blending: T.AdditiveBlending, toneMapped: false,
+  }));
+  glow.position.set(0, .20, -.56);
+  glow.scale.set(2.28, 1.12, 1);
+  group.add(rim, glow);
+  return { group, rim, glow };
 }
 
 function makeSparks() {
@@ -426,28 +442,41 @@ function makeSparks() {
   const geometry = new T.BufferGeometry();
   const positions = new Float32Array(max * 3);
   const color = new Float32Array(max * 3);
+  const velocity = new Float32Array(max * 3);
   geometry.setAttribute('position', new T.BufferAttribute(positions, 3).setUsage(T.DynamicDrawUsage));
   geometry.setAttribute('color', new T.BufferAttribute(color, 3).setUsage(T.DynamicDrawUsage));
+  geometry.setAttribute('velocity', new T.BufferAttribute(velocity, 3).setUsage(T.DynamicDrawUsage));
   const material = new T.ShaderMaterial({
     vertexColors: true, transparent: true, depthWrite: false, blending: T.AdditiveBlending,
     uniforms: { pointScale: { value: Math.min(devicePixelRatio, 1.5) } },
-    vertexShader: `varying vec3 shade;
+    vertexShader: `attribute vec3 velocity;
+      varying vec3 shade;
+      varying vec2 axis;
+      varying float stretch;
       uniform float pointScale;
       void main() {
         shade = color;
+        vec2 direction = (mat3(modelViewMatrix) * velocity).xy;
+        float speed = length(direction);
+        axis = speed > .001 ? direction / speed : vec2(1.,0.);
+        stretch = clamp(speed*.58,0.,1.);
         gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.);
-        gl_PointSize = (2. + 3.4*clamp(max(max(color.r,color.g),color.b),0.,1.))*pointScale;
+        gl_PointSize = (2. + 2.2*clamp(max(max(color.r,color.g),color.b),0.,1.) + stretch*4.)*pointScale;
       }`,
     fragmentShader: `varying vec3 shade;
+      varying vec2 axis;
+      varying float stretch;
       void main() {
-        float f = 1.-smoothstep(.06,.49,length(gl_PointCoord-.5));
+        vec2 p = vec2(gl_PointCoord.x-.5,.5-gl_PointCoord.y);
+        vec2 streak = vec2(dot(p,axis),dot(p,vec2(-axis.y,axis.x))*(1.+stretch*3.3));
+        float f = 1.-smoothstep(.07,.49,length(streak));
         gl_FragColor = vec4(shade, f);
       }`,
   });
   const view = new T.Points(geometry, material);
   view.frustumCulled = false;
   view.visible = false;
-  return { max, view, geometry, positions, color, particles: [] };
+  return { max, view, geometry, positions, color, velocity, particles: [] };
 }
 
 export class ForgeStage {
@@ -487,7 +516,8 @@ export class ForgeStage {
     this.content = new T.Group();
     this.content.position.y = .13;
     this.scene.add(this.content);
-    this.hammerHome = new T.Vector3(1.17, .54, .56);
+    this.hammerHome = new T.Vector3(1.34, .57, .65);
+    this.hammerContactOffset = new T.Vector3(-.312, -.008, 0).applyEuler(new T.Euler(.10, -.27, -.16));
     this.dentLocal = new T.Vector3();
     this.dentAt = -9999;
     this.dentPower = 0;
@@ -540,10 +570,14 @@ export class ForgeStage {
       this.scene.environment = this.getStudioEnvironment();
     } else {
       new ResizeObserver(() => this.resize()).observe(canvas);
-      if (typeof IntersectionObserver === 'function') new IntersectionObserver(([entry]) => {
-        this.onScreen = entry.isIntersecting;
-        if (this.onScreen) this.invalidate(250);
-      }).observe(canvas);
+      if (typeof IntersectionObserver === 'function') {
+        this.visibilityObserver = new IntersectionObserver(entries => {
+          const entry = entries.at(-1);
+          if (!this.rendering || entry.target !== this.presentationHost) return;
+          this.onScreen = entry.isIntersecting;
+          if (this.onScreen) this.invalidate(250);
+        });
+      }
       document.addEventListener('visibilitychange', () => {
         if (!document.hidden && this.rendering) this.invalidate();
       });
@@ -552,7 +586,11 @@ export class ForgeStage {
   }
 
   setRendering(enabled) {
-    if (this.rendering === enabled) return;
+    const host = enabled ? this.canvas.parentElement : null;
+    if (this.rendering === enabled && this.presentationHost === host) return;
+    this.visibilityObserver?.takeRecords();
+    this.visibilityObserver?.disconnect();
+    this.presentationHost = host;
     this.rendering = enabled;
     cancelAnimationFrame(this.frameId);
     this.frameId = 0;
@@ -563,6 +601,7 @@ export class ForgeStage {
     }
     this.previousFrame = 0;
     this.onScreen = true;
+    if (host) this.visibilityObserver?.observe(host);
     this.resize();
     this.scheduleWarm();
     this.invalidate();
@@ -576,7 +615,7 @@ export class ForgeStage {
   prepareWorkshop(mode) {
     if (mode === 'refine' && !this.crucible) {
       this.crucible = makeCrucible();
-      this.scene.add(this.crucible);
+      this.scene.add(this.crucible.group);
     }
     if (mode !== 'forge' || this.workshop) return;
     this.anvil = makeAnvil();
@@ -593,11 +632,7 @@ export class ForgeStage {
   setGallery(enabled) {
     if (Boolean(this.gallery) === enabled) return;
     this.gallery = enabled;
-    if (enabled && !this.displayStand) {
-      this.galleryEnvironment = studio(this.renderer, true);
-      this.displayStand = makeDisplayStand();
-      this.scene.add(this.displayStand);
-    }
+    if (enabled) this.galleryEnvironment ??= studio(this.renderer, true);
     this.scene.environment = enabled ? this.galleryEnvironment.texture : this.studioEnvironment?.texture ?? null;
     if (this.displayStand) this.displayStand.visible = false;
     this.key.position.set(enabled ? -3.0 : -2.7, 3.1, enabled ? 3.9 : 4.8);
@@ -735,7 +770,7 @@ export class ForgeStage {
     if (!this.warmScenes.has(profile)) {
       const scene = new T.Scene();
       scene.environment = this.getStudioEnvironment();
-      for (const light of [this.ambient, this.key, this.rimLight, ...(profile === 'forge' ? [this.flash] : [])]) {
+      for (const light of [this.ambient, this.key, this.rimLight, this.flash]) {
         const copy = light.clone(); copy.visible = true; scene.add(copy);
       }
       this.warmScenes.set(profile, scene);
@@ -745,24 +780,16 @@ export class ForgeStage {
 
   warmDraw(scene, mesh) {
     const { renderer, camera } = this;
-    const viewport = renderer.getViewport(new T.Vector4());
-    const scissor = renderer.getScissor(new T.Vector4());
-    const scissorTest = renderer.getScissorTest();
+    const previous = renderer.getRenderTarget();
+    this.warmTarget ??= new T.WebGLRenderTarget(4, 4, { colorSpace: T.SRGBColorSpace });
     scene.add(mesh);
     try {
-      // A tiny draw also warms the driver pipeline and uploads geometry.
-      // Keep it in the clipped corner of the real framebuffer so the
-      // lighting, output space and multisampling match the anvil.
-      renderer.setViewport(0, 0, 4, 4);
-      renderer.setScissor(0, 0, 4, 4);
-      renderer.setScissorTest(true);
+      // Upload geometry without touching the live drawing buffer.
+      renderer.setRenderTarget(this.warmTarget);
       renderer.render(scene, camera);
     } finally {
       scene.remove(mesh);
-      renderer.setViewport(viewport);
-      renderer.setScissor(scissor);
-      renderer.setScissorTest(scissorTest);
-      this.invalidate(80);
+      renderer.setRenderTarget(previous);
     }
   }
 
@@ -834,6 +861,7 @@ export class ForgeStage {
     const ratio = this.renderer.getPixelRatio();
     if (this.canvas.width === Math.floor(width * ratio) && this.canvas.height === Math.floor(height * ratio) && this.aspect === width / height) return;
     this.renderer.setSize(width, height, false);
+    this.sparks.view.material.uniforms.pointScale.value = ratio;
     this.aspect = width / height;
     const vertical = this.verticalSpan = Math.max(2.0, 3.85 / this.aspect);
     this.camera.left = -vertical * this.aspect / 2;
@@ -869,11 +897,15 @@ export class ForgeStage {
     if (!this.gallery) this.scene.environment = this.getStudioEnvironment();
     if (this.mode === 'refine' || failedRefining) this.prepareWorkshop('refine');
     if (this.mode === 'forge' || this.mode === 'broken' && !failedRefining) this.prepareWorkshop('forge');
+    if (this.mode === 'appraise' && !this.displayStand) {
+      this.displayStand = makeDisplayStand();
+      this.scene.add(this.displayStand);
+    }
     // Zero-intensity lights still cost a PBR lighting loop. Keep only the
     // phase's lighting types, retaining the exact active light contributions.
     this.lampLight.visible = this.mode === 'ore';
     this.sweep.visible = ['reveal', 'fit', 'appraise'].includes(this.mode);
-    this.flash.visible = ['reveal', 'forge'].includes(this.mode) || this.mode === 'broken' && !failedRefining;
+    this.flash.visible = ['reveal', 'refine', 'forge'].includes(this.mode) || this.mode === 'broken' && !failedRefining;
     this.cutFill.visible = this.mode === 'reveal';
     if (this.mode !== 'refine') this.refiningRunning = false;
     this.scheduleWarm();
@@ -883,6 +915,11 @@ export class ForgeStage {
       this.resetView(false);
       if (this.mode !== 'broken') this.clearPieces();
       if (this.mode !== 'reveal') this.clearOrePieces();
+      if (this.mode !== 'forge' && this.mode !== 'broken') {
+        this.lastImpact = null;
+        this.bangedAt = undefined;
+        this.dentAt = -9999;
+      }
       this.inspection = 'natural';
       this.tappedAt = this.scrapedAt = undefined;
       this.previewSteel = false;
@@ -890,7 +927,7 @@ export class ForgeStage {
     const stone = this.mode === 'ore' || this.mode === 'reveal' || run.refining?.step === 'ore';
     if (run.refining?.step && run.refining.step !== this.refiningStep) {
       if (run.refining.step === 'molten') this.emit(new T.Vector3(0, -.20, .25), new T.Color('#ee814b'), 13, false, true);
-      if (run.refining.step === 'cast') this.emit(new T.Vector3(0, -.28, .35), new T.Color('#ffd18e'), 18, false);
+      if (run.refining.step === 'cast') this.castStartedAt = performance.now();
     }
     this.refiningStep = run.refining?.step;
     if (ore) {
@@ -939,7 +976,10 @@ export class ForgeStage {
       return null;
     }
     const id = this.want;
-    this.hidePresentation();
+    // A shape change can wait on a new model while the previous steel is still on the anvil.
+    if (!(this.mode === 'forge' && previous === 'forge' && this.active?.coords && this.content.visible)) {
+      this.hidePresentation();
+    }
     return this.load(id).then(() => {
       if (this.want !== id || request !== this.loadSequence || !this.rendering) return false;
       this.show(id);
@@ -972,10 +1012,15 @@ export class ForgeStage {
       this.mesh.position.set(0, 0, 0);
       this.mesh.scale.setScalar(isOreModel(id) ? 1.58 : id === 'molten' ? 1.45 : id === 'blank' ? 2.35 : 2.74);
       this.swapAt = performance.now();
+      if (id === 'blank' && this.refiningStep === 'cast') {
+        this.emit(new T.Vector3(0, -.45, .46), new T.Color('#ffc287'), this.reduceMotion ? 5 : 12, false);
+      }
     }
     this.content.visible = true;
     if (asset.coords && this.run) {
       setSurface(asset.uniforms, this.run.ore ? this.run : {...this.run,ore:this.inspectedOre}, this.fit);
+      asset.uniforms.fBare.value = Number(id !== 'blank' && !this.fit &&
+        ['forge', 'fit', 'broken'].includes(this.mode));
       if (this.fit && knifeDetails[id] && asset.hardware === undefined) {
         asset.hardware = makeFittingHardware(asset.mesh, asset.coords, knifeDetails[id].anchors);
         if (asset.hardware) asset.mesh.add(asset.hardware);
@@ -985,7 +1030,13 @@ export class ForgeStage {
         if (this.fit) asset.hardware.material.color.set(this.fit.accent);
       }
       if (this.lastImpact) {
-        asset.uniforms.fHit.value.copy(this.lastImpact.local);
+        const { local, mesh, mark } = this.lastImpact;
+        if (mesh !== this.mesh && mark) {
+          const section = asset.coords.crossSection(Math.max(asset.coords.bladeRoot + .04, mark.u), mark.v);
+          asset.uniforms.fHit.value.set(section.x, section.y, 0);
+        } else {
+          asset.uniforms.fHit.value.copy(local);
+        }
         if (performance.now() - this.bangedAt < 30) asset.uniforms.fPulse.value = Math.min(1.3, this.bangPower);
       }
     }
@@ -1146,12 +1197,12 @@ export class ForgeStage {
     return {
       tip: put(.93, .5),
       edge: put(.70, doubleEdge.has(this.shown) ? .86 : .10),
-      belly: put(.40, .46),
+      belly: put(lerp(coords.bladeRoot, .85, .48), .46),
     };
   }
 
   hit(clientX, clientY) {
-    if (!this.active?.coords || this.mode !== 'forge') return null;
+    if (!this.content.visible || !this.mesh?.visible || !this.active?.coords || this.mode !== 'forge') return null;
     const rect = this.canvas.getBoundingClientRect();
     this.raycaster.setFromCamera(new T.Vector2((clientX - rect.left) / rect.width * 2 - 1, 1 - (clientY - rect.top) / rect.height * 2), this.camera);
     const impact = this.raycaster.intersectObject(this.mesh, false)[0];
@@ -1183,13 +1234,13 @@ export class ForgeStage {
 
   swing(hit, event, onImpact, onReady) {
     const severe = event.type === 'break' || event.notable;
-    const stop = severe ? 88 : event.type === 'surge' ? 76 : event.type === 'scar' ? 66 : 54;
+    const stop = severe ? 65 : event.type === 'surge' ? 53 : 34;
     if (hit.mesh === this.mesh) hit.world.copy(this.mesh.localToWorld(hit.local.clone()));
-    // 锤头停在刀面右前方：中心点若压在刀身上，看起来会像“插进刀里”。
-    const reach = hit.world.clone().add(new T.Vector3(.18, .015, .12));
-    const lift = this.hammerHome.clone().add(new T.Vector3(-.12, .26, .03));
-    this.blow = { hit, onImpact, onReady, start: performance.now(), landed: false, contact: 190, stop,
-      end: severe ? 560 : event.type === 'surge' ? 520 : 468, reach, lift };
+    const reach = hit.world.clone().sub(this.hammerContactOffset);
+    const lift = this.hammerHome.clone().add(new T.Vector3(-.05, .24, -.02));
+    this.blow = { onImpact, onReady, start: performance.now(), landed: false,
+      contact: this.reduceMotion ? 76 : severe ? 162 : 138, stop,
+      recovery: this.reduceMotion ? 110 : severe ? 230 : 170, reach, lift };
     this.invalidate();
   }
 
@@ -1199,13 +1250,14 @@ export class ForgeStage {
     this.bangedAt = performance.now();
     this.dentAt = this.bangedAt;
     this.dentLocal.copy(hit.local);
-    this.dentPower = broken ? 1.7 : high ? 1.2 : .78;
+    this.dentPower = broken ? 1.52 : high ? 1.08 : .74;
     const uniforms = this.active?.uniforms;
     const slot = finishSlots.indexOf(event.change?.slot) + 1;
     const action = event.change?.action;
     const finish = [slot, action === 'upgrade' ? 2 : action === 'fade' ? 3 : 1,
       uniforms?.fCodes?.value.w ?? 0, uniforms?.fLevels?.value.w ?? 0];
-    this.lastImpact = { local: hit.local.clone(), zone: hit.zone, large: high || broken, wave: high || Boolean(event.change), finish };
+    this.lastImpact = { local: hit.local.clone(), mesh: hit.mesh, mark: event.mark, zone: hit.zone,
+      large: high || broken, wave: high || Boolean(event.change), finish };
     this.bangPower = broken ? 1.6 : high ? 1.2 : .72;
     this.flash.position.copy(hit.world).add(new T.Vector3(0, .025, .18));
     this.flash.intensity = this.bangPower * 3.7;
@@ -1213,9 +1265,9 @@ export class ForgeStage {
       this.active.uniforms.fHit.value.copy(hit.local);
       this.active.uniforms.fPulse.value = Math.min(1.3, this.bangPower);
     }
-    const color = new T.Color(broken ? '#ff634b' : event.type === 'scar' ? '#c37449' : high ? '#b6e9ff' : '#ffb465');
-    const count = broken ? 46 : high ? 38 : event.type === 'scar' ? 14 : 19;
-    this.emit(hit.world, color, this.reduceMotion ? Math.ceil(count / 2) : count, high || broken, event.type === 'scar');
+    const color = new T.Color(broken ? '#ec7640' : event.type === 'scar' ? '#a96b43' : high ? '#ffbe75' : '#ff9b51');
+    const count = broken ? 24 : high ? 18 : event.type === 'scar' ? 9 : 11;
+    this.emit(hit.world, color, this.reduceMotion ? Math.ceil(count / 2) : count, high || broken, event.type === 'scar', true);
     if (broken) this.split(hit.local);
   }
 
@@ -1227,16 +1279,18 @@ export class ForgeStage {
     if (this.inspectedOre?.grade === 2) this.emit(center, this.oreUniforms.oreTint.value.clone(), this.reduceMotion ? 3 : 8, false);
   }
 
-  emit(point, tint, count, long, grit = false) {
+  emit(point, tint, count, long, grit = false, impact = false) {
     const particles = this.sparks.particles;
+    const hot = new T.Color('#fff1cb');
     for (let i = 0; i < count; i++) {
-      const speed = (grit ? 1.18 : long ? 2.8 : 2.1) * (.30 + Math.random());
-      const angle = Math.random() * Math.PI * 1.6 + Math.PI * .06;
+      const speed = (grit ? 1.18 : long ? 2.9 : 2.25) * (.35 + Math.random());
+      const angle = impact ? 1.92 + (Math.random() - .5) * 2.25 : Math.random() * Math.PI * 1.6 + Math.PI * .06;
       particles.push({
         point: point.clone(),
-        speed: new T.Vector3(Math.cos(angle) * speed, Math.abs(Math.sin(angle)) * speed * .88, (Math.random() - .34) * speed),
-        tint: tint.clone().lerp(new T.Color('#fff1cb'), Math.random() * .64),
-        age: 0, life: (long ? .39 : .18) + Math.random() * .33,
+        speed: new T.Vector3(Math.cos(angle) * speed, Math.abs(Math.sin(angle)) * speed * .68, (Math.random() - .36) * speed),
+        tint: tint.clone().lerp(hot, Math.random() * (grit ? .26 : .66)),
+        streak: !grit && impact,
+        age: 0, life: (long ? .27 : .14) + Math.random() * .25,
       });
     }
     if (particles.length > this.sparks.max) particles.splice(0, particles.length - this.sparks.max);
@@ -1275,7 +1329,11 @@ export class ForgeStage {
     const life = clamp((now - this.splitAt - 47) / 550, 0, 1);
     const eased = 1 - (1 - life) ** 2;
     for (const { piece, plane, direction, x } of this.pieces) {
-      piece.position.set(direction * eased * .26, -.23 * life * life, direction * .09 * eased);
+      piece.scale.copy(this.mesh.scale);
+      piece.position.copy(this.mesh.position);
+      piece.position.x += direction * eased * .26;
+      piece.position.y -= .23 * life * life;
+      piece.position.z += direction * .09 * eased;
       piece.rotation.z = -direction * eased * .16;
       piece.updateWorldMatrix(true, false);
       plane.setFromNormalAndCoplanarPoint(
@@ -1286,7 +1344,7 @@ export class ForgeStage {
   }
 
   animateSparks(dt) {
-    const { geometry, particles, positions, color, view } = this.sparks;
+    const { geometry, particles, positions, color, velocity, view } = this.sparks;
     for (let i = particles.length - 1; i >= 0; i--) {
       const p = particles[i];
       p.age += dt;
@@ -1299,12 +1357,15 @@ export class ForgeStage {
       color[i * 3] = p.tint.r * fade;
       color[i * 3 + 1] = p.tint.g * fade;
       color[i * 3 + 2] = p.tint.b * fade;
+      if (p.streak) p.speed.toArray(velocity, i * 3);
+      else velocity.fill(0, i * 3, i * 3 + 3);
     });
     view.visible = particles.length > 0;
     geometry.setDrawRange(0, particles.length);
     if (view.visible) {
       geometry.attributes.position.needsUpdate = true;
       geometry.attributes.color.needsUpdate = true;
+      geometry.attributes.velocity.needsUpdate = true;
     }
   }
 
@@ -1318,11 +1379,15 @@ export class ForgeStage {
     const mode = this.mode;
     const gallery = this.gallery && mode === 'appraise';
     const elapsed = now - this.entered;
+    const display = mode === 'appraise';
     const inspect = ['fit', 'appraise'].includes(mode);
     const stone = isOreModel(this.shown);
     const melt = this.shown === 'molten';
     const failedRefining = mode === 'broken' && this.run?.last?.type === 'refine-fail';
-    const working = mode === 'forge' || mode === 'broken' || mode === 'refine';
+    const shop = (mode === 'forge' || mode === 'broken') && !failedRefining;
+    const working = shop || mode === 'refine';
+    const cast = mode === 'refine' && this.refiningStep === 'cast'
+      ? clamp((now - this.castStartedAt) / 1100, 0, 1) : null;
     const strikeAge = now - (this.bangedAt ?? -5000);
     const viewMoving = this.view.advance(delta, this.reduceMotion);
     const view = this.view.current;
@@ -1353,7 +1418,7 @@ export class ForgeStage {
     const compression = this.reduceMotion ? 0 : impulse * .035 * (1 - clamp(strikeAge / 105, 0, 1));
     const narrow = this.aspect < 1.3;
     const upright = Boolean(this.active?.coords);
-    const startTurn = !gallery && mode === 'appraise' && !this.reduceMotion ? .34 * (1 - clamp(elapsed / 1480, 0, 1)) ** 2 : 0;
+    const startTurn = !gallery && display && !this.reduceMotion ? .61 * (1 - clamp(elapsed / 1400, 0, 1)) ** 2 : 0;
     const stoneTurn = mode === 'reveal' ? 0 : .28;
     const tap = knocking && !this.reduceMotion ? Math.sin(tapAge * .08) * Math.exp(-tapAge / 85) * .025 : 0;
     if (upright) {
@@ -1362,9 +1427,10 @@ export class ForgeStage {
     } else {
       this.content.rotation.set(.18 + view.pitch + tap, stoneTurn + view.yaw, -.18 + shake, 'XYZ');
     }
-    const subjectY = mode === 'ore' ? .16 : stone || melt ? .04 : working ? .30 : gallery ? .27 : .21;
+    const subjectY = mode === 'ore' ? .16 : stone || melt ? .04 : working ? .27 : gallery ? .27 : .22;
     this.content.position.set(stone || melt || gallery ? 0 : -.03, subjectY - compression, .10);
-    if (this.displayStand) this.displayStand.visible = Boolean(gallery && upright && this.content.visible);
+    if (cast !== null && !this.reduceMotion) this.content.position.y += .18 * (1 - cast) ** 3;
+    if (this.displayStand) this.displayStand.visible = Boolean(display && upright && this.content.visible);
     if (melt) {
       this.meltUniforms.meltClock.value = this.reduceMotion || failedRefining ? 0 : t;
       const reveal = 1 - .20 * Math.exp(-(now - this.swapAt) / 155);
@@ -1374,24 +1440,38 @@ export class ForgeStage {
     this.oreUniforms.oreReveal.value = mode === 'reveal' ? clamp((elapsed - 130) / 590, 0, 1) : 0;
     this.oreUniforms.oreKnock.value = knocking ? 1 - tapAge / oreKnockTime : 0;
     this.oreUniforms.oreScrape.value = scraping ? Math.max(.001, scrapeAge / oreScrapeTime) : 0;
+    const vertical = this.verticalSpan ?? 3.85;
+    let anvilY = -.28 * vertical - .34;
     if (this.active?.uniforms.fClock) {
       const { min, max } = this.mesh.geometry.boundingBox;
-      const vertical = this.verticalSpan ?? 3.85;
-      const fullLength = vertical * (working ? .56 : gallery ? .78 : .74) / (max.x - min.x);
-      const scale = gallery ? Math.min(fullLength, vertical * this.aspect * .52 / (max.y - min.y)) : fullLength;
+      const { coords, uniforms } = this.active;
+      const bare = uniforms.fBare.value > .5;
+      const heel = bare ? lerp(min.x, max.x, coords.bladeRoot) : min.x;
+      const length = working ? bare ? .49 : .56 : gallery ? .78 : bare ? .62 : .74;
+      const fullLength = vertical * length / (max.x - heel);
+      const scale = bare || gallery ? Math.min(fullLength, vertical * this.aspect * .55 / (max.y - min.y)) : fullLength;
       this.mesh.scale.setScalar(scale);
-      this.mesh.position.y = gallery ? -this.active.coords.pommel.y * scale : 0;
+      this.mesh.position.set(
+        bare ? -(heel + max.x) * .5 * scale : 0,
+        display ? -coords.pommel.y * scale : 0,
+        0,
+      );
       if (gallery) {
-        this.displayStand.scale.setScalar(Math.min(1, (this.verticalSpan ?? 3.85) / 5.65));
-        const bottom = this.content.position.y + this.active.coords.pommel.x * fullLength;
-        this.content.position.y = bottom - this.active.coords.pommel.x * scale;
+        const bottom = this.content.position.y + coords.pommel.x * fullLength;
+        this.content.position.y = bottom - coords.pommel.x * scale;
+      }
+      if (display) {
+        const bottom = this.content.position.y + coords.pommel.x * scale;
+        this.displayStand.scale.setScalar(Math.min(gallery ? 1 : .86, vertical / 5.65));
         this.displayStand.position.set(this.content.position.x, bottom, this.content.position.z);
       }
-      const { uniforms } = this.active;
+      if (shop) anvilY = this.content.position.y + this.mesh.position.x + heel * scale - .57;
       uniforms.fClock.value = this.reduceMotion ? 0 : t;
-      uniforms.fHeat.value = mode === 'refine' ? this.heat : mode === 'forge' && this.shown === 'blank' ? .15 : 0;
+      uniforms.fHeat.value = cast !== null ? lerp(.93, .23, cast) :
+        mode === 'refine' ? this.heat : mode === 'forge' && this.shown === 'blank' ? .15 : 0;
       uniforms.fPulse.value = Math.min(1.3, impulse);
-      uniforms.fWave.value = this.lastImpact?.wave ? 1 - clamp(strikeAge / 270, 0, 1) : 0;
+      const waveTime = this.reduceMotion ? 110 : this.lastImpact?.large ? 490 : 400;
+      uniforms.fWave.value = this.lastImpact?.wave ? 1 - clamp(strikeAge / waveTime, 0, 1) : 0;
       if (uniforms.fWave.value > 0) uniforms.fFinishChange.value.fromArray(this.lastImpact.finish);
       if (uniforms.fDent) {
         const dentAge = now - this.dentAt;
@@ -1403,13 +1483,17 @@ export class ForgeStage {
         }
       }
     }
+    const heatGlow = mode === 'refine' ? clamp((this.heat - .35) / .55, 0, 1) : 0;
+    const castGlow = cast !== null ? (1 - cast) ** 2 : 0;
     if (this.crucible) {
-      this.crucible.visible = mode === 'refine' || failedRefining;
-      this.crucible.position.set(0, narrow ? -.83 : -.73, -.12);
+      const { group, rim, glow } = this.crucible;
+      group.visible = mode === 'refine' || failedRefining;
+      group.position.set(0, narrow ? -.83 : -.73, -.12);
+      if (group.visible) {
+        glow.material.opacity = .06 + .42 * heatGlow + .22 * castGlow;
+        rim.material.color.setRGB(.27 + .68 * heatGlow + .24 * castGlow, .10 + .29 * heatGlow, .047 + .07 * heatGlow);
+      }
     }
-    /* 工坊只在锻打/断裂出现：选矿、开石、精炼、鉴定都是“检视台”，保持干净背景。 */
-    const shop = (mode === 'forge' || mode === 'broken') && !failedRefining;
-    const anvilY = -.28 * (this.verticalSpan ?? 3.85) - .34;
     const floorY = anvilY - .13 - compression * .35;
     if (this.workshop) {
       this.anvil.visible = shop;
@@ -1418,26 +1502,30 @@ export class ForgeStage {
       this.hammer.visible = mode === 'forge' || Boolean(this.blow);
     }
     if (shop) {
-      this.anvil.position.set(.10, anvilY - compression * .35, -.42);
+      this.anvil.position.set(.10, anvilY - compression * .35, -.32);
       this.anvil.rotation.z = .03;
       this.ground.position.y = floorY;
       this.workshop.position.set(0, floorY, -.05);
       const flicker = this.reduceMotion ? 1 : .82 + Math.sin(t * 7.1) * .11 + Math.sin(t * 13.7) * .07;
-      this.ember.intensity = (mode === 'forge' ? 8.5 : 11) * flicker;
+      this.ember.intensity = (mode === 'forge' ? 6.4 : 8.1) * flicker;
       this.animateSmoke(dt, mode === 'forge');
     } else if (this.ember) {
       this.ember.intensity = 0;
     }
     const revealFlash = mode === 'reveal' && !this.reduceMotion ? Math.exp(-Math.pow((elapsed - 630) / 185, 2)) : 0;
-    this.cutFill.intensity = mode === 'reveal' ? 2.5 + revealFlash * .25 : 0;
+    this.cutFill.intensity = mode === 'reveal' ? 2.5 + revealFlash * .65 : 0;
     const lampCheck=mode==='ore' && this.inspection==='lamp';
     this.oreUniforms.oreLamp.value=lampCheck ? 1 : 0;
     this.scene.environmentIntensity=lampCheck ? .65 : gallery ? 1.27 : 1;
     this.ambient.intensity=lampCheck ? .77 : gallery ? 1.20 : .93;
-    this.rimLight.intensity=lampCheck ? .55 : gallery ? .38 : 1.1;
+    this.rimLight.intensity=lampCheck ? .55 : gallery ? .38 : shop ? 1.65 : 1.1;
     this.lampLight.intensity=lampCheck ? 14 : 0;
     this.flash.intensity = mode === 'reveal' ? revealFlash * 3.1 : impulse * (strikeAge < 33 ? 3.7 : 1.15);
     if (mode === 'reveal') this.flash.position.set(0, .1, .8);
+    if (mode === 'refine') {
+      this.flash.position.set(0, -.52, .58);
+      this.flash.intensity = .25 + heatGlow * heatGlow * 3.1 + castGlow * 1.4;
+    }
     const cameraShake = !this.reduceMotion && this.lastImpact?.large ? Math.sin(strikeAge / 19) * impulse * .035 : 0;
     // 每个工序一个机位：锻打压低看砧面，精炼略低看炉球，检视回到正面。
     const frameTarget = gallery ? CAMERA_FRAMES.gallery : failedRefining ? CAMERA_FRAMES.stage : (CAMERA_FRAMES[mode] || CAMERA_FRAMES.stage);
@@ -1465,8 +1553,10 @@ export class ForgeStage {
       this.camera.zoom = zoom;
       this.camera.updateProjectionMatrix();
     }
-    this.sweep.intensity = gallery ? 0 : mode === 'reveal' ? revealFlash * 2.1 : inspect ? (mode === 'appraise' ? .50 + .62 * Math.exp(-elapsed / 520) : .61) : 0;
-    this.sweep.position.x = mode === 'appraise' ? lerp(-2.8, 2.6, clamp(elapsed / 1500, 0, 1)) : .8;
+    const sweep = display && !this.reduceMotion ? clamp(elapsed / 1350, 0, 1) : 1;
+    this.sweep.intensity = gallery ? 0 : mode === 'reveal' ? revealFlash * 2.1 :
+      inspect ? .56 + Math.sin(sweep * Math.PI) * .92 : 0;
+    this.sweep.position.x = display ? lerp(-2.8, 2.6, sweep * sweep * (3 - 2 * sweep)) : .8;
     this.key.color.set(gallery ? 0xfffcf7 : stone && mode !== 'refine' ? 0xe8efff : inspect ? 0xffead8 : 0xffcfad);
     this.key.intensity = gallery ? 1.03 : mode === 'ore' ? (lampCheck ? 1.45 : 2.65) : mode === 'refine' ? 2.25 : mode === 'appraise' ? 2.65 : mode === 'reveal' ? 2.45 + revealFlash * .65 : 2.9;
     const blow = this.blow;
@@ -1474,9 +1564,9 @@ export class ForgeStage {
     if (blow) {
       const age = now - blow.start;
       const reach = blow.reach;
-      if (age < blow.contact) {
+      if (!blow.landed && age < blow.contact) {
         const p = age / blow.contact;
-        const wind = .28;
+        const wind = .33;
         if (p < wind) {
           // 先抬高蓄力，再落下：没有这一下，快速点击会像“闪烁”。
           const q = p / wind;
@@ -1487,21 +1577,25 @@ export class ForgeStage {
           this.hammer.position.lerpVectors(blow.lift, reach, q * q * (2.15 - 1.15 * q));
           this.hammer.rotation.set(.10, -.27, lerp(-.88, -.16, q));
         }
-        if (p > .66 && !this.reduceMotion) {
+        if (p > .65 && !this.reduceMotion) {
           const line = this.trail.geometry.attributes.position;
           const head = this.hammer.position;
           line.setXYZ(0, head.x - .08, head.y + .005, head.z);
           line.setXYZ(1, head.x + (this.hammerHome.x - head.x) * .18, head.y + .19, head.z);
           line.needsUpdate = true;
-          this.trail.material.opacity = (p - .66) * 1.6;
+          this.trail.material.opacity = (p - .65) * 1.1;
           this.trail.visible = true;
         }
       } else {
-        if (!blow.landed) { blow.landed = true; blow.onImpact(); }
-        const p = clamp((age - blow.contact - blow.stop) / (blow.end - blow.contact - blow.stop), 0, 1);
+        if (!blow.landed) {
+          blow.landed = true;
+          blow.landedAt = now;
+          blow.onImpact();
+        }
+        const p = clamp((now - blow.landedAt - blow.stop) / blow.recovery, 0, 1);
         this.hammer.position.lerpVectors(reach, this.hammerHome, 1 - (1 - p) ** 2.3);
         this.hammer.rotation.set(.10, -.27, lerp(-.16, -.68, p));
-        if (age >= blow.end) { this.blow = null; blow.onReady(); }
+        if (p === 1) { this.blow = null; blow.onReady(); }
       }
     } else if (this.hammer?.visible) {
       this.hammer.position.copy(this.hammerHome);

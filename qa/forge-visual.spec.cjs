@@ -24,6 +24,28 @@ async function shot(page, label) {
   console.log('SHOT_END_'+label);
   scenes.push({name:label,...state});
 }
+async function presentedStage(page, mode, after = 0) {
+  const result = await page.waitForFunction(async ({ mode, after }) => {
+    const host = document.querySelector('#v19-forge #stage');
+    if (!host?.querySelector('canvas') || host.dataset.loading === 'true') return false;
+    const { attachForgeStage } = await import('/src/v19/sharedStage.js');
+    const stage = attachForgeStage(host);
+    if (stage.mode !== mode || stage.shown !== stage.want || !stage.onScreen || !stage.content.visible ||
+        !stage.mesh?.visible || stage.lastRender < Math.max(stage.entered, after)) return false;
+    return {
+      mode, shown: stage.shown, bare: stage.active.uniforms.fBare?.value,
+      stand: Boolean(stage.displayStand?.visible), fitting: stage.fit?.id ?? null,
+      drawCalls: stage.renderer.info.render.calls,
+    };
+  }, { mode, after }, { timeout: 14000 });
+  return result.jsonValue();
+}
+async function saveCanvasFrame(page, variable, name) {
+  const handle = await page.waitForFunction(key => window[key], variable, { timeout: 10000 });
+  const { image, ...data } = await handle.jsonValue();
+  fs.writeFileSync(output + '/' + name + '.png', Buffer.from(image.slice(image.indexOf(',') + 1), 'base64'));
+  return data;
+}
 async function run() {
  const browser=await chromium.launch({headless:true,args:['--disable-dev-shm-usage','--use-gl=angle','--use-angle=swiftshader','--enable-webgl']});
  const context=await browser.newContext({viewport:{width:390,height:844},deviceScaleFactor:1,isMobile:true,hasTouch:true});
@@ -37,6 +59,10 @@ async function run() {
  await page.waitForTimeout(650); // first-run tutorial appears asynchronously
  const intro=page.getByRole('button',{name:/知道了，开始第一把刀/}).first();
  if(await intro.count()&&await intro.isVisible()) await intro.click();
+ await page.evaluate(async () => {
+   const { openFurnace } = await import('/src/core/v19Progress.js');
+   return openFurnace({ seed: 20261152 }).ok;
+ });
  await page.getByRole('button',{name:/开始锻刀/}).click();
  await shot(page,'01_ore');
  await page.getByRole('button',{name:'打灯'}).click();
@@ -62,18 +88,41 @@ async function run() {
  await coldGuide.waitFor({state:'visible',timeout:4500});
  assert.match(await coldGuide.textContent(),/按住鼓风/);
  await page.getByRole('button',{name:'返回首页'}).click();
- // This changes only disposable CI test storage, not the player's real saved game.
+ // Start the browser-driven pour from a reproducible, qualified furnace.
+ const heated = await page.evaluate(async () => {
+   const { forgeSession, commitFurnace } = await import('/src/core/v19Progress.js');
+   return commitFurnace(forgeSession().run, ({ run }) => {
+     if (run.phase !== 'refine') return false;
+     Object.assign(run.refining, { step: 'molten', temperature: 73, elapsed: 7, active: 7, stable: 7,
+       quality: 75, damage: 4, draft: 0 });
+     return true;
+   }).ok;
+ });
+ assert.ok(heated);
+ await page.getByRole('button',{name:'继续锻刀'}).click();
+ await presentedStage(page, 'refine');
+ await page.evaluate(async () => {
+   const { attachForgeStage } = await import('/src/v19/sharedStage.js');
+   const stage = attachForgeStage(document.querySelector('#stage'));
+   stage.observeFrame = () => {
+     const heat = stage.active?.uniforms.fHeat?.value;
+     if (stage.refiningStep !== 'cast' || stage.shown !== 'blank' || !(heat > .50)) return;
+     window.forgeCastFrame = { heat, image: stage.canvas.toDataURL() };
+     stage.observeFrame = null;
+   };
+ });
+ await page.getByRole('button',{name:'浇注',exact:true}).click();
+ const cast = await saveCanvasFrame(page, 'forgeCastFrame', '05b_pour_hot_billet');
+ assert.ok(cast.heat > .5, 'Manual pour should visibly produce a hot billet before forging');
+ await presentedStage(page, 'forge');
+ await page.getByRole('button',{name:'返回首页'}).click();
+ // Seed seven blows in test storage, then perform the next strike by touch.
  const result=await page.evaluate(async()=>{
    const {forgeSession,commitFurnace}=await import('/src/core/v19Progress.js');
    const {strike}=await import('/src/v19/forge.js');
    const current=forgeSession().run;
    return commitFurnace(current,({run})=>{
-     if(run.phase!=='refine') return false;
-     run.purity=Math.min(98,(run.ore?.purity||68)+17);
-     run.stability=91;
-     run.refinement={result:'good',quality:75,damage:4,stable:8,purity:run.purity,stability:91,bonus:3};
-     run.refining=null;
-     run.phase='forge';
+     if(run.phase!=='forge') return false;
      for(let n=0;n<7;n++){
        const z=['belly','edge','tip'][n%3];
        strike(run,z,{u:.35+n*.065,v:z==='edge'?.13:.46});
@@ -85,45 +134,49 @@ async function run() {
  console.log('SEEDED_STAGE_FOR_VISUAL_REVIEW',JSON.stringify(result).slice(0,800));
  if(!result?.ok) throw new Error('Could not prepare visual forge fixture: '+JSON.stringify(result));
  await page.getByRole('button',{name:/继续锻刀|开始锻刀/}).click();
- await page.waitForTimeout(1750);
+ const forge = await presentedStage(page, 'forge');
+ assert.equal(forge.bare, 1);
+ assert.ok(forge.drawCalls > 1);
  await shot(page,'06_forge');
- const inspectStage=async(name)=>{
-   const data=await page.evaluate(async()=>{
-     const {attachForgeStage}=await import('/src/v19/sharedStage.js');
-     const stage=attachForgeStage(document.querySelector('#v19-forge #stage'));
-     return {
-       mode:stage.mode, want:stage.want, shown:stage.shown,
-       cache:Array.from(stage.cache.keys()),pending:Array.from(stage.pending.keys()),
-       rendering:stage.rendering,onScreen:stage.onScreen,lastRender:stage.lastRender,
-       meshVisible:stage.mesh?.visible, meshScale:stage.mesh?.scale.toArray(),
-       sceneChildren:stage.scene?.children?.length,
-       rendererInfo:stage.renderer?.info?.render,
-       shaderInfo:stage.active?.mesh?.material?.userData,
-       geometryVertices:stage.mesh?.geometry?.attributes?.position?.count,
-       resources:performance.getEntriesByType('resource').filter(r=>r.name.includes('knife_')).map(r=>({name:r.name,size:r.transferSize,duration:r.duration}))
-     }
-   });
-   console.log('INSPECT_STAGE_'+name,JSON.stringify(data).slice(0,3000))
- };
- await inspectStage('FIRST_FORGE');
- await page.waitForTimeout(2400);
- await inspectStage('AFTER_WAIT');
  await shot(page,'06b_forge_wait');
- const scene=page.locator('#v19-forge #scene');
- await scene.focus();
- await page.keyboard.press('Space');
- await page.waitForTimeout(550);
+ const point = await page.evaluate(async () => {
+   const { attachForgeStage } = await import('/src/v19/sharedStage.js');
+   const stage = attachForgeStage(document.querySelector('#stage'));
+   const target = stage.zoneAnchors().belly;
+   const rect = stage.canvas.getBoundingClientRect();
+   stage.observeFrame = (_, __, mode, blow) => {
+     if (mode !== 'forge' || !blow?.landed) return;
+     const { local, mesh } = stage.lastImpact;
+     const head = stage.hammer.position.clone().add(stage.hammerContactOffset);
+     const touch = mesh.localToWorld(local.clone());
+     window.forgeImpactFrame = { error: head.distanceTo(touch), sparks: stage.sparks.particles.length,
+       image: stage.canvas.toDataURL() };
+     stage.observeFrame = null;
+   };
+   return { x: target.x + rect.left, y: target.y + rect.top };
+ });
+ await page.touchscreen.tap(point.x, point.y);
+ const impact = await saveCanvasFrame(page, 'forgeImpactFrame', '07b_hammer_contact');
+ assert.ok(impact.error < .045 && impact.sparks > 0, 'Hammer face and sparks should meet the tapped steel');
  await shot(page,'07_impact');
  const hammer=await page.locator('#hit-count').textContent();
  console.log('HAMMER_RESULT',hammer);
  if(Number.parseInt(hammer,10)<8)throw new Error('Hammer did not hit');
  await page.getByRole('button',{name:/收锤/}).click();
+ assert.equal((await presentedStage(page, 'fit')).bare, 1);
  await shot(page,'08_fit');
+ const beforeFit = await page.evaluate(() => performance.now());
  await page.locator('[data-action="select-fit"]').first().click();
+ const fitted = await presentedStage(page, 'fit', beforeFit);
+ assert.equal(fitted.bare, 0);
+ assert.ok(fitted.fitting);
  await shot(page,'09_fit_selected');
  await page.getByRole('button',{name:/确认并鉴定/}).click();
+ const appraisal = await presentedStage(page, 'appraise');
+ assert.equal(appraisal.bare, 0);
+ assert.equal(appraisal.stand, true);
  await shot(page,'10_appraise');
- await inspectStage('APPRAISAL');
+ console.log('FORGE_PRESENTATION', JSON.stringify({ cast, forge, impact, fitted, appraisal }));
  const stats=await page.locator('.stat-list .stat').count();
  console.log('STAT_COUNT',stats);
  if(stats!==6)throw new Error('Missing final six attributes');

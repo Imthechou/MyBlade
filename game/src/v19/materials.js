@@ -17,6 +17,7 @@ export function surfaceUniforms() {
     fFilmLayout: { value: new T.Vector4(.5, 0, 1, .5) },
     fFxLayout: { value: new T.Vector4(.5, 0, 1, .5) },
     fBladeRoot: { value: 0 },
+    fBare: { value: 0 },
     fFinishChange: { value: new T.Vector4() },
     fGrind: { value: new T.Vector3() },
     fClock: { value: 0 },
@@ -109,7 +110,7 @@ if (fDent.w != 0.) {
 
 const fragmentHead = `
 uniform vec4 fCodes, fLevels, fFinishChange, fDent;
-uniform float fClock, fSeed, fHeat, fPurity, fRefine, fWear, fPulse, fWave, fGripStyle, fRaw, fOreTrace, fOreStyle, fOreFamily, fOreSeed, fOreClarity;
+uniform float fClock, fSeed, fHeat, fPurity, fRefine, fWear, fPulse, fWave, fGripStyle, fRaw, fBare, fOreTrace, fOreStyle, fOreFamily, fOreSeed, fOreClarity;
 uniform sampler2D fMarks;
 uniform vec3 fGrip, fGuard, fHit, fOreTone, fGrind;
 varying vec4 vForge;
@@ -290,6 +291,7 @@ vec3 gripFinish(vec2 uv, vec3 base, vec3 atlas, out float rough, out float metal
 `;
 
 const body = `
+if (fBare > .5 && vForge.z > .50) discard;
 vec2 fp = vec2(vForgePos.x, vForgePos.y + abs(vForgePos.z)*.26);
 vec2 st = vForge.xy;
 float grip = step(.5,fGripStyle)*smoothstep(.15,.88,vForge.z);
@@ -305,12 +307,13 @@ vec3 mark = texture2D(fMarks,st).rgb;
 float brush = sin(fp.y*1950. + sin(fp.x*21.)*1.5) * (1.-smoothstep(.2,2.8,fwidth(fp.y*1950.)));
 float forgeRough = .32;
 float forgeMetal = .92;
-float track = 0., spread = 1.;
+float track = 0., waveFront = 0.;
 vec4 ranks = fLevels, visibility = vec4(1.);
 int fxStyle = int(fCodes.w);
 if (fWave > 0.) {
   track = length((vForgePos.xy-fHit.xy)*vec2(1.,1.7));
-  spread = smoothstep(track-.105,track+.12,(1.-fWave)*1.34);
+  waveFront = (1.-fWave)*1.42;
+  float spread = smoothstep(track-.07,track+.15,waveFront);
   int slot = int(fFinishChange.x)-1;
   if (slot >= 0) {
     if (fFinishChange.y == 2.) ranks[slot] -= 1.-spread;
@@ -379,7 +382,8 @@ forgeRough += grind.x*.077 - grind.y*.039 + wear*.025;
 #endif
 steel = mix(steel,vec3(.64,.68,.71)*(1.-.22*grazing),edge*(.22+.14*fRefine));
 forgeRough = mix(forgeRough, .14+forgeRough*.36, edge*.54);
-float pulse = fPulse * exp(-abs(vForgePos.x-fHit.x)*9. - abs(vForgePos.y-fHit.y)*20.);
+vec2 fromContact = vForgePos.xy - fHit.xy;
+float pulse = fPulse * exp(-length(fromContact*vec2(12.,26.)));
 vec3 aura = mineralAccent(vec3(.28,.67,.86),.27);
 vec3 forgeGlow = special.rgb * (1.-.26*max(relief.y,relief.x*.48));
 float grain = forgeBand(st.y*31. + st.x*(3.+mark.g*7.) + coarse*.3,.11);
@@ -388,10 +392,15 @@ forgeRough -= mark.r*.108;
 float crack = forgeBand(st.x*48. + st.y*3.7 + coarse*.44,.065) * mark.b;
 steel *= 1.-crack*.73;
 forgeRough += mark.b*.22;
-vec3 tapHeat = vec3(1.,.24,.047);
-forgeGlow += (pulse*.52+fHeat*fHeat*mix(.08,.52,coarse))*tapHeat;
-float shock = max(0.,fWave);
-if (shock > 0.) forgeGlow += aura * exp(-abs(track-(1.-shock)*1.02)*31.) * shock * .25;
+vec3 tapHeat = vec3(1.,.16,.031);
+float hotCore = pulse*pulse;
+forgeGlow += mix(tapHeat,vec3(1.,.60,.25),clamp(hotCore,0.,1.))*pulse*.72;
+forgeGlow += fHeat*fHeat*mix(.12,.63,coarse)*tapHeat;
+if (fWave > 0.) {
+  float front = exp(-abs(track-waveFront)*24.);
+  vec3 reflection = fFinishChange.x < 1.5 ? vec3(.91,.54,.24) : mix(aura,vec3(.53,.73,.89),.52);
+  forgeGlow += reflection * front * fWave * (.32 + .18*grazing);
+}
 if (fRaw > .5) {
   steel *= .68 + coarse*.50;
   forgeRough += .125 * (1.-fHeat);
@@ -430,7 +439,7 @@ export function makeBladeMaterial(original, uniforms, raw) {
   });
   material.userData.forge = uniforms;
   if (!raw) material.defines = { ...material.defines, BLADE_DECORATION: 1 };
-  material.customProgramCacheKey = () => raw ? 'blade-lab-billet-17' : 'blade-lab-looks-17';
+  material.customProgramCacheKey = () => raw ? 'blade-lab-billet-18' : 'blade-lab-looks-18';
   material.onBeforeCompile = shader => {
     Object.assign(shader.uniforms, uniforms);
     shader.vertexShader = vertexHead + shader.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\n' + vertexBody);
