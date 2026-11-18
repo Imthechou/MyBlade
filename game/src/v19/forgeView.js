@@ -30,6 +30,7 @@ export function mountForge(root, { onArena, onCollection }) {
   root.innerHTML = forgeMarkup;
   const get = id => root.querySelector('#' + id);
   const stageBox = get('stage');
+  const workspace = stageBox.parentElement;
   const actions = get('actions');
   const tray = get('tray');
   const oreOptions = get('ore-options');
@@ -345,7 +346,7 @@ export function mountForge(root, { onArena, onCollection }) {
     viewReset.hidden = !stage || !['ore', 'reveal', 'forge', 'fit', 'appraise'].includes(phase);
     renderGripFocus();
     renderTray(run, fit);
-    if (changedPhase) root.closest('.page').scrollTop = 0;
+    if (changedPhase) workspace.scrollTop = 0;
   }
 
 
@@ -968,7 +969,7 @@ export function mountForge(root, { onArena, onCollection }) {
         const result = openFurnace({ restart: true });
         if (!result.ok) return showStorageNotice(result.error);
         save = forgeSession();
-        root.closest('.page').scrollTop = 0;
+        workspace.scrollTop = 0;
         say('新一炉', 'surge');
         break;
       }

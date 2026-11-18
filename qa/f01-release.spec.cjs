@@ -33,6 +33,7 @@ async function hammer(page, zones) {
 }
 
 async function oreLayout(page, free = false) {
+  await page.locator('#stage[data-loading="false"] #scene').waitFor();
   const layout = await page.evaluate(() => {
     const tools = document.querySelector('#ore-tools .inspection-tools').getBoundingClientRect();
     const dock = document.querySelector('#actions').getBoundingClientRect();
@@ -104,7 +105,6 @@ async function firstLoop(browser, width, height, full) {
     assert.match(await action(page, 'buy').textContent(), /免费开石/);
     assert.equal(await action(page, 'select-ore').count(), 2);
     await oreLayout(page, true);
-    await page.locator('#stage[data-loading="false"] #scene').waitFor();
     await shot(page, `ore-${width}`);
     let state = await forge(page, `first-blade-${width}`, ['belly', 'belly', 'edge', 'edge', 'edge', 'edge']);
     assert.equal(state.cr, 38);
@@ -142,8 +142,14 @@ async function firstLoop(browser, width, height, full) {
     assert.equal(await orderButton.getAttribute('aria-pressed'), 'false');
     assert.match(await page.locator('.furnace-cost').innerText(), /成刀净额 −8 CR/);
     if (!full) {
-      await page.locator('#stage[data-loading="false"] #scene').waitFor();
       await shot(page, `optional-order-${width}`);
+      const advanced = page.locator('.furnace-settings summary');
+      const blueprint = page.getByLabel('图样', { exact: true });
+      await advanced.click();
+      await blueprint.scrollIntoViewIfNeeded();
+      const control = await blueprint.boundingBox();
+      const dock = await page.locator('#actions').boundingBox();
+      assert.ok(control.y + control.height <= dock.y, 'Advanced controls can scroll into view above the dock');
       console.log(`PASS ${width}px · ore layout, first trial, second furnace with optional order`);
       return;
     }

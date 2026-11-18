@@ -183,8 +183,12 @@
 .blade-detail-hero:has([data-preview="blade"]) { background: var(--showcase-base); }
 
 /* Workshop */
-#v19-forge { display: flex; flex-direction: column; gap: 9px; min-height: 100%; }
-#v19-forge .workspace { display: flex; flex: 1 0 auto; flex-direction: column; gap: 10px; }
+#v19-forge { display: flex; flex: 1 1 0; flex-direction: column; gap: 9px; min-height: 0; }
+#v19-forge .workspace {
+  display: flex; flex: 1 1 0; flex-direction: column; gap: 10px; min-height: 0;
+  overflow: hidden auto; overscroll-behavior: contain;
+}
+#v19-forge .workspace > :not(.v19-stage) { flex: 0 0 auto; }
 #v19-forge .forge-progress {
   min-width: 110px;
   padding: 6px 9px 7px;
@@ -832,14 +836,11 @@
 #v19-forge .fail-review > div[data-tone="danger"] i::before { background: #f28576; }
 
 #v19-forge .forge-dock {
-  position: sticky;
-  z-index: 5;
-  bottom: var(--safe-b);
   display: grid;
+  flex: 0 0 auto;
   grid-template-columns: minmax(0, 1fr);
   gap: 7px;
-  margin-top: auto;
-  padding: 6px 0 3px;
+  padding: 6px 0 calc(3px + var(--safe-b));
   background: linear-gradient(0deg, var(--base-0) 75%, transparent);
 }
 #v19-forge .forge-dock:has(.secondary:not([hidden])) { grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr); }
@@ -864,6 +865,7 @@
 
 @media (max-height: 650px) {
   #v19-forge .v19-stage { height: clamp(172px, 34dvh, 225px); }
+  #v19-forge .v19-stage[data-mode="ore"] { height: clamp(132px, 23dvh, 157px); }
   #v19-forge .v19-stage[data-mode="refine"] { height: clamp(150px, 31dvh, 208px); }
   #v19-forge .v19-stage[data-mode="forge"] { height: clamp(190px, 39dvh, 255px); }
   #v19-forge .ore-card { grid-template-rows: 28px auto; }
