@@ -4,7 +4,7 @@ let page;
 
 export function render() {
   if (!page) page = mountForge(document.getElementById('v19-forge'), {
-    onArena: bladeId => import('./v19Arena.js').then(arena => arena.openTournament({ bladeId })),
+    onArena: (bladeId, mode) => import('./v19Arena.js').then(arena => arena.openTournament({ bladeId, mode })),
     onCollection: () => import('./workshop.js').then(workshop => workshop.openTab('collection')),
   });
   page.enter();

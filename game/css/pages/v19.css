@@ -1295,3 +1295,41 @@
 @media (prefers-reduced-motion: reduce) {
   #v19-arena .trial-ready.is-on, .sheet-mask:has(.arena-picker) .sheet { animation: none; transition: none; }
 }
+
+#v19-forge .thermo-range::before { width: var(--heat-band-width, 7%); }
+#v19-forge .ore-card-label {
+  display: grid; gap: 2px; min-width: 0; line-height: 1.3; color: var(--face);
+  font: 650 11px var(--font);
+}
+#v19-forge .ore-card-label small { color: var(--face-2); font-size: 10px; font-weight: 550; }
+#v19-forge .furnace-config:not([hidden]), #v19-forge .furnace-abandon:not([hidden]) {
+  display: grid; gap: 6px;
+}
+#v19-forge .furnace-plan { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+#v19-forge .furnace-config p, #v19-forge .furnace-abandon p { margin: 0; color: var(--face-2); font-size: 12px; }
+#v19-forge .furnace-plan select, #v19-forge .furnace-config button, #v19-forge .furnace-abandon button {
+  min-height: 44px; padding: 6px 10px; border-radius: 10px; border: 1px solid var(--glass-border);
+  background: var(--control-face); color: var(--face); font: inherit;
+}
+#v19-forge .furnace-config [aria-pressed="true"] { border-color: var(--accent-line); background: var(--accent-soft); }
+#v19-forge .furnace-order { display: grid; gap: 2px; text-align: left; }
+#v19-forge .furnace-order span { color: var(--face-2); font-size: 12px; }
+#v19-forge .v19-zones { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+#v19-forge .v19-zones button { min-height: 44px; }
+#v19-forge .furnace-abandon { justify-items: start; margin-block: 4px; }
+#v19-forge [data-action="next-batch"][hidden] { display: none; }
+
+#v19-arena .arena-special { display: grid; gap: 6px; }
+#v19-arena .arena-special b { font-size: 13px; }
+#v19-arena .arena-special small { color: var(--face-2); }
+#v19-arena .trial-warmup {
+  display: flex; align-items: center; gap: 6px; min-height: 54px; padding: 0 12px;
+  touch-action: none; border-radius: 9px; border: 1px solid var(--accent-line);
+  color: var(--accent); background: var(--accent-soft); cursor: grab;
+}
+#v19-arena .trial-warmup i { flex: 1; border-top: 2px dashed currentColor; pointer-events: none; }
+#v19-arena .trial-warmup span { font-size: 22px; pointer-events: none; }
+#v19-arena .comparison-report { padding: 10px; }
+#v19-arena .comparison-report h3 { margin: 0; font-size: 14px; }
+#v19-arena .comparison-report article { display: grid; gap: 3px; }
+#v19-arena .comparison-report p { margin: 0; font-size: 12px; color: var(--face-2); }

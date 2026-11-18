@@ -9,12 +9,14 @@
  */
 
 import { CR_START, CR_REWARD, rerollCost } from '../data/balance.js';
+import { noteLegacyCredit } from './wallet.js';
 
 export const startCr = () => CR_START;
 
-export function addCr(state, amount, reason = '') {
+export function addCr(state, amount, reason = '', context) {
   const v = Math.max(0, Math.round(Number(amount) || 0));
   state.cr = Math.max(0, (Number(state.cr) || 0) + v);
+  noteLegacyCredit(state, v, reason, context);
   return { cr: state.cr, delta: v, reason };
 }
 

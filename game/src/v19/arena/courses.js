@@ -94,12 +94,34 @@ export function schoolCourse(school, grade) {
   };
 }
 
-export function arcadeCourse() {
+export function arcadeCourse(special) {
+  const waves = ARCADE.slice();
+  if (special === 'precision') {
+    waves[2] = mark('gel', 'ice');
+    waves[6] = mark('gel', 'ice', 'gel');
+    waves[11] = mark('ice', 'gel');
+  }
   return {
-    waves: ARCADE.map((item, i) => ({
+    waves: waves.map((item, i) => ({
       ...item, at: SLOTS[i], speed: i < 4 ? 0 : i < 8 ? .13 : .21,
     })),
     armorScale: 1, wearScale: .60, goals: [], rotate: true,
+  };
+}
+
+const fixed = (item, at, fixedPositions) => ({ ...item, at, speed: 0, fixedPositions });
+
+export function fixedCourse(compare = false) {
+  const ropes = fixed(row('rope', 'rope', 'rope'), 0, [[.23, .52], [.50, .52], [.77, .52]]);
+  const wood = compare ? fixed(anvil('wood'), 4, [[.50, .54]]) :
+    fixed(mix('wood', 'card'), 4, [[.25, .54], [.66, .54]]);
+  const corners = fixed(diagonal('card', 'gel', 'card'), 8, [[.22, .45], [.50, .53], [.78, .60]]);
+  return {
+    waves: [ropes, wood, corners], limit: 12, seed: 'F01-fixed-1',
+    title: compare ? '同靶对照' : '首刀试斩',
+    focus: compare ? '同一靶序，用两把刀各试一轮' : '斩断三靶。试试一划扫过整排绳束',
+    armorScale: 1, wearScale: compare ? 0 : .52,
+    goals: compare ? [] : [{ id: 'cut', label: '首刀合格', target: 3, unit: ' 靶' }],
   };
 }
 

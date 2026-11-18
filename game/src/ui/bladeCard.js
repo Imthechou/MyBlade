@@ -20,12 +20,14 @@
 import { el } from './dom.js';
 import { rarityBadge, statRail } from './components.js';
 import { STAT_KEYS, STAT_META } from '../data/balance.js';
+import { RARITY_CN } from '../data/cards.js';
 import { KNIFE_BY_ID, KNIFE_BY_MODEL } from '../data/knifeTypes.js';
 import { getTrait } from '../data/traits.js';
 import { COMBOS } from '../data/combos.js';
 import { resultView as edgeResultView } from '../core/edge.js';
 import { tagName } from '../data/tags.js';
 import { signaturePerk, STAT_CAP } from '../v19/forge.js';
+import { SERIES, seriesLabel } from '../v19/launchRules.js';
 
 /**
  * 把记录里的 `knifeType` 归一成**真实模型 id**。
@@ -128,6 +130,8 @@ export function bladeCardModel(blade, { kind = 'collection' } = {}) {
     rarityName: src.rarityName || null,
     rarityTone: RARITY_TONE[src.rarity] || 'common',
     qualityName: src.qualityName || null,
+    seriesSlot: SERIES.some(item => item.id === src.seriesSlot) ? src.seriesSlot : null,
+    firstTrialStamp: src.firstTrialStamp === true,
 
     /* 卡面核心信息 */
     coreTraits: perk ? [perk] : coreTraits,
@@ -172,87 +176,35 @@ export function bladeCardModel(blade, { kind = 'collection' } = {}) {
   };
 }
 
-/**
- * 卡面副标题：避免与刀名重复。
- * 刀名 = 前缀 + 刀型名（如「淬火弯刀」），所以只有当刀名**不包含**刀型名时
- * 才把刀型单独写出来；品质总是保留。
- */
-function sublineOf(model) {
-  const parts = [];
-  const name = String(model.name || '');
-  const typeName = String(model.knifeTypeName || '');
-  if (typeName && !name.includes(typeName)) parts.push(typeName);
-  if (model.qualityName) parts.push(`品质 ${model.qualityName}`);
-  return parts.join(' · ') || (model.fractured ? '已断裂' : '成刀');
-}
-
-/**
- * 竖版收藏卡（卡面）。
- *
- * @param {object} model bladeCardModel() 结果
- * @param {object} [opts]
- * @param {HTMLElement} [opts.art] 刀具主视觉容器（由调用方挂载 3D/缩略图）
- * @param {Function} [opts.onOpen] 点击打开详情
- * @param {string} [opts.actionLabel] 右上角动作文案（如“派刀”）
- * @param {Function} [opts.onAction]
- * @param {boolean} [opts.compact] 紧凑模式（列表用）
- */
-export function bladeCard(model, {
-  art = null, onOpen = null, actionLabel = null, onAction = null, compact = false,
-} = {}) {
-  const tag = onOpen ? 'button' : 'div';
-  const props = {
-    class: `blade-card-v2 rarity--${model.rarityTone}` + (compact ? ' is-compact' : '')
-      + (model.fractured ? ' is-fractured' : ''),
-  };
-  if (onOpen) {
-    props.type = 'button';
-    props.onclick = onOpen;
-    props['aria-label'] = `${model.name}，${model.rarityName || model.rarity}，评分 ${model.score}${model.fractured ? '，已断裂' : ''}`;
-  }
-
-  const artNode = el('div', { class: 'bcv-art', 'aria-hidden': 'true' });
-  if (art) artNode.appendChild(art);
-
-  const honorChip = model.honors.some((h) => h.champion)
-    ? el('span', { class: 'bcv-honor', text: '冠军' })
-    : model.arenaWins > 0 ? el('span', { class: 'bcv-honor', text: `${model.arenaWins} 胜` }) : null;
-
-  const face = el(tag, onOpen ? {...props, class:'bcv-open'} : props, [
+/** 卡面保留作品身份；评分和工艺细节统一在卡背。 */
+export function bladeCard(model, { art = null, onOpen = null } = {}) {
+  const artNode = el('div', { class: 'bcv-art', 'aria-hidden': 'true' }, art ? [art] : []);
+  const honor = model.honors.some((item) => item.champion)
+    ? '冠军' : model.firstTrialStamp ? '首刀三斩' : model.arenaWins > 0 ? `${model.arenaWins} 胜` : null;
+  const extra = model.fractured ? '已断裂' : model.coreTraits[0]?.name;
+  const subtitle = extra || (!String(model.name).includes(model.knifeTypeName) ? model.knifeTypeName : null);
+  const face = el(onOpen ? 'button' : 'div', {
+    class: `bcv-face rarity--${model.rarityTone}${onOpen ? ' bcv-open' : ''}${model.fractured ? ' is-fractured' : ''}`,
+    ...(onOpen ? {
+      type: 'button',
+      onclick: onOpen,
+      'aria-label': `${model.name}，${model.rarityName || RARITY_CN[model.rarityTone]}，评分 ${model.score}${model.fractured ? '，已断裂' : ''}`,
+    } : {}),
+  }, [
+    el('span', { class: 'bcv-foil', 'aria-hidden': 'true' }),
     el('div', { class: 'bcv-top' }, [
-      rarityBadge(model.rarity, model.rarityName),
-      honorChip,
-      actionLabel ? el('span', {
-        class: 'bcv-action',
-        onclick: (e) => { if (onAction) { e.stopPropagation(); onAction(); } },
-        text: actionLabel,
-      }) : null,
+      rarityBadge(model.rarityTone, model.rarityName),
+      honor && el('span', { class: 'bcv-honor', text: honor }),
     ].filter(Boolean)),
     artNode,
     el('div', { class: 'bcv-body' }, [
       el('div', { class: 'bcv-name', text: model.name }),
-      /* ★ 修复：刀名默认就是「刀型名」（例如都叫「马来剑」），
-         再写一次 `${knifeTypeName} · ${quality}` 就会在卡面重复同名。
-         只有刀名里没有刀型词时才补刀型，避免「马来剑 / 马来剑 · B」。 */
-      el('div', { class: 'bcv-sub', text: sublineOf(model) }),
-      compact || (model.v19 && !model.coreTraits.length) ? null : el('div', { class: 'bcv-traits' }, model.coreTraits.length
-        ? model.coreTraits.map((t) => el('span', { class: 'bcv-trait', text: t.name }))
-        : [el('span', { class: 'bcv-trait is-empty', text: '无核心特性' })]),
-    ]),
-    el('div', { class: 'bcv-score' }, [
-      el('b', { text: model.fractured ? '断' : String(model.score) }),
-      el('small', { text: model.fractured ? '已断裂' : '评分' }),
-    ]),
-    /* 六维条：卡面只给极简色条，精确值放卡背（T13.2：不把完整六维塞正面） */
-    compact ? null : el('div', { class: 'bcv-rail', 'aria-hidden': 'true' },
-      STAT_LABELS.map(([key]) => el('i', {
-        /* 单维是 100 分制，旧版按 300 归一后 50~70 分的刀只剩 3px 条，六维在卡面上等于空白。 */
-        style: { height: `${Math.max(8, Math.min(100, model.stats[key]))}%` },
-        title: `${STAT_META[key]?.name || key} ${model.stats[key]}`,
-      }))),
-  ].filter(Boolean));
-  // The comparison control is a sibling of the real open button, never a button nested inside another button.
-  return onOpen ? el('article', {class:props.class}, [face]) : face;
+      (model.seriesSlot || subtitle) && el('div', { class: 'bcv-sub',
+        text: [model.seriesSlot ? seriesLabel(model.seriesSlot) : null, subtitle].filter(Boolean).join(' · ') }),
+    ].filter(Boolean)),
+  ]);
+  // “加入比较”由藏刀阁加到外层，与打开卡片的按钮并列。
+  return onOpen ? el('article', { class: 'blade-card-v2' }, [face]) : face;
 }
 
 /**

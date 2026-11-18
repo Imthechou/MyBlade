@@ -1,3 +1,4 @@
+import { BLUEPRINTS, MATERIAL_TIERS, RELEASE_RULES, commissionFor, hitCounts } from './launchRules.js';
 import { workshopPerks } from './workshop.js';
 
 export const MIN_PRICE = 14;
@@ -42,7 +43,7 @@ export const GRADES = ['普通', '良质', '稀质'];
 export const ORE_TIERS = ['工坊料', '精选料', '珍藏料'];
 export const RARE_ODDS = [5, 12, 22];
 export const rareOdds = (run, tier) => RARE_ODDS[tier] + workshopPerks(run.workshopLevel).rareBonus;
-export const fittingPrice = run => run.freeFitting ? 0 :
+export const fittingPrice = run => run.freeFitting ? 0 : run.rules === RELEASE_RULES ? 6 :
   Math.floor(REFRESH_PRICE * (1 - workshopPerks(run.workshopLevel).discount));
 
 // Independent low-poly shapes: one base plus three subtle, authored silhouette variants.
@@ -194,8 +195,10 @@ export const refinementRank = quality => quality >= HEAT.excellent ? 'excellent'
 
 export function heatBand(heat) {
   const t = heat.active || 0, drift = heat.drift || 0;
+  if (heat.assistedBand) return { center: 72, lower: 64, upper: 80 };
   const center = (HEAT.lower + HEAT.upper) / 2 + Math.sin(drift + t * .62) * 2.8 + Math.sin(drift * .71 + t * 1.43) * 1.2;
-  return { center, lower: center - 3.5, upper: center + 3.5 };
+  const half = heat.releaseBand ? 5.5 : 3.5;
+  return { center, lower: center - half, upper: center + half };
 }
 const slotWeights = {
   belly: [30, 48, 16, 6],
@@ -241,13 +244,19 @@ export function offers(run) {
   const order = rngFor(run.seed, 'batch', run.batch);
   const priceShift = Math.floor(order() * LOT_SIZE);
   const familyShift = Math.floor(order() * FAMILIES.length);
-  return Array.from({ length: LOT_SIZE }, (_, index) => {
+  const release = run.rules === RELEASE_RULES;
+  const free = release && (run.furnaceKind === 'first' || run.furnaceKind === 'recovery');
+  const compare = release && run.compareCommission && run.batch === 0;
+  return Array.from({ length: free ? 2 : LOT_SIZE }, (_, index) => {
     const id = run.batch * LOT_SIZE + index;
-    const tier = (index + priceShift) % LOT_SIZE;
+    const tier = free || (compare && index === 0) ? 0 : compare ? index : (index + priceShift) % LOT_SIZE;
     const roll = rngFor(run.seed, 'tray-v2', id);
-    const family = FAMILIES[(familyShift + index) % FAMILIES.length];
+    const family = free ? familyOf(['river', 'coal'][index]) : compare && index === 0 ? familyOf('coal') :
+      FAMILIES[(index + (release ? Math.floor(rngFor(run.seed, 'F01-families')() * FAMILIES.length) +
+        run.batch * LOT_SIZE : familyShift)) % FAMILIES.length];
     const [low, high, ordinary, good] = priceBands[tier];
-    const price = tier === 0 ? MIN_PRICE : low + Math.floor(roll() * (high - low + 1));
+    const oldPrice = tier === 0 ? MIN_PRICE : low + Math.floor(roll() * (high - low + 1));
+    const price = free ? 0 : release ? MATERIAL_TIERS[tier].price : oldPrice;
     const quality = roll();
     const grade = quality < ordinary ? 0 : quality < good - workshopPerks(run.workshopLevel).rareBonus / 100 ? 1 : 2;
     const [lo, hi] = purityBands[grade];
@@ -307,6 +316,10 @@ export function buyOre(save) {
   if (!ore || save.credits < ore.price) return false;
   save.credits -= ore.price;
   run.ore = ore;
+  if (run.rules === RELEASE_RULES) {
+    run.commission = run.commissionSelected && !['first', 'recovery'].includes(run.furnaceKind)
+      ? commissionFor(ore) : null;
+  }
   // Identical decisions on two distinct stones no longer produce identical grain.
   run.skin.seed = rngFor(run.seed, 'ore-grain', ore.id, ore.family, ore.material, ore.variant, ore.figure)();
   run.phase = 'reveal';
@@ -317,11 +330,20 @@ export function beginRefining(run) {
   if (run.phase !== 'reveal') return false;
   run.phase = 'refine';
   run.refining = freshHeat(run.ore);
+  if (run.rules === RELEASE_RULES) {
+    run.refining.releaseBand = true;
+    run.refining.assistedBand = run.furnaceKind === 'first' || run.furnaceKind === 'recovery';
+  }
   return true;
 }
 
 function failRefining(run, reason) {
   const heat = run.refining;
+  if (run.rules === RELEASE_RULES && run.furnaceKind !== 'challenge') {
+    Object.assign(heat, { temperature: 72, step: 'cast', result: 'poor', quality: HEAT.minQuality,
+      elapsed: 0, assisted: true });
+    return;
+  }
   run.refinement = { result: 'failed', quality: Math.floor(heat.quality), damage: Math.round(heat.damage), reason,
     stable: heat.stable, purity: 0, stability: 0 };
   run.last = { type: 'refine-fail', label: REFINEMENT_FAILURES[reason] };
@@ -337,9 +359,16 @@ function castRefining(run) {
   heat.elapsed = 0;
 }
 
+export function canPour(run) {
+  const heat = run.refining;
+  if (run.phase !== 'refine' || heat?.step !== 'molten') return false;
+  const minimum = heat.assistedBand ? 2 : HEAT.minimum;
+  const duration = run.rules === RELEASE_RULES ? heat.stable : heat.elapsed;
+  return duration >= minimum - 1e-7 && heat.quality >= HEAT.minQuality;
+}
+
 export function pourRefining(run) {
-  if (run.phase !== 'refine' || run.refining?.step !== 'molten' || run.refining.elapsed < HEAT.minimum ||
-      run.refining.quality < HEAT.minQuality) return false;
+  if (!canPour(run)) return false;
   castRefining(run);
   return true;
 }
@@ -353,7 +382,7 @@ function heatTick(run, seconds, blowing) {
       run.purity = clamp(run.ore.purity + outcome.purity, 0, 100);
       run.stability = clamp(run.ore.stability + outcome.stability, 0, 100);
       run.refinement = { result: heat.result, quality: Math.floor(heat.quality), damage: Math.round(heat.damage),
-        stable: heat.stable, purity: run.purity, stability: run.stability, bonus: outcome.bonus };
+        stable: heat.stable, purity: run.purity, stability: run.stability, bonus: outcome.bonus, assisted: Boolean(heat.assisted) };
       run.refining = null;
       run.phase = 'forge';
     }
@@ -396,7 +425,33 @@ export function advanceHeat(run, seconds, blowing) {
   }
 }
 
+const bounded = run => run.rules === RELEASE_RULES && run.furnaceKind !== 'challenge';
+export const hammerLimit = run => bounded(run) ? (run.furnaceKind === 'first' ? 6 : 10) : Infinity;
+
+export function nextFatigue(run) {
+  if (!bounded(run) || run.hits < 6 || run.hits >= hammerLimit(run)) return run.fatigue || 0;
+  const modifier = run.stability >= 70 ? 0 : run.stability >= 50 ? 5 : 10;
+  return (run.fatigue || 0) + Math.max(8, [18, 22, 25, 30][run.hits - 6] + modifier -
+    (run.refinement?.quality >= HEAT.good ? 4 : 0));
+}
+
+export function bufferFatigue(run) {
+  if (run.phase !== 'forge' || run.buffered || nextFatigue(run) < 100 || run.hits >= hammerLimit(run)) return false;
+  run.fatigue = Math.max(0, (run.fatigue || 0) - 22);
+  run.buffered = true;
+  return true;
+}
+
+export function canStrike(run) {
+  return run.phase === 'forge' && run.hits < hammerLimit(run) && nextFatigue(run) < 100;
+}
+
 export function fractureRisk(run) {
+  if (bounded(run)) {
+    const fatigue = nextFatigue(run);
+    if (run.hits >= hammerLimit(run) || fatigue >= 100) return 0;
+    return fatigue <= 45 ? 0 : fatigue <= 70 ? .05 : fatigue <= 90 ? .12 : .25;
+  }
   const next = run.hits + 1;
   if (next <= 6) return 0;
   const workshop = workshopPerks(run.workshopLevel).riskReduction;
@@ -497,12 +552,17 @@ function workSurface(run, type, position) {
 }
 
 export function strike(run, zone, position = { u: .67, v: zone === 'edge' ? .12 : .48 }) {
-  if (run.phase !== 'forge' || !Object.hasOwn(slotWeights, zone)) return null;
+  if (!canStrike(run) || !Object.hasOwn(slotWeights, zone)) return null;
   const risk = fractureRisk(run);
+  if (bounded(run)) run.fatigue = nextFatigue(run);
   run.riskPeak = Math.max(run.riskPeak || 0, risk);
   const hit = ++run.hits;
   const roll = rngFor(run.seed, 'work', hit);
   if (rngFor(run.seed, 'fracture', hit)() < risk) {
+    if (bounded(run)) {
+      run.phase = 'fit';
+      return run.last = { type: 'scar', hit, zone, risk, label: '崩纹 · 本锤未增益', mark: position, notable: true };
+    }
     run.phase = 'broken';
     return run.last = { type: 'break', hit, zone, risk, label: '刀身断裂', mark: position };
   }
@@ -523,7 +583,7 @@ export function strike(run, zone, position = { u: .67, v: zone === 'edge' ? .12 
   if (hit === 2 || hit === 4 || hit === 6) {
     type = 'shift';
     if (hit === 4) {
-      run.model = modelCandidates(run).normal;
+      run.model = run.rules === RELEASE_RULES && Object.hasOwn(BLUEPRINTS, run.blueprint) ? run.blueprint : modelCandidates(run).normal;
       change = { slot: 'model', label: MODELS[run.model] + '成型', action: 'form', tier: 1 };
     } else if (hit === 2 || run.skin.pattern === 'none') {
       change = mutate(run, hit === 2 ? 'metal' : 'pattern', type, roll, true);
@@ -539,7 +599,7 @@ export function strike(run, zone, position = { u: .67, v: zone === 'edge' ? .12 
       }
       change = { slot: 'fx', label: '特效退档', action: 'fade', tier: run.skin.levels.fx };
     }
-  } else if (!change && type === 'surge' && hit >= 12 && !run.changedShape && rngFor(run.seed, 'shape-trigger', hit)() < .14) {
+  } else if (!change && type === 'surge' && hit >= 12 && !(run.rules === RELEASE_RULES && Object.hasOwn(BLUEPRINTS, run.blueprint)) && !run.changedShape && rngFor(run.seed, 'shape-trigger', hit)() < .14) {
     run.model = pick(modelCandidates(run).rare, rngFor(run.seed, 'shape-pick', hit));
     run.changedShape = true;
     change = { slot: 'model', label: '异形 · ' + MODELS[run.model], action: 'form', tier: 3 };
@@ -547,6 +607,7 @@ export function strike(run, zone, position = { u: .67, v: zone === 'edge' ? .12 
     change = mutate(run, chooseSlot(run, zone, type, roll), type, roll);
   }
   if (run.specialist?.id === 'edge' && zone === 'edge' && type !== 'scar') run.edgeHits = (run.edgeHits || 0) + 1;
+  if (run.rules === RELEASE_RULES && type !== 'scar') (run.hitZones ??= []).push(zone);
   const mark = workSurface(run, type, position);
   const work = { scar: -.6, polish: .8, shift: 1.35, surge: 2.4 }[type];
   run.work += work;
@@ -568,12 +629,36 @@ export function finishForge(run) {
   return true;
 }
 
+const RELEASE_HANDLE = { 轻巧: [0, -2, 4, 2, 0, 0], 沉稳: [6, 4, -2, 0, 0, 0], 衬纹: [-2, 0, 0, 2, 6, 2] };
+const RELEASE_ORE = {
+  river: [0, 8, 2, 0, 0, 0], frost: [-2, 0, 13, 1, 3, 0],
+  coal: [20, 3, -3, 0, 0, 0], meteor: [11, -2, 0, 0, 0, 10], ochre: [0, 0, -2, 0, 15, 2],
+};
+const RELEASE_HAMMER = { belly: [2, 1, 0, 0, 0, 0], edge: [0, 0, 2, 1, 0, 0], tip: [0, 0, 0, 0, 2, 1] };
+
+function releaseAppraisal(run, fit) {
+  const counts = hitCounts({ hitZones: (run.hitZones || []).slice(0, 6) });
+  const extra = (run.hitZones || []).slice(6);
+  const quality = run.refinement?.quality || 0;
+  const refinement = quality >= 86 ? [0, 5, 2, 8, 0, 0] : quality >= 65 ? [0, 3, 0, 5, 0, 0] :
+    quality >= 40 ? [0, 1, 0, 2, 0, 0] : [0, -3, 0, -3, 0, 0];
+  return RELEASE_HANDLE[fit.role].map((value, i) => {
+    const first = Object.entries(counts).reduce((total, [zone, count]) =>
+      total + RELEASE_HAMMER[zone][i] * Math.min(4, count), 0);
+    const later = Math.min(4, extra.filter(zone => RELEASE_HAMMER[zone]?.[i] === 2).length);
+    return clamp(64 + (RELEASE_ORE[run.ore.family] || RELEASE_ORE.river)[i] +
+      value + refinement[i] + first + later, 20, STAT_CAP);
+  });
+}
+
 export function fitOptions(run) {
   if (!run.legacyFittings) {
-    return ['轻巧', '沉稳', '衬纹'].map(role => {
+    const roles = run.rules === RELEASE_RULES && run.furnaceKind === 'first' ? ['轻巧', '沉稳'] : ['轻巧', '沉稳', '衬纹'];
+    return roles.map(role => {
       const options = FITS.filter(fit => fit.role === role);
       const first = rngFor(run.seed, 'fitting-role', role)() < .5 ? 0 : 1;
-      return options[run.refreshed ? 1 - first : first];
+      const fit = options[run.refreshed ? 1 - first : first];
+      return run.rules === RELEASE_RULES ? { ...fit, delta: RELEASE_HANDLE[role] } : fit;
     });
   }
   const roll = rngFor(run.seed, 'fittings');
@@ -584,7 +669,7 @@ export function fitOptions(run) {
 export function refreshFittings(save) {
   const run = save.run;
   const price = fittingPrice(run);
-  if (run.phase !== 'fit' || run.refreshed || save.credits < price) return false;
+  if (run.phase !== 'fit' || run.furnaceKind === 'first' || run.refreshed || save.credits < price) return false;
   save.credits -= price;
   run.refreshed = true;
   if (run.freeFitting) run.fittingBonusUsed = true;
@@ -626,5 +711,5 @@ export function appraise(run) {
   }
   const trait = signature(run.skin) || LOOKS.fx[run.skin.fx] || LOOKS.pattern[run.skin.pattern] || '原钢锻面';
   run.phase = 'appraise';
-  return { name: trait + ' · ' + MODELS[run.model], stats };
+  return { name: trait + ' · ' + MODELS[run.model], stats: run.rules === RELEASE_RULES ? releaseAppraisal(run, fit) : stats };
 }

@@ -4,6 +4,7 @@ import { icon } from '../icons.js';
 import { createViewReset } from '../viewReset.js';
 import { ICONS, rarityBadge, statRail } from '../components.js';
 import { bladeCardModel, bladeCard, bladeCardDetail, compareModels } from '../bladeCard.js';
+import { enableBladeCardTilt } from '../bladeCardTilt.js';
 import * as Core from '../../core/index.js';
 import { ACHIEVEMENTS, ACHIEVEMENT_GROUPS } from '../../data/achievements.js';
 import { COMBOS } from '../../data/combos.js';
@@ -18,7 +19,9 @@ import * as CodexCatalog from '../../data/codexCatalog.js';
 import router from '../router.js';
 import { bladeMastery, hasLiveFurnace, openFurnace } from '../../core/v19Progress.js';
 import { LEGACY_MODE as legacy } from '../../platform/env.js';
-import { FITS, LOOKS, REFINEMENT_RESULTS, STAT_CAP, fittingPrice, oreMaterialOf, signaturePerk } from '../../v19/forge.js';
+import { FITS, LOOKS, REFINEMENT_RESULTS, STAT_CAP, familyOf, fittingPrice, oreMaterialOf, signaturePerk } from '../../v19/forge.js';
+import { BLUEPRINTS, SERIES, SPECIALS, ZONES, seriesLabel } from '../../v19/launchRules.js';
+import { creditHistory } from '../creditView.js';
 import { workshopPerks } from '../../v19/workshop.js';
 
 const canResumeForge = () => legacy ? Game.run && !Game.run.finished : hasLiveFurnace();
@@ -43,7 +46,6 @@ let root = null;
 let body = null;
 let tabHost = null;
 let tab = legacy ? 'collection' : null;
-let detailSequence = 0;
 
 /* ★ rework T13.4：收藏的筛选/排序/比较多刀。
    与 tab 一样是模块态，跨 render 保留；不写存档。 */
@@ -233,6 +235,7 @@ export function openTab(id) {
 function renderCollection() {
   const list = Core.progress.collection();
   const fractures = Core.progress.fracturedList();
+  const slots = new Set(list.map(blade => blade.seriesSlot).filter(Boolean));
   body.appendChild(el('div',{class:'ws-collection-head'},[
     el('span',{class:'muted tiny',text:`成刀 ${list.length} 把`}),
     el('button',{
@@ -240,6 +243,9 @@ function renderCollection() {
       'aria-label':`断刀册，${fractures.length} 把，查看断裂记录`,onclick:openFractures,
     },[el('span',{text:`断刀册 · ${fractures.length}`}),icon('next')]),
   ]));
+  if (!legacy) body.append(el('button', {
+    class: 'ws-f01-entry', type: 'button', 'aria-haspopup': 'dialog', onclick: openSeries,
+  }, [el('b', { text: 'F01 首辑图鉴' }), el('span', { text: `${slots.size} / ${SERIES.length} 已入册 ›` })]));
   if (!list.length) {
     body.appendChild(emptyCollection());
     return;
@@ -302,27 +308,11 @@ function renderCollection() {
   const grid = el('div', { class: 'ws-collection-grid' });
   body.appendChild(grid);
   for (const blade of onPage) {
-    /* ★ rework T13.1：用**共用**展示模型与卡片，不在这里另拼一套。
-       3D 缩略图仍由 mountCollectionPreview 挂到卡面主视觉位。 */
     const model = bladeCardModel(blade, { kind: 'collection' });
-    const art = el('div', { class: 'blade-thumb', 'aria-hidden': 'true' });
-    if (blade.v19Visual) {
-      const { skin, ore } = blade.v19Visual;
-      const finish = LOOKS.film[skin.film] || LOOKS.pattern[skin.pattern] || LOOKS.metal[skin.metal];
-      art.classList.add('v19-collection-art');
-      art.style.setProperty('--mineral-color', oreMaterialOf(ore).steel);
-      art.append(icon('forge'), el('span', { text: finish }));
-      /* ★ 第二批：V19 刀也出真实刀模静帧，出图成功后替换上面的图标降级。
-         WebGL 不可用时保留图标 + 材质名，不让卡面变空。 */
-      mountBladeThumbnail(art, blade);
-    } else {
-      const visual = Game.resolveVisualState(blade, {}, { modelId: model.modelId, viewPreset: 'forge' });
-      mountCollectionPreview(art, blade, visual);
-    }
-
     const picked = compareIds.includes(blade.id);
-    const card = bladeCard(model, { art, onOpen: () => inspect(blade) });
-    card.appendChild(el('div', { class: 'bcv-top bcv-compare-row', style: { gap: '6px' } }, [
+    const card = bladeCard(model, { art: collectionArt(blade, model), onOpen: () => inspect(blade) });
+    card.dataset.bladeId = blade.id;
+    card.appendChild(el('div', { class: 'bcv-compare-row' }, [
       el('button', {
         /* ★ 移动端：卡片内的“加入比较”也是可点控件。
            移动审计（audit-mobile.mjs）在 4 个视口都报它只有 66×24。
@@ -388,10 +378,38 @@ function openCompare() {
       })),
     ])),
   ]);
-  sheet({ title: '比较成刀', body: el('div', { class: 'stack' }, [
+  const dialog = sheet({ title: '比较成刀', body: el('div', { class: 'stack' }, [
     table,
+    !legacy ? el('button', {
+      class: 'btn btn--primary', type: 'button', text: '带这两把刀同靶对照',
+      onclick: async () => {
+        const { openTournament } = await import('./v19Arena.js');
+        dialog.close();
+        openTournament({ mode: 'compare', bladeIds: models.map(model => model.id) });
+      },
+    }) : null,
     el('p', { class: 'muted tiny', text: '高亮表示该项更优；相同则不标。评分高不等于所有项目都更强 —— 请结合刀型与特性看项目专长。' }),
   ]) });
+}
+
+function openSeries() {
+  const collection = Core.progress.collection();
+  const cards = SERIES.map(item => {
+    const unlocked = collection.filter(blade => blade.seriesSlot === item.id);
+    const waiting = collection.some(blade => blade.seriesCandidate === item.id && !blade.seriesSlot);
+    const work = item.family
+      ? `${familyOf(item.family).name} · ${BLUEPRINTS[item.model]} · ${ZONES[item.zone]}至少 ${item.hits} 锤`
+      : '三种落点各至少两锤 · 其他版位优先';
+    return el('article', { class: 'ws-f01-slot', 'data-unlocked': String(unlocked.length > 0) }, [
+      el('div', { class: 'credit-ledger-head' }, [
+        el('b', { text: `${seriesLabel(item.id)} · ${item.name}` }),
+        el('small', { text: unlocked.length ? `已藏 ${unlocked.length} 把` : waiting ? '等候赛印' : '待发现' }),
+      ]),
+      el('p', { text: `${work} · 精炼 ≥${item.quality}` }),
+      item.special ? el('p', { text: `同刀参加有效快赛并达成 ${SPECIALS[item.special].label} 专项` }) : null,
+    ]);
+  });
+  sheet({ title: 'F01 首辑图鉴', body: el('div', { class: 'stack' }, cards) });
 }
 
 /** 断刀档案只读展示；不依赖完整成刀，也不提供参赛或收藏操作。 */
@@ -449,6 +467,7 @@ function openFractures() {
         el('summary', { text: '结构失效记录' }),
         el('pre', { text: JSON.stringify(info.evidence, null, 2) }),
       ])] : []),
+      !legacy ? creditHistory(blade) : null,
     );
     scroll.scrollTop = 0;
     back.focus({ preventScroll: true });
@@ -456,29 +475,75 @@ function openFractures() {
   showList();
 }
 
+function collectionArt(blade, model) {
+  const art = el('div', { class: 'blade-thumb', 'aria-hidden': 'true' });
+  if (blade.v19Visual) {
+    const { skin, ore } = blade.v19Visual;
+    const finish = LOOKS.film[skin.film] || LOOKS.pattern[skin.pattern] || LOOKS.metal[skin.metal];
+    art.classList.add('v19-collection-art');
+    art.style.setProperty('--mineral-color', oreMaterialOf(ore).steel);
+    art.append(icon('forge'), el('span', { text: finish }));
+    mountBladeThumbnail(art, blade);
+  } else {
+    const visual = Game.resolveVisualState(blade, {}, { modelId: model.modelId, viewPreset: 'forge' });
+    mountCollectionPreview(art, blade, visual);
+  }
+  return art;
+}
+
 function inspect(blade) {
   const recipe = blade.v19Visual;
-  const modelId = resolveModelId(blade, blade.knifeTypeId);
-  const visual = recipe ? null : Game.resolveVisualState(blade, {}, { modelId, viewPreset: 'forge' });
-  const previewHost = el('div', { class: 'blade-detail-stage', role: 'group', 'aria-label': `${blade.bladeName || '成刀'}三维档案外观` });
-  const previewStatus = el('div', { class: 'blade-detail-stage-status', text: BladeStage.supported ? '正在载入档案外观…' : '此设备不支持 WebGL，档案外观不可预览' });
-  /* ★ rework T13.1：详情也读**同一份**展示模型（含赛事经历、工艺、风险）。
-     改造前这里另拼了一套 trait/六维/履历，与卡面、赛报各说一套。 */
   const model = bladeCardModel(blade, { kind: 'collection' });
   const mastery = legacy ? null : bladeMastery(blade);
-  const details = el('div', { class: 'stack' }, [
-    el('div', { class: 'blade-detail-hero' }, [previewHost, previewStatus]),
+  const face = bladeCard(model, { art: collectionArt(blade, model) });
+  const front = el('div', { class: 'bcv-inspect' }, [
+    el('div', {
+      class: 'bcv-tilt-stage', role: 'group', tabindex: '0',
+      'aria-label': '刀卡箔面，方向键倾斜，Home 键复位',
+    }, [face]),
+    el('p', { class: 'bcv-foil-hint', text: '横拖或用方向键看箔面' }),
+  ]);
+  const stopTilt = enableBladeCardTilt(front.firstElementChild, face);
+  const previewHost = el('div', { class: 'blade-detail-stage', role: 'group', 'aria-label': `${model.name}三维档案外观` });
+  const previewStatus = el('div', { class: 'blade-detail-stage-status', role: 'status' });
+  const preview = el('div', { class: 'blade-detail-hero', hidden: true }, [previewHost, previewStatus]);
+  const archive = el('div', { class: 'bcv-archive stack', hidden: true }, [
     el('div', { class: 'blade-detail-head' }, [
-      rarityBadge(blade.rarity, blade.rarityName),
-      el('span', { class: 'chip', text: `品质 ${blade.qualityName || '未记录'}` }),
-      el('span', { class: 'chip', text: `评分 ${blade.score ?? '—'}` }),
+      rarityBadge(model.rarityTone, model.rarityName),
+      el('span', { class: 'chip', text: `品质 ${model.qualityName || '未记录'}` }),
+      el('span', { class: 'chip', text: `评分 ${model.score}` }),
+      blade.craftRating ? el('span', { class: 'chip', text: `工艺 ${blade.craftRating.grade} · ${blade.craftRating.score}` }) : null,
+      model.seriesSlot ? el('span', { class: 'chip chip--accent', text: seriesLabel(model.seriesSlot) }) : null,
       model.arenaWins > 0 ? el('span', { class: 'chip chip--accent', text: `${model.arenaWins} 胜` }) : null,
     ].filter(Boolean)),
-    /* 卡背：六维、特性（标注赛场职责）、连携、赛事经历、工艺与档案 */
     ...(recipe ? [v19CraftDetails(recipe, signaturePerk(blade.combos?.[0]))] : []),
+    !legacy ? creditHistory(blade) : null,
     ...(mastery ? [el('div', { class: 'report-line',
       text: `${mastery.level} · ${mastery.project}专长 +${Math.round(mastery.bonus * 100)}% · 有效 ${mastery.matches} 场` })] : []),
     bladeCardDetail(model),
+  ]);
+  const views = [
+    { label: '卡面', node: front }, { label: '卡背', node: archive }, { label: '3D 鉴赏', node: preview },
+  ];
+  let activeView = 0;
+  let stopPreview = null;
+  const switches = views.map(({ label }, index) => el('button', {
+    class: 'chip', type: 'button', 'aria-pressed': String(index === activeView), text: label,
+    onclick() {
+      if (index === activeView) return;
+      stopPreview?.();
+      stopPreview = null;
+      activeView = index;
+      views.forEach(({ node }, i) => {
+        node.hidden = i !== index;
+        switches[i].setAttribute('aria-pressed', String(i === index));
+      });
+      if (index === 2) stopPreview = mountDetailPreview(blade, previewHost, previewStatus);
+    },
+  }));
+  const details = el('div', { class: 'stack' }, [
+    el('div', { class: 'bcv-view-switch', role: 'group', 'aria-label': '作品预览' }, switches),
+    front, archive, preview,
     el('div', { class: 'blade-detail-actions' }, [
       el('button',{class:'btn btn--primary',text:'12秒短试刀',disabled:blade.canEnterArena === false,onclick:async()=>{
         if (legacy) {
@@ -509,7 +574,8 @@ function inspect(blade) {
             const currentName=Core.progress.bladeById(blade.id)?.bladeName||nextName;
             detailSheet.panel.querySelector('.sheet-title').textContent=currentName;
             detailSheet.panel.setAttribute('aria-label',currentName);
-            previewHost.setAttribute('aria-label',`${currentName}三维档案外观`);
+            previewHost.setAttribute('aria-label', `${currentName}三维档案外观`);
+            face.querySelector('.bcv-name').textContent = currentName;
             rename.close();toast('已重命名','good');render();
           }},[el('label',{class:'muted tiny',text:'给这把刀一个名字，最多 24 个字符。'}),input,submit]);
           const rename=sheet({title:'重命名',body:form});
@@ -518,74 +584,84 @@ function inspect(blade) {
       }),
     ]),
   ]);
-  const sequence = ++detailSequence;
-  let detailStage = null;
-  let v19Preview;
   const detailSheet = sheet({
-    title: blade.bladeName || blade.id,
+    title: model.name,
     body: details,
+    returnFocus() {
+      const card = [...body.querySelectorAll('.blade-card-v2')]
+        .find((item) => item.dataset.bladeId === model.id);
+      return card?.querySelector('.bcv-open') || body;
+    },
     onClose: () => {
-      if (detailSequence === sequence) detailSequence++;
-      v19Preview?.close();
-      if (detailStage) detailStage._seq++;
-      detailStage?.dispose();
-      detailStage = null;
+      stopTilt();
+      stopPreview?.();
     },
   });
   detailSheet.panel.classList.add('blade-detail-sheet');
-  // 仅调整 UI 层级：操作区离开滚动正文，原按钮及其行为保持不变。
   detailSheet.panel.appendChild(details.querySelector('.blade-detail-actions'));
-  if (recipe) {
-    import('../../v19/sharedStage.js').then(({ showForgedBlade }) => {
-      if (detailSequence !== sequence || !previewHost.isConnected) return;
-      v19Preview = showForgedBlade(previewHost, recipe);
-      return v19Preview.ready.then(ready => {
-        if (detailSequence !== sequence) return;
-        if (ready) previewStatus.remove();
-        else previewStatus.textContent = '档案外观暂不可预览';
-      });
-    }).catch(() => { if (detailSequence === sequence) previewStatus.textContent = '档案外观暂不可预览'; });
-    return;
-  }
-  if (!modelId || !visual?.skin) {
-    previewStatus.textContent = '档案缺少刀型或视觉数据，无法预览';
-    return;
-  }
-  if (!BladeStage.supported) return;
-  detailStage = new BladeStage();
-  (async () => {
-    const stage = detailStage;
-    const mounted = await stage.mount(previewHost);
-    if (detailSequence !== sequence || !previewHost.isConnected) { stage.dispose(); return; }
-    if (!mounted?.ok) {
-      previewStatus.textContent = '档案外观暂不可预览';
-      stage.dispose();
-      if (detailStage === stage) detailStage = null;
+}
+
+function mountDetailPreview(blade, host, status) {
+  let active = true;
+  let preview = null;
+  let legacyStage = null;
+  const alive = () => active && host.isConnected;
+  const unavailable = () => {
+    status.hidden = false;
+    status.textContent = '档案外观暂不可预览';
+  };
+  status.hidden = false;
+  status.textContent = '正在载入档案外观…';
+
+  async function load() {
+    if (blade.v19Visual) {
+      const { showForgedBlade } = await import('../../v19/sharedStage.js');
+      if (!alive()) return;
+      preview = showForgedBlade(host, blade.v19Visual);
+      const ready = await preview.ready;
+      if (!alive()) return;
+      if (ready) status.hidden = true;
+      else unavailable();
       return;
     }
+    const modelId = resolveModelId(blade, blade.knifeTypeId);
+    const visual = Game.resolveVisualState(blade, {}, { modelId, viewPreset: 'forge' });
+    if (!modelId || !visual?.skin) {
+      status.textContent = '档案缺少刀型或视觉数据，无法预览';
+      return;
+    }
+    if (!BladeStage.supported) {
+      status.textContent = '此设备不支持 WebGL，档案外观不可预览';
+      return;
+    }
+    const stage = legacyStage = new BladeStage();
+    const mounted = await stage.mount(host);
+    if (!alive()) { stage.dispose(); return; }
+    if (!mounted?.ok) { unavailable(); stage.dispose(); legacyStage = null; return; }
     applyCollectionLighting(stage);
     const environment = await stage.loadEnvironment();
-    if (detailSequence !== sequence || !previewHost.isConnected) { stage.dispose(); return; }
+    if (!alive()) return;
     const shown = await stage.show(modelId, { viewPreset: visual.viewPreset || 'forge' });
-    if (detailSequence !== sequence || !previewHost.isConnected) { stage.dispose(); return; }
-    if (!shown?.ok) {
-      previewStatus.textContent = '档案外观暂不可预览';
-      stage.dispose();
-      if (detailStage === stage) detailStage = null;
-      return;
-    }
+    if (!alive()) return;
+    if (!shown?.ok) { unavailable(); stage.dispose(); legacyStage = null; return; }
     stage.applySkin(visual.skin, { coverAll: !visual.handle?.explicit });
     stage.applyHandle(visual.handle?.explicit ? visual.handle : null, visual.skin);
     stage.applyGlow(visual.glowCardId || null);
-    try { await stage.viewer?._compilePromise; } catch (_) { /* 仍保留可用的 GLB 外形 */ }
-    if (detailSequence !== sequence || !previewHost.isConnected) { stage.dispose(); return; }
+    try { await stage.viewer?._compilePromise; } catch (_) { /* 保留可用的 GLB 外形 */ }
+    if (!alive()) return;
     stage.setInteractive(true);
-    previewHost.append(el('div', { class: 'blade-view-controls' }, [createViewReset(() => stage.resetView())]));
-    if (environment?.ok) previewStatus.remove();
-    else previewStatus.textContent = '环境反射不可用，当前档案外观为降级预览';
-  })().catch(() => {
-    if (detailSequence === sequence) previewStatus.textContent = '档案外观暂不可预览';
-  });
+    host.append(el('div', { class: 'blade-view-controls' }, [createViewReset(() => stage.resetView())]));
+    if (environment?.ok) status.hidden = true;
+    else status.textContent = '环境反射不可用，当前档案外观为降级预览';
+  }
+  load().catch(() => { if (alive()) unavailable(); });
+  return () => {
+    active = false;
+    preview?.close();
+    if (legacyStage) legacyStage._seq++;
+    legacyStage?.dispose();
+    host.replaceChildren();
+  };
 }
 
 /* ── 成就 ─────────────────────────────────────────────── */
@@ -620,7 +696,7 @@ function renderAchievements() {
         el('div', {}, [
           el('div', { class: 'trait-name', text: achievement.name }),
           el('div', { class: 'trait-desc', text: achievement.desc }),
-          el('div', { class: 'tiny muted', text: achievement.reward?.cr ? `奖励 ${achievement.reward.cr} CR` : '' }),
+          legacy && achievement.reward?.cr ? el('div', { class: 'tiny muted', text: `奖励 ${achievement.reward.cr} CR` }) : null,
         ]),
       ]));
     }

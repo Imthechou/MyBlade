@@ -2,6 +2,8 @@
 
 面向移动端的静态 3D 锻刀游戏，完整游戏源代码位于 `game/`。
 
+[游戏策划案与 AI 验收方式](docs/BladeForge-GDD.md)
+
 ## 试玩
 
 - 在线试玩： https://imthechou.github.io/MyBlade/ （以最新成功部署为准）
@@ -14,6 +16,7 @@
 - `qa/archive-playtest.cjs`：真实 Chromium 移动端/桌面端逐页点击和截图。
 - `qa/forge-visual.spec.cjs`：五阶段锻造回归测试（其中后段使用测试夹具准备状态，不等于人工完整操作）。
 - `qa/load-handoff.spec.cjs`：WebGL 渲染场景、首页到锻造的切换回归。
+- `qa/collection-card.spec.cjs` 检查六档刀卡、箔面交互、卡背和大卡册分页。GitHub Actions 保留截图和测试结果。
 - `.github/workflows/`：Pages 发布和自动试玩。
 
 ## 测试范围
@@ -22,4 +25,4 @@ Chromium 模拟手机触控不代表真机性能、音量、振动，仍需实�
 
 ## 单元测试
 
-`cd game && npm test` — 核心流程/赛事配置；`npm run test:syntax` — 基础源码语法检查。浏览器实机自动试玩见 GitHub Actions 输出。
+`cd game && npm test` 运行核心流程和赛事配置测试。`npm run test:syntax` 检查基础源码语法。浏览器自动试玩见 GitHub Actions 输出。

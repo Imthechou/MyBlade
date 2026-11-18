@@ -51,6 +51,9 @@ export function render() {
   const summary = Progress.homeSummary();
   clear(body);
   const canResume = legacy ? !!(legacy.Game.run && !legacy.Game.run.finished) : hasLiveFurnace();
+  const launch = Progress.get().v19.launch;
+  const nextTrial = !legacy && !launch?.firstPassed ? launch?.firstBladeId : null;
+  const startLabel = nextTrial ? '带首刀试斩' : canResume ? '继续锻刀' : '开始锻刀';
   const label = stageHost.querySelector('.showcase-label span');
   if (label) label.textContent = summary.showcase ? '代表作' : '唐刀 · 待你锻造';
   else {
@@ -65,7 +68,7 @@ export function render() {
   body.append(
     el('button', {
       class: 'btn btn--primary btn--block home-start',
-      'aria-label': canResume ? '继续锻刀' : '开始锻刀',
+      'aria-label': startLabel,
       onclick: async (event) => {
         const button = event.currentTarget;
         if (button.disabled) return;
@@ -77,6 +80,10 @@ export function render() {
           if (legacy) {
             if (!canResume) legacy.Game.startForge({ mode: 'normal' });
             await legacy.Game.prewarmCandidates();
+          } else if (nextTrial) {
+            const { openTournament } = await import('./v19Arena.js');
+            openTournament({ mode: 'first', bladeId: nextTrial });
+            return;
           } else {
             const result = openFurnace({ restart: true });
             if (!result.ok) return toast(result.error, 'warn');
@@ -88,13 +95,14 @@ export function render() {
         } finally {
           button.disabled = false;
           button.removeAttribute('aria-busy');
-          if (title) title.textContent = canResume ? '继续锻刀' : '开始锻刀';
+          if (title) title.textContent = startLabel;
         }
       },
     }, [
       legacy ? ICONS.forge(true) : icon('hammer'),
       el('div', { class: 'home-start-copy' }, [
-        el('span', { class: 'home-start-title', text: canResume ? '继续锻刀' : '开始锻刀' }),
+        el('span', { class: 'home-start-title', text: startLabel }),
+        nextTrial ? el('small', { text: '12 秒固定靶 · 解锁自由快赛' }) : null,
         legacy ? el('small', { text: canResume ? '接续工序 · 保留当前构筑' : '十道工序 · 自由构筑' }) : null,
       ]),
       legacy ? el('b', { text: '→', 'aria-hidden': 'true' }) : null,

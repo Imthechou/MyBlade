@@ -27,6 +27,7 @@ export const forgeMarkup = `
           <button type="button" data-action="tap-ore"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m3 7 4-4 8 8-4 4zM12 14l7 7M17 6l2-2M19 10h3"/></svg><span>敲石</span></button>
           <button type="button" data-action="window-ore" id="window-ore"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m3 15 8-10 9 7-7 9-10-6zM7 17l10-9M4 21h17"/></svg><span>擦窗</span></button>
         </div>
+        <div id="furnace-config" class="furnace-config" hidden></div>
       </div>
 
       <section class="panel" id="panel" aria-labelledby="title">
@@ -43,6 +44,7 @@ export const forgeMarkup = `
         <div id="tray" class="tray" aria-label="工作台选项"></div>
         <div id="readout"></div>
       </section>
+      <div class="furnace-abandon" id="furnace-abandon" hidden></div>
     </div>
     <div class="action-stack forge-dock" id="actions"></div>
 

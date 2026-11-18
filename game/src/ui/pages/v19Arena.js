@@ -21,8 +21,8 @@ export function render() {
     hasLegacyCareer,
     onSettings: openSettings,
     onLegacy: () => router.go('legacy-arena'),
-    onForge: () => {
-      const result = openFurnace({ restart: true });
+    onForge: (compare = false) => {
+      const result = openFurnace({ restart: true, compare });
       if (!result.ok) return toast(result.error, 'warn');
       router.go('forge');
     },

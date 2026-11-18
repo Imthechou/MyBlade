@@ -30,7 +30,8 @@ export function render() {
           ? el('span', { class: 'daily-streak', text: `连续 ${Core.progress.get().dailyStreak} 天` })
           : null,
       ]),
-      el('div', { class: 'report-line', text: '相同靶序，挑战今天的最高分。每局 45 秒，收藏刀具不会受损。' }),
+      el('div', { class: 'report-line', text: LEGACY_MODE ? '相同靶序，挑战今天的最高分。每局 45 秒。'
+        : '30 秒固定靶序。借刀和自带刀分别记分，首个有效成绩获得 12 CR。' }),
     ]),
     el('button', { class: 'btn btn--primary btn--block', text: '开始每日挑战 →', onclick: () => {
       if (LEGACY_MODE) return import('./arena.js').then(arena => arena.openDailyChallenge());
@@ -53,9 +54,9 @@ export function render() {
         }, [
           el('span', { class: 'daily-check', text: task.done ? '✓' : '○', 'aria-hidden': 'true' }),
           el('span', { class: 'daily-task-name', text: task.name }),
-          el('b', { class: 'daily-reward', text: '+' + task.reward }),
         ]))),
-        el('p', { class: 'daily-note', text: doneCount === tasks.length ? '今天的三个目标都已完成，奖励已入账。' : '每项奖励在条件达成时自动入账，不需要领取。' }),
+        el('p', { class: 'daily-note', text: doneCount === tasks.length ? '今天的三个目标都已完成。'
+          : '今日目标记录工坊进度。信用点在有效每日挑战后入账。' }),
       ]);
     })(),
   ]);

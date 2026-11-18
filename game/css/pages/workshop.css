@@ -121,143 +121,186 @@
   .ws-body > .blade-card { grid-template-columns: 58px minmax(0, 1fr) auto; gap: 8px; }
 }
 
-/* ══════════════════════════════════════════════════════
-   共用收藏卡（rework T13）
-   ──────────────────────────────────────────────────────
-   此前藏刀阁、鉴定页、赛报各画一套卡片，同一把刀在三处
-   呈现不同的身份信息。新卡以**刀具本身**为主视觉：
-   竖向居中、留白、名称/稀有度/评分 + 少量核心特性；
-   完整六维与工艺路径放卡背（.bcv-detail）。
-   ══════════════════════════════════════════════════════ */
-.blade-card-v2 {
+/* 收藏卡：实刀静帧、印刷和反射层分开。比较按钮在印刷边界之外。 */
+.blade-card-v2 { display: grid; gap: 5px; min-width: 0; }
+.bcv-face {
+  --print-stock: #191b23;
+  --print-wash: #363949;
+  --print-metal: #d7d4de;
+  --print-rule: #8c8b9b;
+  --print-texture: repeating-linear-gradient(168deg, #e2e5ff08 0 1px, transparent 1px 7px);
+  --foil-color: #e5e6ff9c;
+  --foil-mask: polygon(0 0, 62% 0, 54% 5%, 18% 8%, 0 15%);
+  --foil-rest: 0;
+  --foil-live: 0;
+  position: relative;
+  isolation: isolate;
+  container-type: inline-size;
   display: grid;
-  gap: 8px;
-  padding: 12px;
-  border: 0;
-  border-radius: var(--r-lg);
-  background: var(--r-common-f);
-  box-shadow: var(--shadow-2), var(--card-hair);
-  text-align: left;
-  color: inherit;
-  font: inherit;
-}
-button.blade-card-v2 { cursor: pointer; width: 100%; }
-
-/* 稀有度只调底色与强调色，不用泛光替代金属层次 */
-.blade-card-v2.rarity--common { background: var(--r-common-f); }
-.blade-card-v2.rarity--fine   { background: var(--r-fine-f); }
-.blade-card-v2.rarity--rare   { background: var(--r-rare-f); }
-.blade-card-v2.rarity--epic   { background: var(--r-epic-f); }
-.blade-card-v2.rarity--legend { background: var(--r-legend-f); }
-.blade-card-v2.rarity--mythic { background: var(--r-myth-f); }
-
-.blade-card-v2.is-fractured { opacity: .82; }
-
-.bcv-top {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-wrap: wrap;
-}
-.bcv-honor {
-  padding: 2px 7px;
-  border-radius: var(--r-pill);
-  background: rgba(201, 154, 46, .14);
-  color: var(--stage-8);
-  font-size: 11px;
-  font-weight: 600;
-}
-.bcv-action {
-  margin-left: auto;
-  padding: 4px 10px;
-  border-radius: var(--r-pill);
-  background: var(--metal-grad);
-  color: #fff;
-  font-size: 12px;
-  font-weight: 600;
-}
-
-/* 刀具主视觉：竖向居中，给足留白，不与文字争 */
-.bcv-art {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  /* ★ T13.2：卡面以**完整刀具**为主视觉，这里给足竖向空间 */
-  min-height: 168px;
-  padding: 4px 0;
-}
-.bcv-art > * { max-height: 168px; }
-.bcv-art img,
-.bcv-art canvas { display: block; object-fit: contain; max-width: 100%; }
-
-/* ★ 修复：收藏卡内部的 .blade-thumb 原本继承旧列表样式（固定 68×82），
-   放进 168px 高的 .bcv-art 里就成了“大片空白 + 一把小刀”。
-   这里让它在卡面内撑满可用空间，刀具才会成为主视觉。 */
-.bcv-art > .blade-thumb {
-  flex: 1 1 auto;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: 3px;
   width: 100%;
-  height: 168px;
-  max-width: none;
-  background: transparent;
-}
-.bcv-art > .blade-thumb .blade-thumb-image { width: 100%; height: 100%; object-fit: contain; }
-
-.bcv-body { display: grid; gap: 3px; min-width: 0; }
-.bcv-name {
+  min-width: 0;
+  aspect-ratio: 63 / 88;
+  padding: 8% 8% 8.5%;
   overflow: hidden;
-  color: var(--face);
-  font-size: 15px;
-  font-weight: 600;
-  line-height: 1.35;
-  text-overflow: ellipsis;
+  border: 1px solid var(--print-rule);
+  border-radius: 14px;
+  background: var(--print-texture), radial-gradient(ellipse at 56% 34%, var(--print-wash), var(--print-stock) 72%);
+  box-shadow: 0 7px 18px #08060e50;
+  color: #fffbfd;
+  font: inherit;
+  text-align: left;
+}
+button.bcv-face { cursor: pointer; touch-action: manipulation; }
+.bcv-face:focus-visible, .bcv-tilt-stage:focus-visible { outline: 2px solid var(--accent-cool); outline-offset: 2px; }
+.bcv-face.is-fractured { filter: saturate(.35); }
+.bcv-face::before, .bcv-face::after, .bcv-foil {
+  content: '';
+  position: absolute;
+  pointer-events: none;
+}
+.bcv-face::before {
+  z-index: -2;
+  inset: 4px;
+  border: 1px solid color-mix(in srgb, var(--print-rule) 55%, transparent);
+  border-radius: 10px;
+}
+.bcv-face::after {
+  z-index: -1;
+  inset: 0;
+  background: linear-gradient(180deg, #08060d42, transparent 26% 65%, #08060dba);
+}
+.bcv-face .bcv-foil {
+  z-index: -1;
+  inset: 0;
+  clip-path: var(--foil-mask);
+  background: radial-gradient(ellipse 58% 37% at var(--foil-x, 52%) var(--foil-y, 42%),
+    #fff8e9e0, var(--foil-color) 28%, transparent 72%);
+  opacity: var(--foil-rest);
+}
+.bcv-face.rarity--fine {
+  --print-stock: #141f24;
+  --print-wash: #31515a;
+  --print-metal: #d6efe9;
+  --print-rule: #819e9e;
+  --print-texture: repeating-linear-gradient(0deg, #effffa15 0 1px, transparent 1px 4px);
+  --foil-color: #d2ede4b0;
+  --foil-rest: .17;
+  --foil-live: .65;
+}
+.bcv-face.rarity--fine::before { border-inline-color: #e1fff0a0; }
+.bcv-face.rarity--rare {
+  --print-stock: #121a31;
+  --print-wash: #2d4973;
+  --print-metal: #d6e6ff;
+  --print-rule: #859ecb;
+  --print-texture: repeating-radial-gradient(ellipse at 82% 23%, transparent 0 10px, #9fcdff26 10px 11px, transparent 12px 17px);
+  --foil-color: #9fcbffba;
+  --foil-mask: polygon(44% 0, 100% 0, 100% 27%, 83% 16%, 87% 8%, 50% 6%);
+  --foil-rest: .24;
+  --foil-live: .80;
+}
+.bcv-face.rarity--rare::before { border-style: dashed; }
+.bcv-face.rarity--epic {
+  --print-stock: #24162e;
+  --print-wash: #5b3373;
+  --print-metal: #f0d8fb;
+  --print-rule: #af7ecb;
+  --print-texture: linear-gradient(132deg, transparent 24%, #d39af13d 24% 25%, #a873d63a 25% 36%, #b7a0f43b 36% 37%, transparent 37% 68%, #f2aefd27 68% 73%, transparent 73%);
+  --foil-color: #ec9ee0d4;
+  --foil-mask: polygon(67% 0, 93% 0, 100% 11%, 100% 36%, 91% 20%, 80% 13%, 8% 78%, 0 78%, 0 69%);
+  --foil-rest: .31;
+  --foil-live: .91;
+}
+.bcv-face.rarity--epic::before {
+  inset: 5px;
+  border-inline: 2px solid #c3a0df9c;
+  clip-path: polygon(0 0, 100% 0, 100% 28%, 94% 32%, 94% 68%, 100% 74%, 100% 100%, 0 100%, 0 70%, 8% 64%, 8% 35%, 0 29%);
+}
+.bcv-face.rarity--legend {
+  --print-stock: #241b19;
+  --print-wash: #664231;
+  --print-metal: #ffe2a8;
+  --print-rule: #cda26b;
+  --print-texture: repeating-linear-gradient(32deg, #e3ad6728 0 1px, transparent 1px 6px, #f7d7a612 6px 7px, transparent 7px 12px);
+  --foil-color: #ffc878db;
+  --foil-mask: polygon(0 0, 100% 0, 100% 9%, 8% 8%, 7% 44%, 0 52%, 0 100%, 100% 100%, 100% 82%, 93% 91%, 7% 91%, 0 100%);
+  --foil-rest: .52;
+  --foil-live: .96;
+}
+.bcv-face.rarity--legend::before {
+  border: 3px double #eac48fcc;
+  border-radius: 4px;
+}
+.bcv-face.rarity--mythic {
+  --print-stock: #20142b;
+  --print-wash: #453050;
+  --print-metal: #f8e0fa;
+  --print-rule: #d8b1d0;
+  --print-texture: repeating-conic-gradient(from 28deg at 53% 45%, #af95d237 0deg .75deg, transparent 1deg 17deg),
+    radial-gradient(ellipse at 20% 16%, #19548b68, transparent 54%),
+    radial-gradient(ellipse at 83% 76%, #9b4b5166, transparent 55%);
+  --foil-color: #a9c3ffd4;
+  --foil-mask: polygon(0 0, 100% 0, 100% 20%, 93% 9%, 17% 9%, 8% 16%, 6% 87%, 18% 94%, 83% 90%, 100% 80%, 100% 100%, 0 100%);
+  --foil-rest: .60;
+  --foil-live: 1;
+  box-shadow: 0 7px 21px #371e4c88, inset 0 0 0 2px #a984b071;
+}
+.bcv-face.rarity--mythic::before {
+  inset: 6px;
+  border: 1px solid #e8c3df;
+  box-shadow: inset 0 0 0 2px #c6ace441, inset 0 0 0 4px #9ca3d139;
+}
+.bcv-face .bcv-top { display: flex; align-items: center; justify-content: space-between; gap: 3px; min-width: 0; }
+.bcv-face .rarity, .bcv-honor {
+  padding: 3px 5px;
+  border: 1px solid color-mix(in srgb, var(--print-rule) 76%, transparent);
+  border-radius: 4px;
+  background: #100d17d9;
+  color: var(--print-metal);
+  box-shadow: none;
+  font: 650 clamp(10px, 7.1cqi, 13px)/1.05 var(--font);
   white-space: nowrap;
 }
-.bcv-sub { color: var(--face-3); font-size: 12px; line-height: 1.4; }
-
-.bcv-traits { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 3px; }
-.bcv-trait {
-  padding: 2px 8px;
-  border-radius: var(--r-pill);
-  background: rgba(23, 52, 75, .07);
-  color: var(--face-2);
-  font-size: 11px;
-  line-height: 1.5;
+.bcv-honor { border-color: #bfa37b; color: #ffe4b8; }
+.bcv-art { display: grid; place-items: center; min-width: 0; min-height: 0; color: #e6dfe9; }
+.bcv-face .blade-thumb {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  max-width: none;
+  background: transparent;
+  color: inherit;
 }
-.bcv-trait.is-empty { color: var(--face-3); }
-
-.bcv-score { display: flex; align-items: baseline; gap: 5px; }
-.bcv-score b { color: var(--face); font-size: 20px; line-height: 1; }
-.bcv-score small { color: var(--face-3); font-size: 11px; }
-
-/* 卡面六维微条：只给形状，精确值在卡背 */
-.bcv-rail {
-  display: flex;
-  align-items: flex-end;
-  gap: 3px;
-  height: 22px;
-  padding-top: 2px;
+.bcv-face .blade-thumb image, .bcv-face .blade-thumb img, .bcv-face .blade-thumb canvas {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
 }
-.bcv-rail i {
-  flex: 1;
-  min-height: 3px;
-  border-radius: 2px;
-  background: linear-gradient(180deg, var(--metal-hi), var(--metal-lo));
-  opacity: .55;
+.bcv-face .blade-thumb-state { color: inherit; }
+.bcv-face .v19-thumb-image { filter: drop-shadow(0 5px 7px #090614a6); }
+.bcv-body { display: grid; align-content: center; gap: 3px; min-height: 34px; min-width: 0; }
+.bcv-name, .bcv-sub { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bcv-name {
+  color: #fffbfd;
+  font: 750 clamp(14px, 11cqi, 27px)/1.25 "Songti SC", "Noto Serif CJK SC", serif;
+  letter-spacing: .035em;
 }
+.bcv-sub { color: var(--print-metal); font: 500 clamp(10px, 7.8cqi, 13px)/1.3 var(--font); }
 
-/* 紧凑模式：列表里的横向行 */
-.blade-card-v2.is-compact {
-  grid-template-columns: 56px minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 10px;
-  padding: 10px;
-  border-radius: var(--r-md);
-}
-.blade-card-v2.is-compact .bcv-top { grid-column: 1 / -1; }
-.blade-card-v2.is-compact .bcv-art { min-height: 56px; padding: 0; }
-.blade-card-v2.is-compact .bcv-art > * { max-height: 56px; }
-.blade-card-v2.is-compact .bcv-score { flex-direction: column; align-items: flex-end; gap: 2px; }
-.blade-card-v2.is-compact .bcv-score b { font-size: 17px; }
+.bcv-view-switch { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.bcv-view-switch .chip { min-height: 44px; justify-content: center; padding-inline: 5px; }
+.bcv-view-switch .chip[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent); border-color: var(--accent-line); }
+.bcv-inspect { margin-inline: auto; width: min(100%, 250px, 67cqh); }
+.bcv-tilt-stage { perspective: 820px; touch-action: pan-y pinch-zoom; }
+.bcv-tilt-stage .bcv-face { transform: rotateX(var(--tilt-x, 0deg)) rotateY(var(--tilt-y, 0deg)); transition: transform .22s ease-out; }
+.bcv-tilt-stage[data-tilting] .bcv-face { transition: none; }
+.bcv-tilt-stage[data-tilting] .bcv-foil { opacity: var(--foil-live); }
+.bcv-foil-hint { margin: 7px 0 0; color: var(--face-3); text-align: center; font-size: 12px; }
+.bcv-inspect[hidden], .bcv-archive[hidden], .blade-detail-hero[hidden] { display: none; }
+[data-motion="reduced"] .bcv-tilt-stage .bcv-face { transform: none; transition: none; }
+[data-motion="reduced"] .bcv-foil-hint { display: none; }
 
 /* 卡背 / 详情 */
 .bcv-detail { display: grid; gap: 4px; }
@@ -400,10 +443,6 @@ button.blade-card-v2 { cursor: pointer; width: 100%; }
   font-weight: 700;
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .blade-card-v2 { transition: none; }
-}
-
 /* Shared collection cabinet: two complete cards, original rarity seals and real thumbnails. */
 .ws-tabhost { margin:8px 12px 0; padding:4px; flex-shrink:0; border:1px solid var(--glass-border); border-radius:18px; background:var(--glass-bg); backdrop-filter:var(--glass-blur); -webkit-backdrop-filter:var(--glass-blur); }
 .ws-tabhost .pill-tab { padding-inline:12px; border:0; background:transparent; }
@@ -413,26 +452,9 @@ button.blade-card-v2 { cursor: pointer; width: 100%; }
 .ws-control-row { flex-wrap:nowrap; overflow-x:auto; scrollbar-width:none; }
 .ws-control-row>* { flex-shrink:0; }
 .ws-collection-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; align-items:start; }
-.ws-collection-grid .blade-card-v2 { min-width:0; padding:10px; border:1px solid var(--glass-border); border-radius:22px; box-shadow:var(--shadow-1),inset 0 1px #fff; }
-.ws-collection-grid .bcv-art { min-height:150px; border-radius:16px; background:rgba(255,255,255,.36); }
-.ws-collection-grid .bcv-art>.blade-thumb { height:150px; }
-.ws-collection-grid .bcv-art>* { max-height:150px; }
-.ws-collection-grid .bcv-name { font-size:14px; }
-.ws-collection-grid .bcv-score b { font-size:25px; color:var(--accent); }
-.ws-collection-grid .bcv-top { gap:4px; }
-.ws-collection-grid .bcv-traits { gap:3px; }
-.ws-collection-grid .bcv-trait { max-width:100%; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-size:11px; }
-.ws-collection-grid .bcv-compare-btn { width:100%; min-height:44px; justify-content:center; border-color:var(--glass-border); background:rgba(255,255,255,.45); }
-.ws-collection-grid .bcv-compare-btn[aria-pressed="true"] { background:var(--accent-soft); border-color:var(--accent-line); }
-.ws-fracture-entry { background:var(--surface-glass); border-color:var(--glass-border); }
-@media (max-width:360px) { .ws-collection-grid{gap:8px} .ws-collection-grid .blade-card-v2{padding:8px} .ws-collection-grid .bcv-art,.ws-collection-grid .bcv-art>.blade-thumb{min-height:130px;height:130px} }
-
-/* Collection thumbnails: show an honest loading state until real PBR snapshots decode. */
-.ws-collection-grid .bcv-art {
-  border: 1px solid rgba(95, 105, 170, .11);
-  background: radial-gradient(ellipse 65% 15% at 50% 87%, rgba(96, 116, 195, .16), transparent 80%),
-    linear-gradient(155deg, rgba(255,255,255,.70), rgba(219,229,251,.45));
-}
+.ws-collection-grid .bcv-compare-btn { width: 100%; min-height: 44px; justify-content:center; }
+.ws-fracture-entry { background: var(--surface-glass); border-color: var(--glass-border); }
+@media (max-width: 360px) { .ws-collection-grid { gap: 8px; } }
 
 /* V19 刀模静帧：出图前保留图标 + 材质名，出图后整块替换。 */
 .v19-collection-art[data-state="ready"] { display: block; padding: 0; }
@@ -508,8 +530,6 @@ button.blade-card-v2 { cursor: pointer; width: 100%; }
 .ws-destination:nth-child(even) .hex .core { fill: var(--accent-cool); }
 .ws-destination .ui-icon { color: var(--face-3); }
 .ws-destination:active { background: var(--surface-glass); transform: translateY(1px); }
-[data-theme] .ws-collection-grid .blade-card-v2 { box-shadow: var(--shadow-1); }
-[data-theme] .ws-collection-grid .bcv-compare-btn { background: var(--control-face); }
 .ws-tabhost { border-radius:var(--r-lg); }
 .ws-tabhost .pill-tab { flex:1 1 0; min-width:0; padding-inline:4px; font-size:12px; }
 .ws-collection-controls { gap:9px; padding:12px; }
@@ -518,12 +538,6 @@ button.blade-card-v2 { cursor: pointer; width: 100%; }
 .ws-control-row .chip--accent { background:var(--accent-soft); border-color:var(--accent-line); }
 .ws-fracture-entry { font:inherit; color:var(--face); border-radius:var(--r-lg); }
 .ws-fracture-entry>.ui-icon { color:var(--face-3); }
-.bcv-open { display:grid; gap:8px; width:100%; min-width:0; padding:0; border:0; border-radius:12px; background:transparent; color:inherit; font:inherit; text-align:left; cursor:pointer; }
-.bcv-open:active .bcv-art { background:var(--accent-soft); }
-.ws-collection-grid .blade-card-v2 { background:var(--surface-glass); }
-.ws-collection-grid .bcv-art { background:var(--surface-inset); }
-.ws-collection-grid .bcv-score { align-items:baseline; }
-.ws-collection-grid .bcv-rail { height:16px; gap:4px; opacity:.72; }
 .ws-collection-grid .bcv-compare-btn { border-radius:12px; background:var(--control-face); border:1px solid var(--glass-border); color:var(--face-2); }
 .ws-collection-grid .bcv-compare-btn[aria-pressed="true"] { background:var(--accent-soft); color:var(--accent); border-color:var(--accent-line); }
 .blade-detail-hero { background:var(--showcase-surface); border-color:var(--glass-border); }
@@ -581,3 +595,30 @@ button.blade-card-v2 { cursor: pointer; width: 100%; }
 .ws-collection-page-actions { display:flex; flex-wrap:wrap; justify-content:center; gap:7px; width:100%; }
 .ws-collection-page-actions>.chip { min-height:44px; min-width:62px; padding-inline:12px; }
 .ws-collection-page-actions>.chip:disabled { opacity:.36; cursor:default; }
+
+.ws-f01-entry,
+.ws-f01-slot,
+.credit-ledger {
+  border: 1px solid var(--glass-border);
+  border-radius: var(--r-md);
+  background: var(--surface-glass);
+  padding: 12px;
+}
+.ws-f01-entry {
+  display: flex; justify-content: space-between; align-items: center; gap: 8px;
+  min-height: 48px; color: var(--face); text-align: left; font: inherit; cursor: pointer;
+}
+.ws-f01-entry span, .ws-f01-slot small { color: var(--accent); font-size: 12px; white-space: nowrap; }
+.ws-f01-slot { display: grid; gap: 4px; }
+.ws-f01-slot[data-unlocked="true"] { border-color: var(--accent-line); background: var(--accent-soft); }
+.ws-f01-slot p, .credit-ledger p { margin: 0; color: var(--face-2); font-size: 12px; line-height: 1.6; }
+.credit-ledger { display: grid; gap: 8px; }
+.credit-ledger-head, .credit-ledger-rows .report-line {
+  display: flex; justify-content: space-between; align-items: baseline; gap: 8px;
+}
+.credit-ledger-rows .report-line > span { overflow-wrap: anywhere; }
+.credit-ledger-rows b { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.credit-gain { color: var(--risk-safe); }
+.credit-cost { color: var(--face-2); }
+.credit-pages { display: flex; justify-content: space-between; align-items: center; gap: 6px; }
+.credit-pages .chip { min-height: 44px; }

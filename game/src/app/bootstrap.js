@@ -5,7 +5,6 @@ import { hasLegacyCareer } from '../core/v19Progress.js';
 import * as Settings from './settings.js';
 import * as Home from '../ui/pages/home.js';
 import * as Shell from '../ui/shell.js';
-import * as Tutorial from '../ui/tutorial.js';
 import router from '../ui/router.js';
 import { ensureThreeRuntime } from '../v19/threeRuntime.js';
 
@@ -70,9 +69,6 @@ function start() {
   bus.on(EVENTS.CR_CHANGED, () => Shell.sync(router.currentKey()));
   router.start();
   document.getElementById('boot')?.remove();
-  // The first blade is the real tutorial. Let the forge stage paint one beat
-  // before offering the four essentials, otherwise the sheet hides the payoff.
-  setTimeout(() => Tutorial.maybeShowFirstRun(), 420);
 }
 
 /**

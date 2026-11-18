@@ -12,6 +12,9 @@ import { specialtySnapshot } from './arenaV41Specialties.js';
 import { settle, EVENT } from './events.js';
 import { appraise, freshRun, LOOKS, MIN_PRICE, MODELS, signature, signaturePerk } from '../v19/forge.js';
 import { SCHOOLS, masteryOf } from '../v19/tournament.js';
+import { FIRST_REWARD, MATERIAL_TIERS, RELEASE_RULES, completeSeries, craftRating, fulfillsSpecial, meetsCommission, seriesCandidate,
+  seriesLabel } from '../v19/launchRules.js';
+import { namedCredit, noteCredit, receiptsFor } from './wallet.js';
 import { appraisalQuality, appraisalRarity } from '../v19/workshop.js';
 
 function transact(change) {
@@ -26,27 +29,44 @@ function transact(change) {
 export const hasFurnace = () => Boolean(get().v19.forge);
 export const hasLiveFurnace = () => hasFurnace() && !['appraise', 'broken'].includes(get().v19.forge.phase);
 
-function newFurnace(save, seed) {
+function newFurnace(save, seed, compare = false) {
   const run = freshRun(seed);
+  const first = !save.v19.launch.firstPassed && !save.v19.launch.firstBladeId;
+  run.rules = RELEASE_RULES;
+  run.furnaceKind = first ? 'first' : save.cr < MIN_PRICE ? 'recovery' : 'normal';
+  run.compareCommission = Boolean(compare && run.furnaceKind === 'normal');
+  run.commissionSelected = run.compareCommission;
+  run.blueprint = run.furnaceKind === 'normal' && !compare ? 'auto' : 'straight';
+  run.hitZones = [];
   run.revision = 0;
   run.workshopLevel = workshopSnapshot(save).level;
   run.specialist = specialtySnapshot(save, save.forgeBonus.equippedId);
   run.freeFitting = save.forgeBonus.equippedId === 'extra_reroll';
-  save.cr = Math.max(MIN_PRICE, save.cr);
   return run;
 }
 
-export function openFurnace({ restart = false, seed = Date.now() } = {}) {
-  if (hasFurnace() && (!restart || hasLiveFurnace())) return { ok: true };
-  return transact(save => {
-    save.v19.forge = newFurnace(save, Math.max(seed, (save.v19.forge?.seed || 0) + 1));
+export function openFurnace({ restart = false, seed = Date.now(), compare = false } = {}) {
+  const save = get();
+  const old = save.v19.forge;
+  if (old?.phase === 'ore' && !old.rules) {
+    return transact(draft => {
+      draft.v19.forge = newFurnace(draft, Math.max(seed, old.seed + 1), compare);
+      return { ok: true };
+    });
+  }
+  if (hasFurnace() && (!restart || hasLiveFurnace())) return { ok: true, resumed: true };
+  if (save.v19.launch.firstBladeId && !save.v19.launch.firstPassed) {
+    return { ok: false, error: '先带第一把刀完成首刀试斩，再开下一炉。' };
+  }
+  return transact(draft => {
+    draft.v19.forge = newFurnace(draft, Math.max(seed, (draft.v19.forge?.seed || 0) + 1), compare);
     return { ok: true };
   });
 }
 
 export function recordVisual(run) {
   const { model, fit, skin, marks, purity, ore, refinement, highlights, hits, stability, last } = run;
-  return { model, fit, skin, marks, purity, ore, refinement, highlights, hits, stability, last };
+  return { model, fit, skin, marks, purity, ore, refinement, highlights, hits, stability, last, hitZones: run.hitZones };
 }
 
 function forgeView(save) {
@@ -57,10 +77,11 @@ function forgeView(save) {
       ...blade.v19Visual, id: blade.id, name: blade.bladeName, grade: blade.rarityName,
       rarity: blade.rarity, rarityName: blade.rarityName,
       quality: blade.qualityName, signature: blade.combos?.[0],
-      score: blade.score, stats: STAT_KEYS.map(key => blade.stats[key]), credit: run.reward,
+      score: blade.score, stats: STAT_KEYS.map(key => blade.stats[key]), credit: run.reward, craft: blade.craftRating,
+      seriesSlot: blade.seriesSlot, seriesCandidate: blade.seriesCandidate, commission: run.commissionResult,
     };
   }
-  return { credits: save.cr, run };
+  return { credits: save.cr, run, launch: { ...save.v19.launch } };
 }
 
 export const forgeSession = () => forgeView(get());
@@ -103,13 +124,56 @@ function archiveFurnace(save, run, appraisal) {
       category: slot === 'pattern' ? 'texture' : 'finish', id: 'v19:' + slot + ':' + run.skin[slot],
     })),
   ];
+  const release = run.rules === RELEASE_RULES;
+  if (release && !fractured) {
+    record.craftRating = craftRating(run);
+    const series = seriesCandidate(run);
+    if (series) {
+      record.seriesCandidate = series.id;
+      record.seriesSlot = series.special ? null : series.id;
+      record.bladeName = series.name;
+    }
+  }
   const balance = save.cr;
-  const result = archiveInto(save, record, { discoveries });
+  const result = archiveInto(save, record, { discoveries, standardCredit: !release, bonusCredit: !release });
   if (result.duplicate) return result;
+  if (release) settleFurnaceCredits(save, run, record);
+  else if (!fractured && !save.v19.launch.firstBladeId) save.v19.launch.firstPassed = true;
   run.resultId = record.id;
   run.reward = save.cr - balance;
   return result;
 }
+
+function settleFurnaceCredits(save, run, record) {
+  const grant = (amount, label, step) => namedCredit(save, amount, label, {
+    id: record.id + ':' + step, bladeId: record.id, furnace: run.seed,
+  });
+  if (record.fractured) {
+    if (run.furnaceKind === 'challenge' && run.last?.type !== 'abandoned') {
+      grant(Math.floor((run.ore?.price || 0) * .4), '挑战炉退料', 'refund');
+    }
+    return;
+  }
+  if (run.furnaceKind === 'first') {
+    save.v19.launch.firstBladeId = record.id;
+    grant(FIRST_REWARD.appraisal, '首刀验收', 'appraisal');
+  } else if (run.furnaceKind === 'recovery') {
+    grant(Math.max(0, MIN_PRICE - save.cr), '基础复开补助', 'recovery');
+  } else {
+    grant(MATERIAL_TIERS[run.ore.tier].appraisal, '成刀验收', 'appraisal');
+    if (run.commission) {
+      const met = meetsCommission(run);
+      run.commissionResult = { name: run.commission.name, met };
+      if (met) grant(run.commission.amount, '委托 · ' + run.commission.name, 'commission');
+    }
+  }
+}
+
+export const walletView = blade => {
+  const save = get();
+  return { balance: save.cr, migrated: save.wallet?.migrated, opening: save.wallet?.opening,
+    receipts: receiptsFor(save, blade) };
+};
 
 /** Pointer heat is simulated on a private snapshot. Only completed writes publish gameplay. */
 export function commitFurnace(current, change = () => true) {
@@ -123,7 +187,14 @@ export function commitFurnace(current, change = () => true) {
     const draft = { credits: save.cr, run };
     const result = change(draft);
     if (!result) return { ok: false };
+    const cost = save.cr - draft.credits;
     save.cr = draft.credits;
+    if (cost) {
+      const purchase = stored.phase === 'ore' && run.phase === 'reveal';
+      noteCredit(save, -cost, purchase ? '购料 · ' + (MATERIAL_TIERS[run.ore?.tier]?.label || '矿石') : '换选柄件', {
+        id: 'v19-' + run.seed + (purchase ? ':material' : ':fittings'), furnace: run.seed,
+      });
+    }
     if (!stored.fittingBonusUsed && run.fittingBonusUsed) save.forgeBonus.usesTotal += 1;
     if (!stored.resultId && ['appraise', 'broken'].includes(run.phase)) {
       const archive = archiveFurnace(save, run, run.phase === 'appraise' ? result : null);
@@ -159,6 +230,7 @@ export function tournamentView(save = get()) {
   const school = save.arena.school;
   return {
     credits: save.cr, collection: save.collection.map(toContestBlade), legacyCareer: hasLegacyCareer(save),
+    launch: { ...save.v19.launch },
     workshop: workshopSnapshot(save),
     tournament: {
       ...save.v19.arena,
@@ -184,8 +256,8 @@ export function commitTournament(change) {
     const { daily, best, mastery, active: next, rating, streak } = view.tournament;
     Object.assign(save.v19.arena, { daily, best, mastery, active: next, rating, streak });
     if (result.record) {
-      const bladeId = active.roster[active.mode === 'apex' ? result.record.round : 0].id;
-      if (!save.collection.some(blade => blade.id === bladeId && !blade.fractured && blade.canEnterArena !== false)) {
+      const bladeId = active.roster[['apex', 'compare'].includes(active.mode) ? result.record.round : 0].id;
+      if (!(active.mode === 'daily' && bladeId === 'training') && !save.collection.some(blade => blade.id === bladeId && !blade.fractured && blade.canEnterArena !== false)) {
         return { error: '参赛刀已失去资格，请返回大厅结束本届' };
       }
       settleTournament(save, active, result.record);
@@ -197,10 +269,47 @@ export function commitTournament(change) {
 function settleTournament(save, run, record) {
   const { mode, report, round, champion, done } = record;
   const { id, school, grade, roster } = run;
-  const blade = save.collection.find(item => item.id === roster[mode === 'apex' ? round : 0].id);
+  const blade = save.collection.find(item => item.id === roster[['apex', 'compare'].includes(mode) ? round : 0].id);
   const bladeId = blade?.id;
   const official = ['school', 'national', 'apex'].includes(mode);
   const before = save.cr;
+  const release = run.rules === RELEASE_RULES;
+  const creditRows = [];
+  const grant = (amount, label, key, owner = blade) => {
+    const receipt = namedCredit(save, amount, label, { id: key, bladeId: owner?.id });
+    if (receipt) creditRows.push({ label, amount, bladeId: owner?.id });
+  };
+  if (release) {
+    if (mode === 'first' && record.qualified && blade?.id === save.v19.launch.firstBladeId) {
+      if (!save.v19.launch.firstPassed) grant(FIRST_REWARD.trial, '首刀试斩', 'first-trial', blade);
+      save.v19.launch.firstPassed = true;
+      if (report.swipe >= 3 && !blade.firstTrialStamp) {
+        blade.firstTrialStamp = true;
+        record.stamp = '首刀三斩';
+      }
+    }
+    if (mode === 'quick' && record.qualified) {
+      grant(4, '快赛有效', id + ':quick');
+      if (fulfillsSpecial(report, run.special)) grant(4, '快赛专项', id + ':special');
+    }
+    if (mode === 'daily' && record.qualified && !record.paidDaily) {
+      grant(12, '每日挑战', 'daily:v19:' + run.date);
+    }
+    if (mode === 'school' && report.win) {
+      const first = !save.arena.school[school]?.cleared.includes(grade);
+      grant(first ? [12, 16, 20, 24, 28][grade] : 6, first ? '流派首通' : '流派达标', id + ':school');
+    }
+    if ((mode === 'national' || mode === 'apex') && report.win) grant(6, '赛事轮次通过', id + ':round:' + round);
+    if (champion && mode === 'national' && !nationalCrowns(save)) grant(30, '全国首冠', 'first:national');
+    if (champion && mode === 'apex' && !save.arena.apex.wins) {
+      for (const competitor of roster) {
+        const member = save.collection.find(item => item.id === competitor.id);
+        if (member) grant(12, '三刀首冠 · ' + member.bladeName, 'first:apex:' + member.id, member);
+      }
+    }
+    const unlocked = completeSeries(blade, run, record);
+    if (unlocked) record.stamp = seriesLabel(unlocked) + ' 入册';
+  }
   const workshopBefore = workshopSnapshot(save);
   let events;
   if (official) {
@@ -214,7 +323,7 @@ function settleTournament(save, run, record) {
   } else {
     events = [{ key: 'v19:' + id, cr: record.cr, xp: record.xp }];
   }
-  const grants = applyCareerGrants(save, events);
+  const grants = applyCareerGrants(save, release ? events.map(item => ({ ...item, cr: 0 })) : events);
   const workshopAfter = workshopSnapshot(save);
   const nextWorkshop = WORKSHOP_TIERS[workshopAfter.level];
   record.workshop = {
@@ -225,7 +334,7 @@ function settleTournament(save, run, record) {
       nextWorkshop.rarity !== workshopAfter.rarity ? '更易获得稀有锻效' : '降低锻打断裂风险',
   };
   record.xp = grants.reduce((sum, grant) => sum + grant.xp, 0);
-  addCr(save, grants.reduce((sum, grant) => sum + grant.cr, 0), 'cut:v19');
+  addCr(save, grants.reduce((sum, grant) => sum + grant.cr, 0), 'cut:v19', { id: id + ':legacy:' + round, bladeId });
   const win = mode === 'school' ? report.win : official && champion;
   if (mode === 'school' && win) {
     const branch = save.arena.school[school] ||= { cleared: [] };
@@ -240,8 +349,8 @@ function settleTournament(save, run, record) {
       tally.best = Math.max(tally.best, Math.round(record.total / record.rounds.length));
     }
   }
-  if (record.qualified && !record.paidDaily) {
-    settle(save, official ? EVENT.FORMAL_COMPLETED : EVENT.QUICK_COMPLETED, { matchId: id, tier: mode });
+  if (record.qualified && !record.paidDaily && mode !== 'compare') {
+    settle(save, official ? EVENT.FORMAL_COMPLETED : EVENT.QUICK_COMPLETED, { matchId: id, tier: mode, bladeId }, {}, { payTask: !release });
   }
   if (win) settle(save, EVENT.HONOR_EARNED, { matchId: id, tier: mode, itemKey: 'win' });
   const entry = {
@@ -258,7 +367,8 @@ function settleTournament(save, run, record) {
       if (participation) Object.assign(participation, { win: true, champion: true });
     }
   }
-  checkAchievements(save);
+  checkAchievements(save, { credits: !release, bladeId });
+  if (release) record.creditRows = creditRows;
   record.cr = entry.reward = save.cr - before;
   Object.assign(record.rounds.at(-1), { cr: record.cr, xp: record.xp });
 }

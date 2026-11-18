@@ -74,7 +74,7 @@ export function eventIdOf(type, identity = {}) {
  * @param {object} [detail]   展示用附加信息，不参与幂等判断
  * @returns {{ok:boolean, eventId:string, duplicate:boolean, cr:number, tasks:object[], achievements:object[], unlocks:string[]}}
  */
-export function settle(s, type, identity = {}, detail = {}) {
+export function settle(s, type, identity = {}, detail = {}, { payTask = true } = {}) {
   if (!s || !type) return { ok: false, eventId: '', duplicate: true, cr: 0, tasks: [], achievements: [], unlocks: [] };
   s.eventLedger = s.eventLedger && typeof s.eventLedger === 'object' && !Array.isArray(s.eventLedger)
     ? s.eventLedger : {};
@@ -96,8 +96,8 @@ export function settle(s, type, identity = {}, detail = {}) {
     if (res.ok) {
       out.tasks.push({ id: taskId, reward: res.reward });
       /* 单个任务完成也给 CR（V2.1 §22.2 的任务奖励口径） */
-      if (res.reward > 0) {
-        Economy.addCr(s, res.reward, `daily:${taskId}`);
+      if (payTask && res.reward > 0) {
+        Economy.addCr(s, res.reward, `daily:${taskId}`, { id: `task:${dayKey}:${taskId}`, bladeId: identity.bladeId });
         out.cr += res.reward;
       }
     }

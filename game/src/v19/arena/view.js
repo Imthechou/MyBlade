@@ -1,8 +1,9 @@
 import {
   TARGET_NAMES, SCHOOLS, GRADIENTS, EVENTS, PROJECTS, APEX_GOAL, bladeCount, bladeId, eligibleBlades, gate, roundNames,
   tournamentState, createEntry, courseFor, summarizeRound, settleRound, abandonEntry, dayKey, rankOf, RANKS,
-  masteryOf, NATIONAL_UNLOCK,
+  masteryOf, NATIONAL_UNLOCK, rosterIndex,
 } from '../tournament.js';
+import { SPECIALS } from '../launchRules.js';
 import { goalText } from './courses.js';
 import { arenaBladeStats } from './stats.js';
 import { createTrial, warmTrialAudio } from './trial.js';
@@ -25,7 +26,7 @@ const art = (key, attrs = '') => `<img src="${targetThumbnail(key)}" alt="" ${at
 const eventId = () => globalThis.crypto?.randomUUID?.() ?? Date.now().toString(36) + Math.random().toString(36).slice(2);
 
 export function mountTournament(root, { getSave, commit, settings, onLegacy, onForge, onSettings, hasLegacyCareer }) {
-  const entry = { mode: 'quick', school: 'edge', grade: 0, style: 'mix', material: '' };
+  const entry = { mode: 'quick', school: 'edge', grade: 0, style: 'mix', material: '', special: 'multi' };
   const page = root.closest('.page');
   let solo, practice, lineup = [];
   let notice = '', confirming = false;
@@ -34,19 +35,22 @@ export function mountTournament(root, { getSave, commit, settings, onLegacy, onF
 
   const state = () => tournamentState(getSave());
   const currentBlades = () => eligibleBlades(getSave());
-  const selectedIds = () => entry.mode === 'apex' ? lineup :
+  const multiple = () => bladeCount(entry) > 1;
+  const selectedIds = () => multiple() ? lineup :
     [entry.mode === 'practice' ? practice : solo].filter(Boolean);
 
   function syncSelection(blades, preferred) {
     const ids = blades.map(bladeId);
-    if (entry.mode === 'apex') {
+    if (multiple()) {
       lineup = [...new Set([...lineup, ...ids])].filter(id => ids.includes(id)).slice(0, bladeCount(entry));
+    } else if (entry.mode === 'first') {
+      solo = getSave().launch?.firstBladeId;
     } else if (entry.mode === 'practice') {
       const wanted = preferred ?? practice ?? solo;
       practice = wanted === 'training' || ids.includes(wanted) ? wanted : ids[0] ?? 'training';
     } else {
       const wanted = preferred ?? solo;
-      solo = ids.includes(wanted) ? wanted : ids[0];
+      solo = entry.mode === 'daily' && (wanted === 'training' || !ids.length) ? 'training' : ids.includes(wanted) ? wanted : ids[0];
     }
   }
 
@@ -60,7 +64,7 @@ export function mountTournament(root, { getSave, commit, settings, onLegacy, onF
 
   function bladeFields(blades, data, course) {
     const ids = selectedIds();
-    const rounds = entry.mode === 'apex' ? roundNames('apex') : [];
+    const rounds = multiple() ? roundNames(entry.mode) : [];
     return `<div class="arena-blades">
       ${ids.map((id, slot) => {
         const blade = blades.find(item => bladeId(item) === id);
@@ -69,10 +73,11 @@ export function mountTournament(root, { getSave, commit, settings, onLegacy, onF
         const suited = mastery && specialty === mastery.specialty;
         return `<div class="arena-loadout-item">
           ${rounds.length ? `<div class="arena-loadout-round"><b>${esc(rounds[slot])}</b>
-            <span>${PROJECTS[specialty].name}专长${suited ? ' · 已匹配' : ''}</span></div>` : ''}
+            <span>${PROJECTS[specialty] ? PROJECTS[specialty].name + '专长' : '同一靶序'}${suited ? ' · 已匹配' : ''}</span></div>` : ''}
           ${button('choose-blade', `${bladeArt(id)}<span class="arena-blade-copy"><b>${esc(blade?.name ?? '工坊试刀')}</b>
             <small>${mastery ? mastery.level + ' · ' + mastery.project + '专长' : '借用'}${!rounds.length && suited ? ' · 适合本轮' : ''}</small></span>
-            <span class="arena-change">${blade ? '换刀' : '选刀'} ${symbol('next')}</span>`, 'arena-blade-select', `data-slot="${slot}"`)}
+            <span class="arena-change">${entry.mode === 'first' ? '首刀锁定' : (blade ? '换刀' : '选刀') + ' ' + symbol('next')}</span>`,
+            'arena-blade-select', `data-slot="${slot}" ${entry.mode === 'first' ? 'disabled' : ''}`)}
           ${blade && !rounds.length ? `<div class="arena-blade-profile" aria-label="参赛刀能力">${profileText(blade)}</div>` : ''}
         </div>`;
       }).join('')}
@@ -131,6 +136,8 @@ export function mountTournament(root, { getSave, commit, settings, onLegacy, onF
     const loan = !blades.length;
     const dailyDone = Boolean(data.daily[dayKey()]?.rewarded);
     const legacy = hasLegacyCareer();
+    const launch = getSave().launch;
+    const needsFirst = Boolean(launch?.firstBladeId && !launch.firstPassed);
     const keys = ['card', 'rope', 'bamboo'];
     const nationalReady = Object.values(data.schools).some(value => value >= NATIONAL_UNLOCK);
     const apexReady = data.titles.national && blades.length >= 3;
@@ -140,23 +147,27 @@ export function mountTournament(root, { getSave, commit, settings, onLegacy, onF
       <section class="arena-quick">
         <header class="arena-hero">
           <div class="arena-hero-heading">
-            <span>${loan ? '12 秒试刀' : '30 秒飞靶'}</span>
-            <h1 tabindex="-1">${loan ? '斩试场' : '自由快赛'}</h1>
+            <span>${loan || needsFirst ? '12 秒试刀' : '30 秒飞靶'}</span>
+            <h1 tabindex="-1">${loan ? '斩试场' : needsFirst ? '首刀试斩' : '自由快赛'}</h1>
             ${data.best.flightQuick ? `<small>个人最高 <b>${data.best.flightQuick}</b></small>` : ''}
           </div>
           <div class="arena-hero-art" aria-hidden="true">${keys.map(key => art(key)).join('')}</div>
         </header>
         <div class="arena-launch">
-          ${!loan && !data.active && !legacy ? bladeFields(blades, data) : ''}
+          ${!loan && !needsFirst && !data.active && !legacy ? bladeFields(blades, data) : ''}
+          ${!loan && !needsFirst && !data.active && !legacy ? specialChoices() : ''}
           ${data.active ? button('loan', '借刀练习', 'secondary') :
             legacy ? button('legacy-career', '继续旧赛程', 'primary') :
             loan ? `<div class="arena-actions">${button('forge', '去锻刀')}${button('loan', '借刀开斩', 'primary')}</div>` :
+            needsFirst ? button('mode', '带首刀试斩', 'primary', 'data-value="first"') :
             button('register', '开始快赛', 'primary')}
         </div>
       </section>
       <nav class="arena-casual" aria-label="日常赛事">
         ${eventLink('daily', 'ice', dailyDone ? '今日已领奖' : '30 秒 · 固定靶序')}
         ${eventLink('practice', 'pineapple')}
+        ${launch?.firstBladeId && !needsFirst ? eventLink('first', 'rope') : ''}
+        ${blades.length > 1 ? eventLink('compare', 'wood') : ''}
       </nav>
       <section class="arena-advanced" aria-labelledby="arena-advanced-title">
         <h2 id="arena-advanced-title">进阶赛</h2>
@@ -186,7 +197,16 @@ export function mountTournament(root, { getSave, commit, settings, onLegacy, onF
       ${button('choose-material', `<span>练习靶具</span><b>${entry.material ? TARGET_NAMES[entry.material] : '按练习方式出靶'}</b>${symbol('next')}`, 'arena-goal')}`;
   }
 
+  function specialChoices() {
+    const special = SPECIALS[entry.special];
+    return `<section class="arena-special"><b>快赛专项 · 同局达标 +4 CR</b>
+      <div class="arena-choices" role="group" aria-label="快赛专项">${Object.entries(SPECIALS).map(([id, item]) =>
+        selectButton('special', id, item.label, entry.special === id)).join('')}</div>
+      <small>${esc(special.hint)}</small></section>`;
+  }
+
   function courseNotes(course) {
+    if (entry.mode === 'compare') return '<p class="arena-course-meta">同一套三波靶，各试 12 秒。战报同时给出实际木靶表现和定速参考。</p>';
     const rounds = roundNames(entry.mode);
     const task = course.goals.length ? `<div class="arena-course-rule"><b>${esc(course.focus)}</b>
       <span>${course.goals.map(goalText).join(' · ')}</span></div>` : '';
@@ -207,7 +227,8 @@ export function mountTournament(root, { getSave, commit, settings, onLegacy, onF
     const targets = [...new Set(course.waves.flatMap(wave => wave.targets))].slice(0, 3);
     const title = entry.mode === 'school' ? course.title : EVENTS[entry.mode].name;
     const action = active ? button('continue', '继续赛程', 'primary') :
-      !reason ? button('register', entry.mode === 'practice' ? '开始练习' : '开斩', 'primary') :
+      !reason ? button('register', entry.mode === 'practice' ? '开始练习' : entry.mode === 'first' ? '带首刀开斩' :
+        entry.mode === 'compare' ? '开始同靶对照' : '开斩', 'primary') :
       !blades.length ? button('forge', '去锻第一把刀', 'primary') :
       button('lobby', '返回大厅', 'secondary');
     warmTargets(course.waves[0].targets);
@@ -220,6 +241,8 @@ export function mountTournament(root, { getSave, commit, settings, onLegacy, onF
           <div class="arena-course-art" aria-hidden="true">${targets.map(key => art(key)).join('')}</div>
         </header>
         ${entry.mode === 'school' ? schoolOptions(data) : entry.mode === 'practice' ? practiceOptions() : ''}
+        ${entry.mode === 'daily' && daily?.trainingBest ? `<p class="arena-course-meta">借刀纪录 ${daily.trainingBest} 分
+          ${daily.flightBest ? ' · 自带刀纪录 ' + daily.flightBest + ' 分' : ''}</p>` : ''}
         ${courseNotes(course)}
         ${active ? `<p class="arena-lock">进行中 · ${esc(courseFor(active).title)}</p>` : reason ? `<p class="arena-lock">${esc(reason)}</p>` : bladeFields(blades, data, course)}
       </div>
@@ -268,14 +291,14 @@ export function mountTournament(root, { getSave, commit, settings, onLegacy, onF
     const save = getSave();
     const blades = eligibleBlades(save);
     const ids = selectedIds();
-    const multi = entry.mode === 'apex';
+    const multi = multiple();
     const specialty = entry.mode === 'quick' ? null : previewCourse(slot).specialty;
     const row = (id, name, meta, profile) => `<button type="button" class="arena-picker-blade" data-picker-value="${esc(id)}"
         aria-pressed="${id === ids[slot]}">${bladeArt(id)}<span class="arena-blade-copy"><b>${esc(name)}</b>
         <small>${esc(meta)}</small>${profile ? `<span class="arena-picker-profile">${profile}</span>` : ''}</span>
         ${id === ids[slot] ? symbol('check') : symbol('next')}</button>`;
     const options = [
-      entry.mode === 'practice' ? row('training', '工坊试刀', '借用') : '',
+      ['practice', 'daily'].includes(entry.mode) ? row('training', '工坊试刀', '借用') : '',
       ...blades.map(blade => {
         const id = bladeId(blade);
         const assigned = ids.indexOf(id);
@@ -338,6 +361,7 @@ export function mountTournament(root, { getSave, commit, settings, onLegacy, onF
   }
 
   function closeBout() {
+    bout?.warmup?.abort();
     engine?.destroy();
     engine = null;
     bout = null;
@@ -352,8 +376,9 @@ export function mountTournament(root, { getSave, commit, settings, onLegacy, onF
     closeBout();
     clearBladeArts(true);
     const course = courseFor(run);
-    const selected = run.roster[run.mode === 'apex' ? run.reports.length : 0];
-    const blade = { ...selected, mastery: masteryOf(getSave(), selected) };
+    const selected = run.roster[rosterIndex(run)];
+    const blade = { ...selected, mastery: run.mode === 'compare' ? null : masteryOf(getSave(), selected),
+      signature: run.mode === 'compare' ? null : selected.signature };
     const current = bout = { run, course, bladeName: blade.name };
     const rounds = roundNames(run.mode);
     root.dataset.screen = 'play';
@@ -392,8 +417,8 @@ export function mountTournament(root, { getSave, commit, settings, onLegacy, onF
         muted: settings().sound === false, volume: settings().volume, onPause: () => showPause(current),
         onFinish: result => finish(current, result),
       });
-      focusCanvas();
-      engine.start();
+      if (run.mode === 'first') readyFirst(current);
+      else { focusCanvas(); engine.start(); }
     } catch (error) {
       console.warn('[arena] 画布初始化失败', error);
       setCover(`<h3 id="trial-cover-title">切割舞台暂不可用</h3>${button('lobby', '返回大厅', 'primary')}`);
@@ -407,6 +432,38 @@ export function mountTournament(root, { getSave, commit, settings, onLegacy, onF
     root.querySelector('.round-pause').disabled = true;
     root.querySelector('canvas').inert = true;
     cover.querySelector('button')?.focus({ preventScroll: true });
+  }
+
+  function readyFirst(current) {
+    setCover(`<h3 id="trial-cover-title">先练一划</h3>
+      <p>从左往右划过这条线。正式试斩会在下一刻开始。</p>
+      <div class="trial-warmup" data-warmup aria-hidden="true"><i></i><span>→</span></div>
+      ${button('start-first', '开始 12 秒试斩', 'primary')}`);
+    const pad = root.querySelector('[data-warmup]');
+    current.warmup = new AbortController();
+    const { signal } = current.warmup;
+    let start;
+    pad.addEventListener('pointerdown', event => {
+      if (!event.isPrimary) return;
+      start = event.clientX;
+      pad.setPointerCapture(event.pointerId);
+    }, { signal });
+    pad.addEventListener('pointerup', event => {
+      if (event.isPrimary && Number.isFinite(start) && Math.abs(event.clientX - start) >= pad.clientWidth * .3) startFirst();
+      start = undefined;
+    }, { signal });
+    pad.addEventListener('pointercancel', () => { start = undefined; }, { signal });
+  }
+
+  function startFirst() {
+    if (!bout?.warmup) return;
+    bout.warmup.abort();
+    bout.warmup = null;
+    root.querySelector('[data-cover]').hidden = true;
+    root.querySelector('.round-pause').disabled = false;
+    root.querySelector('canvas').inert = false;
+    focusCanvas();
+    engine.start();
   }
 
   function showPause(current) {
@@ -451,19 +508,22 @@ export function mountTournament(root, { getSave, commit, settings, onLegacy, onF
     closeBout();
     clearBladeArts(true);
     const { report, mode } = record;
-    const casual = ['practice', 'quick', 'daily'].includes(mode);
+    const casual = ['practice', 'quick', 'daily', 'first', 'compare'].includes(mode);
     const active = state().active;
     const canContinue = active && active.id === record.id;
     const heading = record.champion ? (mode === 'national' ? '全国冠军' : '巅峰冠军') :
+      mode === 'first' ? (record.qualified ? '首刀试斩通过' : '首刀再试一次') :
+      mode === 'compare' ? (record.done ? '同靶对照完成' : '第一把已试斩') :
       mode === 'practice' ? '试刀结束' : casual ? '本局结束' :
       !record.done ? (mode === 'national' ? '获胜晋级' : '本轮结束') :
       mode === 'national' ? '本届止步' : mode === 'apex' ? '巅峰赛结束' : report.win ? '试炼通过' : '试炼待破';
     const nextGrade = run && mode === 'school' && report.win && run.grade < GRADIENTS.length - 1 ? run.grade + 1 : null;
     replay = run && (casual || mode === 'school') ? {
-      plan: { mode, style: run.style, material: run.material, school: run.school, grade: nextGrade ?? run.grade },
+      plan: { mode, style: run.style, material: run.material, school: run.school, grade: nextGrade ?? run.grade, special: run.special },
       ids: run.roster.filter(blade => blade.id !== 'training').map(bladeId),
     } : null;
-    const reason = casual ? (report.reason === 'wear' ? '刀刃耐久耗尽' : record.paidDaily ? '今日奖励已领取' :
+    const reason = mode === 'first' ? (!record.qualified ? '斩断三靶即可通过。第一排绳束适合横划。' : '') :
+      mode === 'compare' ? '' : casual ? (report.reason === 'wear' ? '刀刃耐久耗尽' : record.paidDaily ? '今日奖励已领取' :
       !record.qualified && mode !== 'practice' ? '斩断 4 个靶具即可获得成长奖励' : '') :
       mode === 'apex' && record.done && !record.champion ? '全轮达标且总评 ≥ ' + APEX_GOAL + ' 分夺冠' :
       !report.win ? (report.reason === 'wear' ? '耐久耗尽' : '本轮目标未达成') : '';
@@ -474,7 +534,8 @@ export function mountTournament(root, { getSave, commit, settings, onLegacy, onF
     const showMultiplier = report.cut > 0 && Number.isFinite(report.scoreMultiplier);
     const hasDetails = bestProject || record.rank?.gain || showMultiplier || record.rounds?.length > 1;
     const borrow = mode === 'practice' && !currentBlades().length;
-    const mainAction = canContinue ? button('continue', '进入下一轮', 'primary') :
+    const mainAction = canContinue ? button('continue', mode === 'compare' ? '换第二把刀试斩' : '进入下一轮', 'primary') :
+      mode === 'first' && record.qualified ? button('forge-compare', '接木靶对照委托', 'primary') :
       record.unlockedNational ? button('mode', '报名全国赛', 'primary', 'data-value="national"') :
         borrow ? button('forge', '去锻第一把刀', 'primary') :
           replay ? button('replay', nextGrade === null ? '再来一局' : '挑战下一阶', 'primary') : '';
@@ -503,9 +564,15 @@ export function mountTournament(root, { getSave, commit, settings, onLegacy, onF
       ${report.goals?.length ? `<div class="arena-report-goals">${report.goals.map(goal => `<div data-met="${goal.met}">
         <span>${esc(goal.label)}</span><b>${esc(goal.value)}${esc(goal.unit)} / ${esc(goal.target)}${esc(goal.unit)} ${goal.met ? '✓' : ''}</b>
       </div>`).join('')}</div>` : ''}
+      ${mode === 'compare' ? comparisonReport(record.rounds) :
+        report.wood?.shell ? `<p class="arena-report-hint">木靶 ${report.wood.shell} 划破壳
+          ${report.wood.cut ? ' · ' + report.wood.cut + ' 划斩断' : ''}</p>` : ''}
       ${record.cr || record.xp ? `<div class="report-rewards">${record.cr ? `<b>+${record.cr} CR</b>` : ''}
         ${record.xp ? `<b>工坊 +${record.xp} XP</b>` : ''}
         ${record.streakBonus ? `<span class="is-hot">连胜 ×${record.streak} · +${record.streakBonus} CR</span>` : ''}</div>` : ''}
+      ${record.creditRows?.length ? `<div class="arena-report-goals">${record.creditRows.map(row =>
+        `<div><span>${esc(row.label)}</span><b>+${row.amount} CR</b></div>`).join('')}</div>` : ''}
+      ${record.stamp ? `<p class="arena-report-hint">赛印 · ${esc(record.stamp)}</p>` : ''}
       ${record.mastery ? `<div class="arena-blade-growth${record.mastery.leveled ? ' is-up' : ''}">
         <div class="arena-blade-growth-head"><span>${esc(record.blade)} · ${esc(record.mastery.level)}</span><b>+${record.masteryGain} XP</b></div>
         <div class="arena-rank-track" aria-label="刀具成长进度"><i style="--v:${Math.round(record.mastery.progress * 100)}%"></i></div>
@@ -538,10 +605,21 @@ export function mountTournament(root, { getSave, commit, settings, onLegacy, onF
       <footer class="arena-dock report-actions">
         ${borrow && replay ? button('replay', '再试一次') : button('lobby', '返回大厅', mainAction ? 'secondary' : 'primary')}
         ${mainAction}
+        ${mode === 'first' && record.qualified && replay ? button('replay', '再试一场') : ''}
       </footer>
     </section>`;
     countUp(root.querySelector('[data-report-score]'), 0, shownScore, 660);
     scrollTop();
+  }
+
+  function comparisonReport(rounds = []) {
+    return `<section class="arena-report-goals comparison-report" aria-label="同靶对照结果">
+      <h3>同一木靶 · 两把刀</h3>
+      ${rounds.map(item => `<article><b>${esc(item.blade)}</b>
+        <p>实打 · ${item.wood?.shell ? item.wood.shell + ' 划破壳' : '未破壳'}
+          ${item.wood?.cut ? ' · ' + item.wood.cut + ' 划斩断' : ''} · 一划最多 ${item.swipe} 靶</p>
+        <p>定速 · ${item.calibration?.shell ?? '—'} 划破壳 · ${item.calibration?.cut ?? '—'} 划斩断</p></article>`).join('')}
+    </section>`;
   }
 
   function register(plan, ids) {
@@ -591,6 +669,7 @@ export function mountTournament(root, { getSave, commit, settings, onLegacy, onF
     switch (action) {
       case 'legacy-career': return onLegacy();
       case 'forge': return onForge();
+      case 'forge-compare': return onForge(true);
       case 'settings': return onSettings();
       case 'loan': return register({ mode: 'practice', style: 'mix' }, []);
       case 'choose-blade': return chooseBlade(Number(target.dataset.slot));
@@ -605,6 +684,7 @@ export function mountTournament(root, { getSave, commit, settings, onLegacy, onF
       case 'school': chooseSchool(value); break;
       case 'grade': entry.grade = Number(value); break;
       case 'style': entry.style = value; entry.material = ''; break;
+      case 'special': if (Object.hasOwn(SPECIALS, value)) entry.special = value; break;
       case 'continue': {
         const active = state().active;
         confirming = false;
@@ -621,6 +701,7 @@ export function mountTournament(root, { getSave, commit, settings, onLegacy, onF
       }
       case 'pause': return engine?.pause();
       case 'resume': return resume();
+      case 'start-first': return startFirst();
       case 'retry-report': return finish(bout, bout.result);
       case 'history': return renderReport(state().history[Number(value)]);
       case 'lobby': return showLobby();
@@ -631,9 +712,10 @@ export function mountTournament(root, { getSave, commit, settings, onLegacy, onF
   });
 
   return {
-    open({ bladeId: preferred, mode = 'quick' } = {}) {
+    open({ bladeId: preferred, bladeIds, mode = 'quick' } = {}) {
       closeBout();
       entry.mode = Object.hasOwn(EVENTS, mode) ? mode : 'quick';
+      if (entry.mode === 'compare' && Array.isArray(bladeIds)) lineup = bladeIds;
       confirming = false;
       notice = '';
       renderLobby(preferred);

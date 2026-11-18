@@ -1,4 +1,6 @@
-import { arcadeCourse, courseGoals, practiceCourse, schoolCourse, SCHOOLS } from './arena/courses.js';
+import { RELEASE_RULES, SPECIALS } from './launchRules.js';
+import { woodCalibration } from './arena/stats.js';
+import { arcadeCourse, courseGoals, fixedCourse, practiceCourse, schoolCourse, SCHOOLS } from './arena/courses.js';
 export { SCHOOLS } from './arena/courses.js';
 
 export const TARGET_NAMES = {
@@ -49,6 +51,8 @@ export function rankGain(mode, info = {}) {
 
 export const EVENTS = {
   practice: { name: '试刀练习', sub: '12 秒 · 自选靶具' },
+  first: { name: '首刀试斩', sub: '12 秒 · 固定三波' },
+  compare: { name: '同靶对照', sub: '两把刀 · 同靶各试 12 秒' },
   quick: { name: '自由快赛', sub: '30 秒 · 飞靶连斩' },
   daily: { name: '每日挑战', sub: '30 秒 · 当日固定飞靶' },
   school: { name: '流派试炼', sub: '六个流派 · 各五阶' },
@@ -82,8 +86,10 @@ export const NATIONAL_UNLOCK = 2;
 
 export const dayKey = (time = Date.now()) => new Date(time + 8 * 3600e3).toISOString().slice(0, 10);
 export const bladeId = blade => String(blade.id);
-export const bladeCount = entry => entry.mode === 'apex' ? 3 : 1;
-export const roundNames = mode => (mode === 'national' ? NATIONAL : mode === 'apex' ? APEX : []).map(item => item.title);
+export const bladeCount = entry => entry.mode === 'apex' ? 3 : entry.mode === 'compare' ? 2 : 1;
+export const rosterIndex = (run, round = run.reports.length) => ['apex', 'compare'].includes(run.mode) ? round : 0;
+export const roundNames = mode => mode === 'compare' ? ['第一把 · 固定靶', '第二把 · 固定靶'] :
+  (mode === 'national' ? NATIONAL : mode === 'apex' ? APEX : []).map(item => item.title);
 export const tournamentState = save => ({
   schools: {}, titles: {}, mastery: {}, best: {}, daily: {}, history: [], active: null, rating: 0, streak: 0,
   ...save.tournament,
@@ -136,6 +142,11 @@ export function gate(save, entry) {
   if (entry.mode === 'practice') return '';
   if (!Object.hasOwn(EVENTS, entry.mode)) return '赛事未开放';
   if (save.legacyCareer) return '请先完成或结束旧赛程';
+  const blades = eligibleBlades(save);
+  if (entry.mode === 'first') return blades.some(blade => blade.id === save.launch?.firstBladeId) ? '' : '先锻成第一把刀';
+  if (save.launch?.firstBladeId && !save.launch.firstPassed) return '完成首刀试斩后开放';
+  if (entry.mode === 'compare' && blades.length < 2) return '需要两把不同的成刀';
+  if (entry.mode === 'daily' && save.launch?.firstPassed) return '';
   if (entry.mode === 'school') {
     if (!Object.hasOwn(SCHOOLS, entry.school) || !Number.isInteger(entry.grade) || !GRADIENTS[entry.grade]) return '请选择流派与梯度';
     if (entry.grade > (schools[entry.school] || 0)) return '先通过本流派上一阶';
@@ -152,8 +163,10 @@ export function createEntry(save, entry, selectedIds, id, date = dayKey()) {
   if (entry.mode !== 'practice' && tournamentState(save).active) return { error: '请先完成或结束已报名的赛事' };
   const blades = eligibleBlades(save);
   const practice = entry.mode === 'practice';
-  const selected = practice && selectedIds.length === 0 ? [TRAINING_BLADE] :
-    selectedIds.map(key => blades.find(blade => bladeId(blade) === key));
+  const canBorrow = practice || entry.mode === 'daily' && save.launch;
+  const chosen = entry.mode === 'first' ? [save.launch.firstBladeId] : selectedIds;
+  const selected = canBorrow && (!chosen.length || chosen[0] === 'training') ? [TRAINING_BLADE] :
+    chosen.map(key => blades.find(blade => bladeId(blade) === key));
   if (selected.length !== bladeCount(entry) || selected.some(blade => !blade) ||
       new Set(selectedIds).size !== selectedIds.length) return { error: '请选齐符合要求的参赛刀' };
   const roster = selected.map(blade => ({
@@ -161,11 +174,16 @@ export function createEntry(save, entry, selectedIds, id, date = dayKey()) {
     mastery: masteryOf(save, blade), signature: blade.signature,
   }));
   const run = { ...entry, id, date, roster, reports: [], qualified: [] };
+  if (save.launch) {
+    run.rules = RELEASE_RULES;
+    if (run.mode === 'quick') run.special = Object.hasOwn(SPECIALS, entry.special) ? entry.special : 'multi';
+  }
   if (!practice) save.tournament = { ...tournamentState(save), active: run };
   return { run };
 }
 
 export function courseFor(run) {
+  if (run.mode === 'first' || run.mode === 'compare') return fixedCourse(run.mode === 'compare');
   const round = run.reports.length;
   const series = run.mode === 'national' ? NATIONAL : run.mode === 'apex' ? APEX : null;
   const stage = series?.[round];
@@ -181,7 +199,7 @@ export function courseFor(run) {
   }
   const practice = run.mode === 'practice';
   return {
-    ...(practice ? practiceCourse(run) : arcadeCourse()),
+    ...(practice ? practiceCourse(run) : arcadeCourse(run.special)),
     title: EVENTS[run.mode].name, limit: practice ? 12 : 30,
     seed: run.mode === 'daily' ? run.date : run.id,
   };
@@ -215,22 +233,23 @@ export function settleRound(save, id, round, result) {
   const course = courseFor(run);
   const report = summarizeRound(course, result);
   const quick = run.mode === 'quick' || run.mode === 'daily';
-  const blade = run.roster[run.mode === 'apex' ? round : 0];
-  const qualified = quick ? result.cut >= 4 :
+  const blade = run.roster[rosterIndex(run, round)];
+  const release = run.rules === RELEASE_RULES;
+  const qualified = run.mode === 'compare' ? false : run.mode === 'first' ? report.win : quick ? result.cut >= 4 :
     report.win || (result.cut >= 4 && (report.progress >= .20 || report.coverage >= .24));
   const paidDaily = run.mode === 'daily' && data.daily[run.date]?.rewarded;
   const valid = qualified && !paidDaily;
   /* 连胜：连续有效出战叠加额外 CR，断了就归零。只算快赛/每日，避免流派赛刷连胜。 */
   const streakBefore = Math.max(0, Math.floor(Number(data.streak) || 0));
   const streak = quick && !paidDaily ? (valid ? streakBefore + 1 : 0) : streakBefore;
-  const streakBonus = quick && valid && streak >= 2 ? Math.min(12, (streak - 1) * 3) : 0;
+  const streakBonus = !release && quick && valid && streak >= 2 ? Math.min(12, (streak - 1) * 3) : 0;
   data.streak = streak;
-  const cr = (valid && quick ? Math.min(35, 4 + Math.floor(result.score / 100)) : 0) + streakBonus;
+  const cr = (!release && valid && quick ? Math.min(35, 4 + Math.floor(result.score / 100)) : 0) + streakBonus;
   const xp = valid && quick ? Math.min(45, 10 + Math.floor(result.score / 75)) : 0;
   let mastery = null;
   let masteryGain = 0;
   let swipeBonus = 0;
-  if (valid) {
+  if (valid && blade.id !== 'training') {
     const before = masteryOf(save, blade);
     const firstRoundForBlade = !run.qualified.includes(blade.id);
     swipeBonus = SWIPE_GOALS.filter(item => item.count > before.bestSwipe && item.count <= report.swipe)
@@ -246,13 +265,15 @@ export function settleRound(save, id, round, result) {
   }
   // The flight rules change scoring; keep the original records and compare
   // scores earned on the new course. Daily rewards still share the original receipt.
+  const dailyKey = release && blade.id === 'training' ? 'trainingBest' : 'flightBest';
   const prevBest = run.mode === 'quick' ? Math.max(0, Number(data.best.flightQuick) || 0) :
-    run.mode === 'daily' ? Math.max(0, Number(data.daily[run.date]?.flightBest) || 0) : null;
+    run.mode === 'daily' ? Math.max(0, Number(data.daily[run.date]?.[dailyKey]) || 0) : null;
   if (run.mode === 'daily') data.daily[run.date] = {
-    ...data.daily[run.date], flightBest: Math.max(prevBest, result.score),
+    ...data.daily[run.date], [dailyKey]: Math.max(prevBest, result.score),
     rewarded: Boolean(paidDaily || valid),
   };
   if (run.mode === 'quick') data.best.flightQuick = Math.max(prevBest, result.score);
+  if (run.mode === 'compare') report.calibration = woodCalibration(blade.stats);
   run.reports.push({ ...report, blade: blade.name, bladeId: blade.id, cr, xp });
   const series = roundNames(run.mode).length;
   const done = !series || run.reports.length >= series || (run.mode === 'national' && !report.win);
