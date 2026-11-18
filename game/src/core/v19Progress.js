@@ -12,7 +12,7 @@ import { specialtySnapshot } from './arenaV41Specialties.js';
 import { settle, EVENT } from './events.js';
 import { appraise, freshRun, LOOKS, MIN_PRICE, MODELS, signature, signaturePerk } from '../v19/forge.js';
 import { SCHOOLS, masteryOf } from '../v19/tournament.js';
-import { FIRST_REWARD, MATERIAL_TIERS, RELEASE_RULES, completeSeries, craftRating, fulfillsSpecial, meetsCommission, seriesCandidate,
+import { FIRST_REWARD, MATERIAL_TIERS, RELEASE_RULES, comparisonBuildFor, completeSeries, craftRating, fulfillsSpecial, meetsCommission, seriesCandidate,
   seriesLabel } from '../v19/launchRules.js';
 import { namedCredit, noteCredit, receiptsFor } from './wallet.js';
 import { appraisalQuality, appraisalRarity } from '../v19/workshop.js';
@@ -34,8 +34,11 @@ function newFurnace(save, seed, compare = false) {
   const first = !save.v19.launch.firstPassed && !save.v19.launch.firstBladeId;
   run.rules = RELEASE_RULES;
   run.furnaceKind = first ? 'first' : save.cr < MIN_PRICE ? 'recovery' : 'normal';
-  run.compareCommission = Boolean(compare && run.furnaceKind === 'normal');
-  run.commissionSelected = run.compareCommission;
+  if (compare && run.furnaceKind === 'normal') {
+    const stats = save.collection.find(blade => blade.id === save.v19.launch.firstBladeId)?.stats;
+    run.comparisonBuild = comparisonBuildFor(stats?.strength, stats?.sharpness);
+  }
+  run.commissionSelected = false;
   run.blueprint = run.furnaceKind === 'normal' && !compare ? 'auto' : 'straight';
   run.hitZones = [];
   run.revision = 0;

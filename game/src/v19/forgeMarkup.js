@@ -29,6 +29,7 @@ export const forgeMarkup = `
         </div>
         <div id="furnace-config" class="furnace-config" hidden></div>
       </div>
+      <aside id="furnace-order-status" class="furnace-order-status" aria-label="当前工坊委托" hidden></aside>
 
       <section class="panel" id="panel" aria-labelledby="title">
         <div class="panel-top">

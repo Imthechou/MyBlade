@@ -10,6 +10,17 @@ export const MATERIAL_TIERS = [
 
 export const BLUEPRINTS = { straight: '直刀', tangdao: '唐刀', saber: '弯刀' };
 export const ZONES = { belly: '刀腹', edge: '刃侧', tip: '刀尖' };
+export const COMPARISON_BUILDS = {
+  heavy: { name: '重锋', family: 'coal', hits: { belly: 4, tip: 2 }, grip: '沉稳' },
+  edge: { name: '快锋', family: 'river', hits: { belly: 2, edge: 4 }, grip: '轻巧' },
+};
+export const comparisonBuildFor = (strength, sharpness) => strength > sharpness ? 'edge' : 'heavy';
+
+const COMMISSION_TASKS = [
+  { name: '基础锻压', zone: 'belly', hits: 2 },
+  { name: '刃线精制', zone: 'edge', hits: 3, quality: 65 },
+  { name: '复合精制', sequence: ['belly', 'belly', 'edge', 'edge'], quality: 65 },
+];
 export const SPECIALS = {
   multi: { label: '一划三斩', target: 3, hint: '同一划斩断至少三靶' },
   armor: { label: '重靶击破', target: 2, hint: '本场斩断两件带护甲的重靶' },
@@ -34,24 +45,39 @@ export function craftRating(run) {
 }
 
 export function commissionFor(ore) {
-  if (!ore || !MATERIAL_TIERS[ore.tier]) return null;
-  const tasks = [
-    ['基础锻压', '刀腹命中两次并完成鉴定'],
-    ['刃线精制', '刃侧命中三次，精炼质量至少 65'],
-    ['复合精制', '依次两次刀腹、两次刃侧，精炼质量至少 65'],
-  ];
-  const [name, description] = tasks[ore.tier];
-  return { tier: ore.tier, family: ore.family, name, description, amount: MATERIAL_TIERS[ore.tier].commission };
+  const task = COMMISSION_TASKS[ore?.tier];
+  if (!task) return null;
+  const hammer = task.sequence ? task.sequence.map(zone => ZONES[zone]).join(' → ') : ZONES[task.zone] + ' ' + task.hits + ' 锤';
+  const description = [task.quality ? '精炼至少 ' + task.quality : '', hammer].filter(Boolean).join(' · ');
+  return { tier: ore.tier, family: ore.family, name: task.name, description, amount: MATERIAL_TIERS[ore.tier].commission };
+}
+
+export function commissionChecks(run) {
+  const task = run.commission;
+  const goal = COMMISSION_TASKS[task?.tier];
+  if (!goal || task.family !== run.ore?.family || task.tier !== run.ore?.tier) return [];
+  const checks = [];
+  if (goal.quality) checks.push({ key: 'quality', label: '精炼', value: Math.floor(run.refinement?.quality ?? run.refining?.quality ?? 0),
+    target: goal.quality, settled: Boolean(run.refinement) });
+  if (goal.sequence) {
+    const hits = run.hitZones || [];
+    const complete = hits.some((_, at) => goal.sequence.every((zone, offset) => hits[at + offset] === zone));
+    let value = goal.sequence.length;
+    if (!complete) {
+      value = Math.min(value - 1, hits.length);
+      while (value && !goal.sequence.slice(0, value).every((zone, index) => hits[hits.length - value + index] === zone)) value--;
+    }
+    checks.push({ key: 'sequence', label: '连锤顺序', value, target: goal.sequence.length, settled: true,
+      hint: goal.sequence.map(zone => ZONES[zone]).join(' → ') });
+  } else {
+    checks.push({ key: goal.zone, label: ZONES[goal.zone], value: hitCounts(run)[goal.zone], target: goal.hits, settled: true });
+  }
+  return checks;
 }
 
 export function meetsCommission(run) {
-  const task = run.commission;
-  if (!task || task.family !== run.ore?.family || task.tier !== run.ore.tier) return false;
-  const counts = hitCounts(run);
-  if (task.tier === 0) return counts.belly >= 2;
-  if ((run.refinement?.quality ?? 0) < 65) return false;
-  if (task.tier === 1) return counts.edge >= 3;
-  return (run.hitZones || []).join(',').includes('belly,belly,edge,edge');
+  const checks = commissionChecks(run);
+  return checks.length > 0 && checks.every(check => check.settled && check.value >= check.target);
 }
 
 export const SERIES = [

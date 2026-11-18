@@ -5,7 +5,8 @@ import {
   fitOptions, refreshFittings, signature, signaturePerk, inspectOre, mineralHeritage, oreInspection, oreModelId,
   markLamp, tapOreProbe, oreStatFocus,
 } from './forge.js';
-import { BLUEPRINTS, MATERIAL_TIERS, RELEASE_RULES, commissionFor, seriesLabel } from './launchRules.js';
+import { BLUEPRINTS, COMPARISON_BUILDS, MATERIAL_TIERS, RELEASE_RULES, ZONES,
+  commissionChecks, commissionFor, meetsCommission, seriesLabel } from './launchRules.js';
 import { ensureThreeRuntime } from './threeRuntime.js';
 import { createViewReset } from '../ui/viewReset.js';
 import { forgeMarkup } from './forgeMarkup.js';
@@ -29,6 +30,7 @@ export function mountForge(root, { onArena, onCollection }) {
   root.innerHTML = forgeMarkup;
   const get = id => root.querySelector('#' + id);
   const stageBox = get('stage');
+  const workspace = stageBox.parentElement;
   const actions = get('actions');
   const tray = get('tray');
   const oreOptions = get('ore-options');
@@ -168,6 +170,8 @@ export function mountForge(root, { onArena, onCollection }) {
     const idx = PHASES.indexOf(navPhase);
     const ore = phase === 'ore' ? offers(run)[run.selected] : run.ore;
     const fit = fitOptions(run).find(item => item.id === run.fit);
+    const comparison = COMPARISON_BUILDS[run.comparisonBuild];
+    const usingComparison = comparison && comparison.family === ore?.family && run.blueprint === 'straight';
     stageBox.dataset.mode = phase;
     if (phase !== 'refine') stageBox.dataset.danger = 'false';
     /* 锻打首次进入：等机位切换完成后把三个落锤区贴到刀身上。 */
@@ -193,7 +197,7 @@ export function mountForge(root, { onArena, onCollection }) {
       }
       const buy = actions.querySelector('[data-action="buy"]');
       const canAfford = ore.price <= save.credits;
-      buy.textContent = (canAfford ? '开石' : '余额不足') + ' · ' + ore.price + ' CR';
+      buy.textContent = canAfford && ore.price === 0 ? '免费开石' : (canAfford ? '开石' : '余额不足') + ' · ' + ore.price + ' CR';
       buy.disabled = !canAfford;
       const refresh = actions.querySelector('[data-action="next-batch"]');
       refresh.hidden = ['first', 'recovery'].includes(run.furnaceKind);
@@ -240,15 +244,13 @@ export function mountForge(root, { onArena, onCollection }) {
     } else if (phase === 'forge') {
       const risk = fractureRisk(run);
       const bounded = Number.isFinite(hammerLimit(run));
-      title(MODELS[run.model]);
-      /* 三区作用改由刀身热区 + 命中浮字表达，这里不再堆一行说明文字。 */
-      get('description').replaceChildren();
+      title(MODELS[run.model], '', usingComparison ? '同靶建议 · ' + comparisonHammer(comparison) : '');
       readout.innerHTML = `<div class="forge-meters"><div><span>落锤</span><b id="hit-count">${run.hits}${run.hits < 6 ? ' / 6' : ' 锤'}</b></div>
         <div><span>下一锤断率</span><b class="risk-value ${risk >= .075 ? 'alert' : ''}" id="risk">${fmt(risk)}</b>
           <div class="risk-bar"><span style="width:${risk / .9 * 100}%"></span></div></div></div>
           ${bounded && run.hits >= 6 && run.furnaceKind !== 'first' ? `<p class="fit-detail">预计疲劳 ${nextFatigue(run)} / 100 · 最多 10 锤</p>` : ''}${lookChips(run)}`;
-      const fallback = '<div class="v19-zones">' + ['belly', 'edge', 'tip'].map((zone, index) =>
-        button('strike-fallback', ['刀腹', '刃侧', '刀尖'][index], { id: 'strike-' + zone, kind: 'secondary', off: !canStrike(run) })).join('') + '</div>';
+      const fallback = '<div class="v19-zones">' + Object.keys(ZONES).map(zone =>
+        button('strike-fallback', ZONES[zone], { id: 'strike-' + zone, kind: 'secondary', off: !canStrike(run) })).join('') + '</div>';
       /* 收锤进度画在按钮里，不再用“第 6 锤后可收锤”整条文字解释规则。 */
       actions.innerHTML = fallback + (bounded && !run.buffered && nextFatigue(run) >= 100 && run.hits < hammerLimit(run)
         ? button('buffer-fatigue', '缓冲一次 · −22 疲劳', { kind: 'secondary' }) : '') +
@@ -257,7 +259,7 @@ export function mountForge(root, { onArena, onCollection }) {
           <span>收锤</span><i class="finish-gauge" style="--v:${Math.min(1, run.hits / 6) * 100}%" aria-hidden="true"></i>
         </button>`;
     } else if (phase === 'fit') {
-      title('给刀装柄', '选 1 套');
+      title('给刀装柄', '选 1 套', usingComparison ? '同靶建议 · ' + comparison.grip + '柄' : '');
       readout.innerHTML = fit ? `<p class="fit-detail">${fit.parts} · ${fit.delta.map((n, i) => n ? STAT_NAMES[i] + signed(n) : '').filter(Boolean).join(' · ')}</p>` : '';
       const price = fittingPrice(run);
       actions.innerHTML = button('appraise', '确认并鉴定', { off: !fit }) +
@@ -273,9 +275,9 @@ export function mountForge(root, { onArena, onCollection }) {
         const rare = RARE_TIERS.has(rarity);
         readout.innerHTML = `<div class="forge-result arcade-result${rare ? ' is-rare' : ''}" data-rarity="${esc(rarity)}">
           <span class="result-grade">${esc(record.grade)} · 品质 ${esc(record.quality)}</span>
-          <b class="result-score"><span id="result-score">0</span><small> 分</small></b><span>+${record.credit} CR</span></div>
+          <b class="result-score"><span id="result-score">${motion.reduced() ? record.score : 0}</span><small> 分</small></b>
+          ${record.credit > 0 ? `<span class="result-credit"><small>本次入账</small><b>+${record.credit} CR</b></span>` : ''}</div>
           ${record.craft ? `<p class="fit-detail">工艺 ${esc(record.craft.grade)} · ${record.craft.score}${record.seriesSlot ? ' · ' + seriesLabel(record.seriesSlot) : ''}</p>` : ''}
-          ${record.commission ? `<p class="fit-detail">${esc(record.commission.name)} · ${record.commission.met ? '委托达标' : '未达标'}</p>` : ''}
           <div class="stat-list">${record.stats.map((n, i) => `<div class="stat" style="--i:${i}"><span>${STAT_NAMES[i]}</span><b>${Number(n)}</b><span class="stat-track"><i style="width:${Math.min(100, Number(n) / STAT_CAP * 100)}%"></i></span></div>`).join('')}</div>
           ${perk ? `<p class="fit-detail result-perk">${esc(perk.desc)}</p>` : ''}`;
         const scoreNode = get('result-score');
@@ -294,7 +296,11 @@ export function mountForge(root, { onArena, onCollection }) {
           setTimeout(() => countUp(scoreNode, 0, Number(record.score) || 0, span), lead);
         } else if (scoreNode) scoreNode.textContent = String(record.score);
       } else readout.replaceChildren();
-      actions.innerHTML = (record ? button('enter-tournament', '带此刀去试斩') : '') +
+      const canCompare = comparison && record && save.launch?.firstPassed &&
+        getProgress().collection.some(blade => blade.id === save.launch.firstBladeId && blade.id !== record.id &&
+          !blade.fractured && blade.canEnterArena !== false);
+      actions.innerHTML = (canCompare ? button('enter-comparison', '带两把刀去同靶对照') :
+        record ? button('enter-tournament', '带此刀去试斩') : '') +
         button('open-collection', '藏刀阁', { kind: record ? 'secondary' : 'primary' }) +
         (run.furnaceKind === 'first' && !save.launch?.firstPassed ? '' : button('restart', '再锻一把', { kind: 'secondary' }));
     } else {
@@ -322,6 +328,7 @@ export function mountForge(root, { onArena, onCollection }) {
         : button('ask-abandon', '放弃本炉', { kind: 'secondary' });
     }
     renderTools(run, ore);
+    renderOrderStatus(run);
     if (phase === 'ore' && webglError) describeProbe(ore, inspectionMode);
     const loadSeq = ++stageLoadSeq;
     const started = performance.now();
@@ -339,7 +346,7 @@ export function mountForge(root, { onArena, onCollection }) {
     viewReset.hidden = !stage || !['ore', 'reveal', 'forge', 'fit', 'appraise'].includes(phase);
     renderGripFocus();
     renderTray(run, fit);
-    if (changedPhase) root.closest('.page').scrollTop = 0;
+    if (changedPhase) workspace.scrollTop = 0;
   }
 
 
@@ -376,6 +383,28 @@ export function mountForge(root, { onArena, onCollection }) {
     describeProbe(ore, mode);
   }
 
+  function comparisonHammer(build) {
+    return Object.entries(build.hits).map(([zone, hits]) => ZONES[zone] + ' ' + hits + ' 锤').join(' · ');
+  }
+
+  function renderOrderStatus(run) {
+    const status = get('furnace-order-status');
+    const checks = commissionChecks(run);
+    status.hidden = !checks.length || run.phase === 'broken';
+    if (status.hidden) { status.replaceChildren(); return; }
+    const result = run.phase === 'appraise';
+    const met = result ? run.record?.commission?.met : meetsCommission(run);
+    const amount = Number(run.commission.amount);
+    const label = result ? met ? '达标 · 已入账 +' + amount + ' CR' : '未达标 · +0 CR' :
+      met ? '目标已达成 · 鉴定后 +' + amount + ' CR' : '达标后 +' + amount + ' CR';
+    const sequence = checks.find(check => check.hint);
+    status.dataset.met = String(Boolean(met));
+    status.innerHTML = `<div class="order-heading"><b>工坊委托</b><span>${label}</span></div>
+      <div class="order-checks">${checks.map(({ key, label, value, target, settled }) =>
+        `<span data-met="${settled && value >= target}">${label} <b data-order-value="${key}" data-target="${target}">${Math.min(value, target)}</b> / ${target}</span>`).join('')}</div>
+      ${sequence && run.phase === 'forge' && sequence.value < sequence.target ? `<small>${sequence.hint}</small>` : ''}`;
+  }
+
   function renderTools(run, ore) {
     const selecting = run.phase === 'ore';
     get('ore-tools').hidden = !selecting;
@@ -386,21 +415,14 @@ export function mountForge(root, { onArena, onCollection }) {
     }
     const config = get('furnace-config');
     const fixed = ['first', 'recovery'].includes(run.furnaceKind);
-    const task = commissionFor(ore);
     config.hidden = run.rules !== RELEASE_RULES;
     if (!config.hidden) {
-      config.innerHTML = fixed ? `<p>${run.furnaceKind === 'first' ? '新手工坊 · 首料免费 · 直刀图样'
-        : '基础复开 · 免费工坊料 · 完成后补到 14 CR'}</p>`
-        : `<div class="furnace-plan"><label for="furnace-blueprint">图样</label><select id="furnace-blueprint">
-          ${Object.entries({ auto: '随炉成形', ...BLUEPRINTS }).map(([value, label]) =>
-            `<option value="${value}" ${run.blueprint === value ? 'selected' : ''}>${label}</option>`).join('')}</select>
-          <button type="button" data-action="toggle-challenge" aria-pressed="${run.furnaceKind === 'challenge'}">
-            ${run.furnaceKind === 'challenge' ? '挑战炉 ✓' : '常规炉'}</button></div>
-          ${run.furnaceKind === 'challenge' ? '<p>挑战炉可报废，失败返实际材料费 40%。</p>' : ''}
-          <button type="button" class="furnace-order" data-action="toggle-commission" aria-pressed="${Boolean(run.commissionSelected)}">
-            <b>${run.commissionSelected ? '✓ 已接' : '接委托'} · ${esc(task.name)} +${task.amount} CR</b>
-            <span>${esc(task.description)}</span>
-          </button>`;
+      const configKey = [run.seed, run.batch, run.selected, run.furnaceKind, run.blueprint, run.commissionSelected, save.credits].join('|');
+      if (config.dataset.key !== configKey) {
+        config.dataset.key = configKey;
+        config.innerHTML = fixed ? `<p class="forge-ore-note">${run.furnaceKind === 'first' ? '两种材料任选 · 免费锻一把直刀'
+          : '复开炉免费 · 成刀后补到 14 CR'}</p>` : renderFurnaceOptions(run, ore, config.querySelector('details')?.open);
+      }
     }
     const key = run.seed + '|' + ore.id;
     if (toolStone !== key) {
@@ -410,6 +432,34 @@ export function mountForge(root, { onArena, onCollection }) {
     stageBox.dataset.inspection = inspectionMode;
     root.querySelector('[data-action="inspect-light"]').setAttribute('aria-pressed', String(inspectionMode === 'lamp'));
     get('window-ore').dataset.inspected = String(inspectionMode === 'window');
+  }
+
+  function renderFurnaceOptions(run, ore, advancedOpen) {
+    const comparison = COMPARISON_BUILDS[run.comparisonBuild];
+    const material = MATERIAL_TIERS[ore.tier];
+    const task = commissionFor(ore);
+    const blueprints = { auto: '随炉成形', ...BLUEPRINTS };
+    const challenge = run.furnaceKind === 'challenge';
+    const selected = Boolean(run.commissionSelected);
+    return `${comparison && comparison.family === ore.family && run.blueprint === 'straight' ?
+        `<p class="forge-plan-hint"><b>同靶建议 · ${comparison.name}</b><span>${comparisonHammer(comparison)} · ${comparison.grip}柄</span></p>` : ''}
+      <button type="button" class="furnace-order" data-action="toggle-commission" aria-pressed="${selected}"
+        ${ore.price > save.credits ? 'disabled' : ''}>
+        <b>工坊委托 <small>达标 +${task.amount} CR</small></b>
+        <span class="order-choice">${selected ? '✓ 已接' : '接单'}</span>
+        <span class="order-requirements">${esc(task.description)}${selected ? ' · 鉴定结算，成刀归你' : ''}</span>
+      </button>
+      <p class="furnace-cost">购料 −${ore.price} · 成刀 +${material.appraisal}${selected ? ' · 委托 +' + task.amount : ''} CR
+        <b>${selected ? '达标净额' : '成刀净额'} ${signed(material.appraisal - ore.price + (selected ? task.amount : 0))} CR</b></p>
+      <details class="furnace-settings"${advancedOpen ? ' open' : ''}>
+        <summary>图样与炉型 <span>${esc(blueprints[run.blueprint] || blueprints.auto)} · ${challenge ? '挑战' : '常规'}</span></summary>
+        <div class="furnace-plan"><label for="furnace-blueprint">图样</label><select id="furnace-blueprint">
+          ${Object.entries(blueprints).map(([value, label]) =>
+            `<option value="${value}" ${run.blueprint === value ? 'selected' : ''}>${label}</option>`).join('')}</select>
+          <button type="button" data-action="toggle-challenge" aria-pressed="${challenge}">
+            ${challenge ? '挑战炉 ✓' : '常规炉'}</button></div>
+        ${challenge ? '<p>挑战炉可报废，失败返材料费 40%。</p>' : ''}
+      </details>`;
   }
 
   function toggleOreBlade(control) {
@@ -544,6 +594,8 @@ export function mountForge(root, { onArena, onCollection }) {
     put('upper', band.upper.toFixed(2), value => { nodes.thermo.dataset.upper = value; });
     text('heat-rank', rank === 'failed' ? '' : outcome.label);
     text('heat-quality', String(Math.floor(heat.quality)));
+    const orderQuality = root.querySelector('[data-order-value="quality"]');
+    if (orderQuality) orderQuality.textContent = String(Math.min(Math.floor(heat.quality), Number(orderQuality.dataset.target)));
     put('quality-aria', Math.floor(heat.quality), value => nodes['heat-quality-meter'].setAttribute('aria-valuenow', value));
     text('heat-damage-value', Math.round(heat.damage) + '%');
     text('heat-note', { resume: '按住续炼', warm: '偏冷 · 按住鼓风', cool: '偏热 · 松手降温' }[guidance] ?? '');
@@ -754,6 +806,7 @@ export function mountForge(root, { onArena, onCollection }) {
   }
 
   function selectOre(run, action, id) {
+    const previous = run.batch + ':' + run.selected;
     if (run.phase !== 'ore') return false;
     if (action === 'next-batch' && run.batch < BATCHES - 1) {
       run.batch++;
@@ -761,6 +814,7 @@ export function mountForge(root, { onArena, onCollection }) {
     } else if (action === 'select-ore' && Number.isInteger(Number(id)) && Number(id) >= 0 && Number(id) < offers(run).length) {
       run.selected = Number(id);
     } else return false;
+    if (previous !== run.batch + ':' + run.selected) run.commissionSelected = false;
     return true;
   }
 
@@ -794,7 +848,8 @@ export function mountForge(root, { onArena, onCollection }) {
     sound.configure(getProgress().settings);
     sound.unlock();
     switch (action) {
-      case 'enter-tournament': return onArena(run.resultId, run.furnaceKind === 'first' ? 'first' : 'practice');
+      case 'enter-tournament': return onArena({ bladeId: run.resultId, mode: run.furnaceKind === 'first' ? 'first' : 'practice' });
+      case 'enter-comparison': return onArena({ mode: 'compare', bladeIds: [save.launch.firstBladeId, run.resultId] });
       case 'toggle-commission':
       case 'toggle-challenge':
         if (!apply(({ run }) => {
@@ -908,20 +963,20 @@ export function mountForge(root, { onArena, onCollection }) {
       case 'appraise':
         if (!apply(finishAppraisal)) return;
         sound.play('appraise');
-        say(save.run.record.grade + ' · ' + save.run.record.score, 'surge');
         break;
       case 'restart': {
         if (heatGesture) return;
         const result = openFurnace({ restart: true });
         if (!result.ok) return showStorageNotice(result.error);
         save = forgeSession();
-        root.closest('.page').scrollTop = 0;
+        workspace.scrollTop = 0;
         say('新一炉', 'surge');
         break;
       }
       default: return;
     }
     render();
+    if (['toggle-commission', 'toggle-challenge'].includes(action)) root.querySelector('[data-action="' + action + '"]')?.focus({ preventScroll: true });
     if (action === 'select-fit') tray.querySelector('[aria-pressed="true"]')?.focus({ preventScroll: true });
   });
 
