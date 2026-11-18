@@ -1,0 +1,42 @@
+name: MyBlade collection card QA
+
+on:
+  pull_request:
+    paths:
+      - 'game/src/ui/bladeCard*.js'
+      - 'game/src/ui/pages/workshop.js'
+      - 'game/src/v19/collectionThumb.js'
+      - 'game/css/pages/workshop.css'
+      - 'qa/collection-card.spec.cjs'
+      - '.github/workflows/collection-card-qa.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  collection:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run core unit tests
+        run: node --test game/tests/unit/*.test.mjs
+      - name: Install Chromium and Chinese fonts
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq fonts-noto-cjk
+          npm install --no-audit --no-fund --no-save playwright@1.56.1
+          npx playwright install --with-deps chromium
+      - name: Verify collection cards in the static build
+        run: |
+          python3 scripts/build_static_site.py
+          python3 -m http.server 4173 --bind 127.0.0.1 --directory _site >/tmp/myblade-collection-server.log 2>&1 &
+          curl --fail --silent --retry 5 --retry-connrefused --retry-delay 1 http://127.0.0.1:4173/ > /dev/null
+          node qa/collection-card.spec.cjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: myblade-collection-qa
+          path: audit/collection/
+          if-no-files-found: warn
