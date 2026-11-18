@@ -8,7 +8,7 @@ import {
 } from '../../src/core/v19Progress.js';
 import { createEntry, courseFor, settleRound, gate } from '../../src/v19/tournament.js';
 import {
-  RELEASE_RULES, SERIES, commissionFor, completeSeries, craftRating, seriesCandidate,
+  RELEASE_RULES, SERIES, commissionChecks, commissionFor, completeSeries, craftRating, meetsCommission, seriesCandidate,
 } from '../../src/v19/launchRules.js';
 import { advanceHeat, beginRefining, buyOre, canStrike, finishForge, fitOptions, offers, pourRefining, strike }
   from '../../src/v19/forge.js';
@@ -82,7 +82,7 @@ test('fresh and migrated wallets keep their opening amount and paid checkpoints'
   assert.equal(migrated.collection[0].arenaHistory.length, 1);
 });
 
-test('first furnace, compare commission and paid fixtures settle once through the live transaction', () => {
+test('first furnace, optional commission and paid fixtures settle once through the live transaction', () => {
   progress.resetAll();
   assert.ok(openFurnace({ seed: 21234 }).ok);
   assert.deepEqual(offers(forgeSession().run).map(ore => [ore.family, ore.price]), [['river', 0], ['coal', 0]]);
@@ -109,6 +109,9 @@ test('first furnace, compare commission and paid fixtures settle once through th
   assert.equal(settle('f01-first-again', result({ cut: 3 })).cr, 0);
 
   assert.ok(openFurnace({ restart: true, compare: true, seed: 21235 }).ok);
+  assert.equal(forgeSession().run.comparisonBuild, 'heavy');
+  assert.equal(forgeSession().run.commissionSelected, false);
+  action(({ run }) => { run.commissionSelected = true; return true; });
   const second = craft({ zones: HEAVY, role: '沉稳' });
   const secondBlade = progress.get().collection.find(item => item.id === second.record.id);
   assert.equal(secondBlade.seriesSlot, '04');
@@ -131,6 +134,49 @@ test('first furnace, compare commission and paid fixtures settle once through th
   assert.deepEqual(end.rounds.map(item => item.calibration), [{ shell: 2, cut: 3 }, { shell: 1, cut: 3 }]);
   assert.equal(progress.get().cr, 54);
   assert.equal(progress.get().wallet.accounted, progress.get().cr);
+});
+
+test('a contrasting build opens with an optional commission and unpaid previews migrate safely', () => {
+  progress.resetAll();
+  const save = progress.get();
+  save.v19.launch = { firstBladeId: 'heavy-first', firstPassed: true };
+  save.collection.push({ id: 'heavy-first', stats: { strength: 90, sharpness: 65 } });
+  assert.ok(openFurnace({ compare: true, seed: 43210 }).ok);
+  const run = forgeSession().run;
+  assert.equal(run.comparisonBuild, 'edge');
+  assert.equal(offers(run)[0].family, 'river');
+  const blade = craft({ zones: TIDE });
+  assert.equal(blade.commission, null);
+  assert.equal(blade.reward, 6);
+  assert.equal(progress.get().cr, 22);
+
+  const released = makeSave();
+  const { comparisonBuild, ...oldRun } = run;
+  released.v19.forge = { ...oldRun, compareCommission: true, commissionSelected: true };
+  const preview = normalizeSave(released).v19.forge;
+  assert.equal(preview.comparisonBuild, 'heavy');
+  assert.equal(preview.commissionSelected, false);
+  const ore = { family: 'coal', tier: 0, price: 14 };
+  released.v19.forge = { ...released.v19.forge, phase: 'reveal', ore, commission: commissionFor(ore) };
+  const locked = normalizeSave(released).v19.forge;
+  assert.equal(locked.commission.amount, 12);
+  assert.equal(locked.ore.price, 14);
+  assert.equal(locked.commissionSelected, true);
+});
+
+test('visible commission progress uses the same settled heat and consecutive strikes as payout', () => {
+  const ore = { tier: 2, family: 'river' };
+  const run = { ore, commission: commissionFor(ore), refining: { quality: 70 },
+    hitZones: ['tip', 'belly', 'belly', 'belly', 'edge'] };
+  assert.deepEqual(commissionChecks(run).map(check => [check.value, check.target]), [[70, 65], [3, 4]]);
+  assert.equal(meetsCommission(run), false);
+  run.hitZones.push('edge', 'tip');
+  assert.equal(commissionChecks(run)[1].value, 4);
+  assert.equal(meetsCommission(run), false);
+  run.refinement = { quality: 64 };
+  assert.equal(meetsCommission(run), false);
+  run.refinement.quality = 65;
+  assert.equal(meetsCommission(run), true);
 });
 
 test('F01 releases each slot once and saves a reserved recipe before its event', () => {

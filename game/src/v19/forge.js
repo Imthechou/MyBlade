@@ -1,4 +1,4 @@
-import { BLUEPRINTS, MATERIAL_TIERS, RELEASE_RULES, commissionFor, hitCounts } from './launchRules.js';
+import { BLUEPRINTS, COMPARISON_BUILDS, MATERIAL_TIERS, RELEASE_RULES, commissionFor, hitCounts } from './launchRules.js';
 import { workshopPerks } from './workshop.js';
 
 export const MIN_PRICE = 14;
@@ -246,12 +246,12 @@ export function offers(run) {
   const familyShift = Math.floor(order() * FAMILIES.length);
   const release = run.rules === RELEASE_RULES;
   const free = release && (run.furnaceKind === 'first' || run.furnaceKind === 'recovery');
-  const compare = release && run.compareCommission && run.batch === 0;
+  const compare = release && run.batch === 0 ? COMPARISON_BUILDS[run.comparisonBuild] : null;
   return Array.from({ length: free ? 2 : LOT_SIZE }, (_, index) => {
     const id = run.batch * LOT_SIZE + index;
     const tier = free || (compare && index === 0) ? 0 : compare ? index : (index + priceShift) % LOT_SIZE;
     const roll = rngFor(run.seed, 'tray-v2', id);
-    const family = free ? familyOf(['river', 'coal'][index]) : compare && index === 0 ? familyOf('coal') :
+    const family = free ? familyOf(['river', 'coal'][index]) : compare && index === 0 ? familyOf(compare.family) :
       FAMILIES[(index + (release ? Math.floor(rngFor(run.seed, 'F01-families')() * FAMILIES.length) +
         run.batch * LOT_SIZE : familyShift)) % FAMILIES.length];
     const [low, high, ordinary, good] = priceBands[tier];

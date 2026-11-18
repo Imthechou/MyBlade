@@ -32,8 +32,31 @@ async function hammer(page, zones) {
   }
 }
 
-async function forge(page, label, zones, fitIndex = 0) {
+async function oreLayout(page, free = false) {
+  const layout = await page.evaluate(() => {
+    const tools = document.querySelector('#ore-tools .inspection-tools').getBoundingClientRect();
+    const dock = document.querySelector('#actions').getBoundingClientRect();
+    const buy = document.querySelector('#actions [data-action="buy"]').getBoundingClientRect();
+    const cards = [...document.querySelectorAll('#ore-options .ore-card')];
+    return {
+      contained: cards.every(card => {
+        const box = card.getBoundingClientRect();
+        const label = card.querySelector('.ore-card-label').getBoundingClientRect();
+        return label.top >= box.top && label.bottom <= box.bottom + 1 && box.bottom < tools.top;
+      }),
+      fullButton: Math.abs(dock.width - buy.width) <= 1,
+      viewport: buy.bottom <= innerHeight + 1 && document.documentElement.scrollWidth <= innerWidth + 1,
+    };
+  });
+  assert.ok(layout.contained, 'Material names and prices must fit above the inspection controls');
+  assert.ok(layout.viewport, 'The buy button must fit in the visible viewport');
+  if (free) assert.ok(layout.fullButton, 'The only buy action should span the dock');
+}
+
+async function forge(page, label, zones, fitIndex = 0, ordered = false) {
   await action(page, 'buy').click();
+  const order = page.locator('#furnace-order-status');
+  if (ordered) await order.waitFor(); else assert.equal(await order.isVisible(), false);
   await action(page, 'to-refine').click({ timeout: 12000 });
   const heat = page.locator('#heat-button');
   await heat.focus();
@@ -44,11 +67,14 @@ async function forge(page, label, zones, fitIndex = 0) {
   } finally {
     await page.keyboard.up('Space');
   }
+  if (ordered) assert.match(await order.innerText(), /刀腹 0 \/ 2/);
   await hammer(page, zones);
+  if (ordered) assert.match(await order.innerText(), /目标已达成.*鉴定后 \+12 CR/);
   await action(page, 'finish').click();
   await action(page, 'select-fit').nth(fitIndex).click();
   await action(page, 'appraise').click();
   await page.locator('#v19-forge[data-phase="appraise"]').waitFor();
+  if (ordered) assert.match(await order.innerText(), /达标.*已入账 \+12 CR/);
   await page.locator('#stage[data-loading="false"] canvas').waitFor();
   await page.evaluate(async () => {
     const { attachForgeStage } = await import(new URL('src/v19/sharedStage.js', document.baseURI));
@@ -75,8 +101,10 @@ async function firstLoop(browser, width, height, full) {
     url.searchParams.set('playtest', 'f01');
     await page.goto(url.href, { waitUntil: 'domcontentloaded' });
     await page.getByRole('button', { name: '开始锻刀' }).click();
-    assert.match(await action(page, 'buy').textContent(), /0 CR/);
+    assert.match(await action(page, 'buy').textContent(), /免费开石/);
     assert.equal(await action(page, 'select-ore').count(), 2);
+    await oreLayout(page, true);
+    await page.locator('#stage[data-loading="false"] #scene').waitFor();
     await shot(page, `ore-${width}`);
     let state = await forge(page, `first-blade-${width}`, ['belly', 'belly', 'edge', 'edge', 'edge', 'edge']);
     assert.equal(state.cr, 38);
@@ -95,25 +123,47 @@ async function firstLoop(browser, width, height, full) {
     assert.equal(state.cr, 42);
     assert.equal(state.v19.launch.firstPassed, true);
     assert.equal(state.collection[0].firstTrialStamp, true);
+    assert.match(await page.locator('.arena-next-build').innerText(), /再锻一把重锋.*木靶几划破壳/);
+    assert.equal(await battle(page, 'forge-compare').textContent(), '锻第二把刀');
     await shot(page, `first-trial-${width}`);
     assert.deepEqual(errors, []);
-    if (!full) {
-      console.log(`PASS ${width}px · fresh wallet, forge, F01—01, real three-cut trial · 42 CR`);
-      return;
-    }
 
-    await page.getByRole('button', { name: '信用点余额' }).click();
-    const wallet = page.getByRole('dialog', { name: '工坊钱包' });
-    assert.match(await wallet.innerText(), /首刀试斩\s*\+4 CR/);
-    await wallet.getByRole('button', { name: '关闭' }).click();
-    await wallet.waitFor({ state: 'detached' });
+    if (full) {
+      await page.getByRole('button', { name: '信用点余额' }).click();
+      const wallet = page.getByRole('dialog', { name: '工坊钱包' });
+      assert.match(await wallet.innerText(), /首刀试斩\s*\+4 CR/);
+      await wallet.getByRole('button', { name: '关闭' }).click();
+      await wallet.waitFor({ state: 'detached' });
+    }
     await battle(page, 'forge-compare').click();
     assert.match(await action(page, 'buy').textContent(), /14 CR/);
-    assert.equal(await action(page, 'toggle-commission').getAttribute('aria-pressed'), 'true');
-    state = await forge(page, 'second-blade', ['belly', 'belly', 'belly', 'belly', 'tip', 'tip'], 1);
+    await oreLayout(page);
+    const orderButton = action(page, 'toggle-commission');
+    assert.equal(await orderButton.getAttribute('aria-pressed'), 'false');
+    assert.match(await page.locator('.furnace-cost').innerText(), /成刀净额 −8 CR/);
+    if (!full) {
+      await page.locator('#stage[data-loading="false"] #scene').waitFor();
+      await shot(page, `optional-order-${width}`);
+      console.log(`PASS ${width}px · ore layout, first trial, second furnace with optional order`);
+      return;
+    }
+    await orderButton.click();
+    assert.match(await page.locator('.furnace-cost').innerText(), /达标净额 \+4 CR/);
+    await action(page, 'select-ore').nth(1).click();
+    assert.equal(await orderButton.getAttribute('aria-pressed'), 'false');
+    await action(page, 'select-ore').first().click();
+    assert.equal(await orderButton.getAttribute('aria-pressed'), 'false');
+    await orderButton.click();
+    assert.equal(await orderButton.getAttribute('aria-pressed'), 'true');
+    await shot(page, 'confirmed-order');
+    state = await forge(page, 'second-blade', ['belly', 'belly', 'belly', 'belly', 'tip', 'tip'], 1, true);
     assert.equal(state.cr, 46);
     const secondBlade = state.collection.find(blade => blade.id !== firstBlade);
     assert.equal(secondBlade.v19Visual.ore.family, 'coal');
+    await action(page, 'enter-comparison').click();
+    await page.getByRole('button', { name: '开始同靶对照' }).waitFor();
+    assert.equal(await page.locator('.arena-blade-select').count(), 2);
+    await page.evaluate(() => { location.hash = '#/forge'; });
     await action(page, 'open-collection').click();
     await page.getByRole('button', { name: /F01 首辑图鉴/ }).click();
     const issue = page.getByRole('dialog', { name: 'F01 首辑图鉴' });

@@ -3,7 +3,7 @@ import {
   tournamentState, createEntry, courseFor, summarizeRound, settleRound, abandonEntry, dayKey, rankOf, RANKS,
   masteryOf, NATIONAL_UNLOCK, rosterIndex,
 } from '../tournament.js';
-import { SPECIALS } from '../launchRules.js';
+import { COMPARISON_BUILDS, SPECIALS, comparisonBuildFor } from '../launchRules.js';
 import { goalText } from './courses.js';
 import { arenaBladeStats } from './stats.js';
 import { createTrial, warmTrialAudio } from './trial.js';
@@ -534,8 +534,15 @@ export function mountTournament(root, { getSave, commit, settings, onLegacy, onF
     const showMultiplier = report.cut > 0 && Number.isFinite(report.scoreMultiplier);
     const hasDetails = bestProject || record.rank?.gain || showMultiplier || record.rounds?.length > 1;
     const borrow = mode === 'practice' && !currentBlades().length;
+    const firstPassed = mode === 'first' && record.qualified;
+    const blades = firstPassed ? currentBlades() : [];
+    const firstBlade = blades.find(blade => blade.id === getSave().launch?.firstBladeId);
+    const comparison = COMPARISON_BUILDS[comparisonBuildFor(firstBlade?.stats[0], firstBlade?.stats[2])];
+    const canCompare = blades.length > 1;
+    const showCreditTotal = record.cr && record.creditRows?.length !== 1;
     const mainAction = canContinue ? button('continue', mode === 'compare' ? '换第二把刀试斩' : '进入下一轮', 'primary') :
-      mode === 'first' && record.qualified ? button('forge-compare', '接木靶对照委托', 'primary') :
+      firstPassed ? (canCompare ? button('mode', '去同靶对照', 'primary', 'data-value="compare"') :
+        button('forge-compare', '锻第二把刀', 'primary')) :
       record.unlockedNational ? button('mode', '报名全国赛', 'primary', 'data-value="national"') :
         borrow ? button('forge', '去锻第一把刀', 'primary') :
           replay ? button('replay', nextGrade === null ? '再来一局' : '挑战下一阶', 'primary') : '';
@@ -567,12 +574,18 @@ export function mountTournament(root, { getSave, commit, settings, onLegacy, onF
       ${mode === 'compare' ? comparisonReport(record.rounds) :
         report.wood?.shell ? `<p class="arena-report-hint">木靶 ${report.wood.shell} 划破壳
           ${report.wood.cut ? ' · ' + report.wood.cut + ' 划斩断' : ''}</p>` : ''}
-      ${record.cr || record.xp ? `<div class="report-rewards">${record.cr ? `<b>+${record.cr} CR</b>` : ''}
+      ${showCreditTotal || record.xp ? `<div class="report-rewards">${showCreditTotal ? `<b>+${record.cr} CR</b>` : ''}
         ${record.xp ? `<b>工坊 +${record.xp} XP</b>` : ''}
         ${record.streakBonus ? `<span class="is-hot">连胜 ×${record.streak} · +${record.streakBonus} CR</span>` : ''}</div>` : ''}
       ${record.creditRows?.length ? `<div class="arena-report-goals">${record.creditRows.map(row =>
         `<div><span>${esc(row.label)}</span><b>+${row.amount} CR</b></div>`).join('')}</div>` : ''}
       ${record.stamp ? `<p class="arena-report-hint">赛印 · ${esc(record.stamp)}</p>` : ''}
+      ${firstPassed ? `<section class="arena-next-build">
+        <div><b>下一步 · 同靶对照</b>
+          <p>${canCompare ? '两把刀各打一轮，比较木靶破壳和切断。' :
+            '再锻一把' + comparison.name + '，用两把刀打同一套靶，看看木靶几划破壳。'}</p></div>
+        ${replay ? button('replay', '再试一场', 'arena-text') : ''}
+      </section>` : ''}
       ${record.mastery ? `<div class="arena-blade-growth${record.mastery.leveled ? ' is-up' : ''}">
         <div class="arena-blade-growth-head"><span>${esc(record.blade)} · ${esc(record.mastery.level)}</span><b>+${record.masteryGain} XP</b></div>
         <div class="arena-rank-track" aria-label="刀具成长进度"><i style="--v:${Math.round(record.mastery.progress * 100)}%"></i></div>
@@ -605,7 +618,6 @@ export function mountTournament(root, { getSave, commit, settings, onLegacy, onF
       <footer class="arena-dock report-actions">
         ${borrow && replay ? button('replay', '再试一次') : button('lobby', '返回大厅', mainAction ? 'secondary' : 'primary')}
         ${mainAction}
-        ${mode === 'first' && record.qualified && replay ? button('replay', '再试一场') : ''}
       </footer>
     </section>`;
     countUp(root.querySelector('[data-report-score]'), 0, shownScore, 660);
@@ -616,9 +628,9 @@ export function mountTournament(root, { getSave, commit, settings, onLegacy, onF
     return `<section class="arena-report-goals comparison-report" aria-label="同靶对照结果">
       <h3>同一木靶 · 两把刀</h3>
       ${rounds.map(item => `<article><b>${esc(item.blade)}</b>
-        <p>实打 · ${item.wood?.shell ? item.wood.shell + ' 划破壳' : '未破壳'}
+        <p>本局试斩 · ${item.wood?.shell ? item.wood.shell + ' 划破壳' : '未破壳'}
           ${item.wood?.cut ? ' · ' + item.wood.cut + ' 划斩断' : ''} · 一划最多 ${item.swipe} 靶</p>
-        <p>定速 · ${item.calibration?.shell ?? '—'} 划破壳 · ${item.calibration?.cut ?? '—'} 划斩断</p></article>`).join('')}
+        <p>同划速参考 · ${item.calibration?.shell ?? '—'} 划破壳 · ${item.calibration?.cut ?? '—'} 划斩断</p></article>`).join('')}
     </section>`;
   }
 

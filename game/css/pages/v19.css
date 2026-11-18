@@ -230,7 +230,7 @@
 #v19-forge[data-phase="ore"] { gap: 6px; padding-top: 8px; }
 #v19-forge[data-phase="ore"] .workspace { gap: 4px; }
 #v19-forge .v19-stage[data-mode="ore"] {
-  height: clamp(190px, calc(100dvh - 262px - var(--safe-t) - var(--safe-b)), 760px);
+  height: clamp(150px, 31dvh, 340px);
   border-color: var(--glass-border);
   background:
     radial-gradient(ellipse 40% 60% at 42% -3%, #b0bddb2e, #7c90b918 56%, transparent 100%),
@@ -439,11 +439,11 @@
   100% { transform: translateY(-5px); opacity: 0; }
 }
 
-#v19-forge .ore-tools { display: grid; justify-items: center; gap: 5px; }
+#v19-forge .ore-tools { display: grid; min-width: 0; gap: 6px; }
 #v19-forge .inspection-tools {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  width: min(100%, 366px);
+  width: 100%;
   gap: 2px;
   padding: 2px;
   border: 1px solid var(--line);
@@ -503,25 +503,28 @@
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 6px;
 }
-#v19-forge .ore-grid { width: min(100%, 256px); }
+#v19-forge :is(.ore-grid, .fit-grid):has(> :nth-child(2):last-child) {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
 #v19-forge .ore-card {
-  position: relative;
+  display: grid;
+  grid-template-rows: 34px auto;
+  align-content: start;
+  justify-items: center;
+  gap: 3px;
   min-width: 0;
-  height: 59px;
-  padding: 0 2px 5px;
-  border: 0;
-  border-radius: 9px;
-  background: transparent;
+  min-height: 54px;
+  padding: 5px 3px 6px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--control-face);
+  text-align: center;
 }
-#v19-forge .ore-card[aria-pressed="true"]::after {
-  content: "";
-  position: absolute;
-  inset: auto 24% 1px;
-  height: 3px;
-  border-radius: 3px;
-  background: var(--accent);
+#v19-forge .ore-card[aria-pressed="true"] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
 }
-#v19-forge .ore-thumbnail { position: relative; display: block; height: 100%; }
+#v19-forge .ore-thumbnail { position: relative; display: block; width: min(100%, 68px); height: 100%; }
 #v19-forge .ore-thumbnail img { display: block; width: 100%; height: 100%; object-fit: contain; opacity: 0; }
 #v19-forge .ore-thumbnail.is-loaded img { opacity: 1; }
 #v19-forge .ore-thumbnail i {
@@ -700,7 +703,7 @@
 }
 #v19-forge .look-chip.rarity { background: var(--accent-cool-soft); color: var(--accent-cool-deep); border-color: var(--accent-cool-line); }
 #v19-forge .forge-result { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
-#v19-forge .forge-result b { color: var(--face); font: 800 26px / 1 var(--v19-mono); }
+#v19-forge .forge-result .result-score { color: var(--face); font: 800 26px / 1 var(--v19-mono); }
 #v19-forge .forge-result b small, #v19-forge .forge-result > span:last-child { color: var(--accent-deep); font-size: 11px; font-weight: 700; }
 #v19-forge .arcade-result { animation: v19-score-slam .62s cubic-bezier(.16,1,.3,1) both; }
 #v19-forge .arcade-result.is-rare {
@@ -839,12 +842,13 @@
   padding: 6px 0 3px;
   background: linear-gradient(0deg, var(--base-0) 75%, transparent);
 }
-#v19-forge .forge-dock:has(.secondary) { grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr); }
+#v19-forge .forge-dock:has(.secondary:not([hidden])) { grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr); }
 #v19-forge .forge-dock:has(.v19-zones) { grid-template-columns: 1fr; }
 #v19-forge .v19-zones { display: flex; gap: 4px; }
 #v19-forge[data-phase="appraise"] .forge-dock { grid-template-columns: 1fr 1fr; }
 #v19-forge[data-phase="appraise"] .forge-dock .primary { grid-column: 1 / -1; }
 #v19-forge[data-phase="appraise"] .forge-dock .secondary { min-height: 44px; }
+#v19-forge[data-phase="appraise"] .forge-dock > .secondary:nth-child(2):last-child { grid-column: 1 / -1; }
 #v19-forge .v19-save-notice {
   position: sticky;
   z-index: 6;
@@ -862,7 +866,7 @@
   #v19-forge .v19-stage { height: clamp(172px, 34dvh, 225px); }
   #v19-forge .v19-stage[data-mode="refine"] { height: clamp(150px, 31dvh, 208px); }
   #v19-forge .v19-stage[data-mode="forge"] { height: clamp(190px, 39dvh, 255px); }
-  #v19-forge .ore-card { height: 51px; }
+  #v19-forge .ore-card { grid-template-rows: 28px auto; }
 }
 @container app (max-width: 350px) {
   .v19-surface { padding-inline: 8px; }
@@ -1298,11 +1302,11 @@
 
 #v19-forge .thermo-range::before { width: var(--heat-band-width, 7%); }
 #v19-forge .ore-card-label {
-  display: grid; gap: 2px; min-width: 0; line-height: 1.3; color: var(--face);
-  font: 650 11px var(--font);
+  display: grid; gap: 2px; min-width: 0; color: var(--face);
+  font: 650 12px/1.25 var(--font);
 }
 #v19-forge .ore-card-label small { color: var(--face-2); font-size: 10px; font-weight: 550; }
-#v19-forge .furnace-config:not([hidden]), #v19-forge .furnace-abandon:not([hidden]) {
+#v19-forge :is(.furnace-config, .furnace-abandon, .furnace-order-status):not([hidden]) {
   display: grid; gap: 6px;
 }
 #v19-forge .furnace-plan { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
@@ -1312,8 +1316,40 @@
   background: var(--control-face); color: var(--face); font: inherit;
 }
 #v19-forge .furnace-config [aria-pressed="true"] { border-color: var(--accent-line); background: var(--accent-soft); }
-#v19-forge .furnace-order { display: grid; gap: 2px; text-align: left; }
-#v19-forge .furnace-order span { color: var(--face-2); font-size: 12px; }
+#v19-forge .forge-ore-note { text-align: center; }
+#v19-forge .forge-plan-hint {
+  display: flex; flex-wrap: wrap; gap: 2px 8px; align-items: baseline;
+  padding: 5px 8px; border-inline-start: 2px solid var(--accent); background: var(--accent-soft);
+}
+#v19-forge .forge-plan-hint b { color: var(--face); }
+#v19-forge .furnace-order {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: baseline;
+  min-height: 54px; gap: 2px 6px; text-align: left;
+}
+#v19-forge .furnace-order b { font-size: 13px; }
+#v19-forge .furnace-order :is(small, .order-choice) { color: var(--accent-deep); font-size: 11px; }
+#v19-forge .furnace-order .order-choice { font-weight: 750; white-space: nowrap; }
+#v19-forge .order-requirements { grid-column: 1 / -1; color: var(--face-2); font-size: 12px; }
+#v19-forge .furnace-cost { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 2px 6px; }
+#v19-forge .furnace-cost b { color: var(--face); font-size: 11px; white-space: nowrap; }
+#v19-forge .furnace-settings { min-width: 0; border: 1px solid var(--line); border-radius: 10px; }
+#v19-forge .furnace-settings summary { min-height: 42px; padding: 11px 8px; color: var(--face-2); font-size: 12px; cursor: pointer; }
+#v19-forge .furnace-settings summary span { float: right; }
+#v19-forge .furnace-settings :is(.furnace-plan, p) { padding: 0 8px 8px; }
+#v19-forge .furnace-order-status {
+  padding: 6px 8px; border: 1px solid var(--line); border-radius: 10px;
+  background: var(--surface-glass); color: var(--face-2); font-size: 12px;
+}
+#v19-forge .order-heading { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 2px 8px; }
+#v19-forge .order-heading b { color: var(--face); }
+#v19-forge .order-checks { display: flex; flex-wrap: wrap; gap: 4px 8px; }
+#v19-forge .order-checks > span { padding: 1px 6px; border-radius: 5px; background: var(--control-face); }
+#v19-forge :is(.order-checks, .furnace-order-status) [data-met="true"], #v19-forge .furnace-order-status[data-met="true"] .order-heading span {
+  color: var(--accent-cool-deep);
+}
+#v19-forge .result-credit { display: grid; justify-items: end; }
+#v19-forge .result-credit small { color: var(--face-3); }
+#v19-forge .result-credit b { font: 750 12px / 1.3 var(--v19-mono); white-space: nowrap; }
 #v19-forge .v19-zones { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
 #v19-forge .v19-zones button { min-height: 44px; }
 #v19-forge .furnace-abandon { justify-items: start; margin-block: 4px; }
@@ -1331,5 +1367,12 @@
 #v19-arena .trial-warmup span { font-size: 22px; pointer-events: none; }
 #v19-arena .comparison-report { padding: 10px; }
 #v19-arena .comparison-report h3 { margin: 0; font-size: 14px; }
-#v19-arena .comparison-report article { display: grid; gap: 3px; }
+#v19-arena .comparison-report article { display: grid; gap: 3px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 9px; }
 #v19-arena .comparison-report p { margin: 0; font-size: 12px; color: var(--face-2); }
+#v19-arena .arena-next-build {
+  display: flex; align-items: center; gap: 6px; padding: 6px 8px;
+  border: 1px solid var(--accent-line); border-radius: 10px; background: var(--accent-soft);
+}
+#v19-arena .arena-next-build b { font-size: 13px; }
+#v19-arena .arena-next-build p { margin: 2px 0 0; color: var(--face-2); font-size: 12px; }
+#v19-arena .arena-next-build button { flex-shrink: 0; }

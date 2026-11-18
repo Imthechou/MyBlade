@@ -1,7 +1,20 @@
 /** V19 adds only the current furnace and new-format cutting progress to the main save. */
+import { COMPARISON_BUILDS } from '../v19/launchRules.js';
+
 const map = value => value && typeof value === 'object' && !Array.isArray(value) ? value : {};
 const phases = ['ore', 'reveal', 'refine', 'forge', 'fit', 'appraise', 'broken'];
 const roundCount = { first: 1, compare: 2, quick: 1, daily: 1, school: 1, national: 5, apex: 3 };
+
+function normalizeForge(forge) {
+  const run = { ...forge, revision: Number.isSafeInteger(forge.revision) ? forge.revision : 0 };
+  if (run.compareCommission) {
+    run.comparisonBuild = 'heavy';
+    if (run.phase === 'ore') run.commissionSelected = false;
+    delete run.compareCommission;
+  }
+  if (!Object.hasOwn(COMPARISON_BUILDS, run.comparisonBuild)) delete run.comparisonBuild;
+  return run;
+}
 
 export function normalizeV19(raw) {
   const value = map(raw);
@@ -20,7 +33,7 @@ export function normalizeV19(raw) {
       Number.isInteger(active.grade) && active.grade >= 0 && active.grade < 5));
   return {
     ...value,
-    forge: validForge ? { ...forge, revision: Number.isSafeInteger(forge.revision) ? forge.revision : 0 } : null,
+    forge: validForge ? normalizeForge(forge) : null,
     arena: {
       ...arena, active: validArena ? active : null, daily: map(arena.daily),
       best: map(arena.best), mastery: map(arena.mastery),
