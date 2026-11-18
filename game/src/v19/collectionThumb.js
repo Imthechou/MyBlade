@@ -22,9 +22,9 @@ import { FITS } from './forge.js';
 import { loadThumbnail, saveThumbnail } from '../render/collectionCache.js';
 
 const T = globalThis.THREE;
-/** 显示尺寸约 178×150，按 2× 出图，兼顾高分屏与体积。 */
-const WIDTH = 356;
-const HEIGHT = 300;
+/** 竖版卡面使用紧凑的纵向取景。 */
+const WIDTH = 320;
+const HEIGHT = 396;
 const MAX_MEMORY = 48;
 
 const memory = new Map();
@@ -39,7 +39,7 @@ let unavailable = false;
 /** 缓存键包含完整视觉配方；刀面/装配/矿料任何一项变化都会重新出图。
  *  前缀是**取景版本号**：改了相机/尺寸就 bump，旧图不会继续命中。 */
 export function thumbnailKey(visual) {
-  return 'v19-thumb-v2:' + JSON.stringify([
+  return 'v19-thumb-v3:' + JSON.stringify([
     visual?.model, visual?.fit, visual?.skin, visual?.marks,
     visual?.purity, visual?.ore, visual?.refinement, visual?.hits,
   ]);
@@ -114,13 +114,13 @@ async function draw(visual, isCurrent) {
   const center = box.getCenter(new T.Vector3());
   const size = box.getSize(new T.Vector3());
 
-  // 刀身通常沿最长轴排布：横刀给一个斜置角度，竖刀只做轻微侧倾。
+  // 横向模型在竖卡里沿长对角线摆放，纵向模型保留较小的倾角。
   const mesh = new T.Mesh(asset.mesh.geometry, asset.mesh.material);
   mesh.position.set(-center.x, -center.y, -center.z);
   mesh.frustumCulled = false;
   const holder = new T.Group();
   holder.add(mesh);
-  holder.rotation.set(.05, .52, size.x >= size.y ? -.62 : -.16);
+  holder.rotation.set(.05, .52, size.x >= size.y ? .98 : -.27);
   holder.updateMatrixWorld(true);
 
   const framed = new T.Box3().setFromObject(holder);
