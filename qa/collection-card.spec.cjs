@@ -84,6 +84,8 @@ async function inspect(browser, width, height, touch, motion = 'full') {
     const mythic = grid.locator('.bcv-open.rarity--mythic');
     await mythic.click();
     const sheet = page.getByRole('dialog', { name: '回潮' });
+    await page.waitForFunction(() => document.activeElement ===
+      document.querySelector('.blade-detail-sheet .sheet-x'));
     const stage = sheet.locator('.bcv-tilt-stage');
     const face = stage.locator('.bcv-face');
     await stage.waitFor();
