@@ -46,3 +46,17 @@ export function deflectsSwipe(blade, target, tempo, priorHits) {
   return priorHits > 0 && target.armored && target.hp > target.maxHp * ARMOR_BODY_SHARE &&
     tempo < blade.deflectTempo;
 }
+
+/** The proof stroke uses the same damage equation as the live wood target. */
+export function woodCalibration(values) {
+  const blade = arenaBladeStats(values);
+  const wood = { armored: true, variation: .5, hp: 216, maxHp: 216 };
+  let shell = 0;
+  let cut = 0;
+  while (wood.hp > 0 && cut < 16) {
+    wood.hp -= strikeDamage(blade, wood, .5, 100);
+    cut++;
+    if (!shell && wood.hp <= wood.maxHp * ARMOR_BODY_SHARE) shell = cut;
+  }
+  return { shell, cut };
+}

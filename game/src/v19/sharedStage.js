@@ -143,12 +143,24 @@ export function showForgedBlade(host, visual, { fractured = false, gallery = fal
   host.append(controls);
   stage.resetView(false);
   const phase = fractured ? 'broken' : 'appraise';
-  const ready = stage.sync({ ...visual, phase }, visual.ore, fitting);
+  const started = performance.now();
+  const synced = stage.sync({ ...visual, phase }, visual.ore, fitting);
+  const ready = Promise.resolve(synced ?? true).then(async ok => {
+    if (!ok || !gallery) return ok;
+    const deadline = performance.now() + 2500;
+    while (host.isConnected && canvas.parentElement === host && !abort.signal.aborted) {
+      if (stage.lastRender >= started && stage.shown === stage.want && stage.mesh?.visible && stage.content.visible) return true;
+      if (performance.now() >= deadline) break;
+      stage.invalidate(250);
+      await new Promise(resolve => requestAnimationFrame(resolve));
+    }
+    return false;
+  });
   const close = () => {
     abort.abort();
     controls.remove();
     delete host.dataset.preview;
     releaseForgeStage(host);
   };
-  return { close, ready: Promise.resolve(ready ?? true) };
+  return { close, ready };
 }

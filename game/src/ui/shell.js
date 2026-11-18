@@ -6,6 +6,7 @@ import { icon } from './icons.js';
 import * as SettingsSheet from './settingsSheet.js';
 import { motion, bus, EVENTS, env } from '../platform/index.js';
 import { LEGACY_MODE } from '../platform/env.js';
+import { openWallet } from './creditView.js';
 
 let lastSaveWarning = 0;
 bus.on(EVENTS.SAVE_FAILED, ({ stale } = {}) => {
@@ -44,7 +45,11 @@ export function create(host, { beforeSettings, onBack } = {}) {
   backEl.hidden = true;
 
   titleEl = el('div', { class: 'topbar-title', text: TITLES.home });
-  crEl = el('div', { class: 'topbar-cr', role: 'status', 'aria-label': '信用点余额' }, [
+  crEl = el(LEGACY_MODE ? 'div' : 'button', {
+    class: 'topbar-cr', 'aria-label': '信用点余额',
+    ...(LEGACY_MODE ? { role: 'status' } : { type: 'button', 'aria-haspopup': 'dialog',
+      onclick: () => { beforeSettings?.(); openWallet(); } }),
+  }, [
     el('span', { class: 'muted', text: 'CR' }),
     el('b', { text: '0' }),
   ]);

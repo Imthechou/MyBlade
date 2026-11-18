@@ -12,7 +12,8 @@
 import { env, LEGACY_MODE } from './env.js';
 import { emit, EVENTS } from './bus.js';
 
-export const STORAGE_KEY = LEGACY_MODE ? 'bladeforge.save' : 'bladeforge.v4.save';
+const trialSlot = new URLSearchParams(globalThis.location?.search || '').get('playtest') === 'f01';
+export const STORAGE_KEY = LEGACY_MODE ? 'bladeforge.save' : 'bladeforge.v4.save' + (trialSlot ? '.f01-playtest' : '');
 export const SAVE_VERSION = 1;
 
 const memoryDriver = (() => {

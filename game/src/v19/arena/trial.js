@@ -75,6 +75,7 @@ export function createTrial(frame, course, blade, { hud = frame, muted, volume, 
     waves: 0, cut: 0, hits: 0, damage: 0, deflections: 0, targets: [], pieces: [], particles: [], rings: [],
     slashes: [], trails: [], impacts: [], comboChain: 0, lastKillAt: -Infinity,
     objectives: { multi: 0, precision: 0, armor: 0, relay: 0, mixed: 0 },
+    wood: { shell: null, cut: null },
     pointer: { down: false, points: [], hitTargets: new Set() },
     reducedMotion: motion.reduced(), shakeX: 0, shakeY: 0, shakeVX: 0, shakeVY: 0, flash: 0,
   };
@@ -218,7 +219,7 @@ export function createTrial(frame, course, blade, { hud = frame, muted, volume, 
     onFinish({
       reason, score: state.score, combo: state.bestCombo, swipe: state.bestSwipe,
       hits: state.hits, cut: state.cut, waves: state.waves,
-      missed: launches.length - state.cut, objectives: { ...state.objectives },
+      missed: launches.length - state.cut, objectives: { ...state.objectives }, wood: { ...state.wood },
       damage: state.damage, durability: state.durability, deflections: state.deflections,
       scoreMultiplier: stats.scoreMultiplier,
       projects: [...projects].map(([kind, item]) => ({
@@ -362,6 +363,10 @@ export function createTrial(frame, course, blade, { hud = frame, muted, volume, 
     Object.assign(target, { recoil: 1, recoilTime: 0, impulseX: dx / length * kick, impulseY: dy / length * kick * .72 });
     target.tilt += clamp(dx / length * rand(-.04, .08), -.12, .12);
     target.strikes.push({ angle: Math.atan2(contact.uy, contact.ux), time: state.time, offset: contact.offset });
+    if (target.key === 'wood' && target.armored) {
+      if (shellBroke) state.wood.shell ??= target.strikes.length;
+      if (broken) state.wood.cut ??= target.strikes.length;
+    }
     if (!broken) makeCrack(target, dx, dy, damage);
     if (course.wearScale) {
       state.durability = Math.max(0, state.durability - wearCost(stats, target, force, course.wearScale, specialty));

@@ -1,16 +1,17 @@
 import {
-  LOT_SIZE, BATCHES, HEAT, fittingPrice, PHASES, GRADES, oreMaterialOf, MODELS, LOOKS, FITS, STAT_CAP, STAT_NAMES,
-  offers, familyOf, stabilityOf, buyOre, beginRefining, advanceHeat, pourRefining, heatBand, refinementRank,
-  REFINEMENT_RESULTS, REFINEMENT_FAILURES, fractureRisk, strike, finishForge,
+  BATCHES, HEAT, fittingPrice, PHASES, GRADES, oreMaterialOf, MODELS, LOOKS, STAT_CAP, STAT_NAMES,
+  offers, familyOf, stabilityOf, buyOre, beginRefining, advanceHeat, pourRefining, canPour, heatBand, refinementRank,
+  REFINEMENT_RESULTS, REFINEMENT_FAILURES, fractureRisk, strike, finishForge, canStrike, nextFatigue, hammerLimit, bufferFatigue,
   fitOptions, refreshFittings, signature, signaturePerk, inspectOre, mineralHeritage, oreInspection, oreModelId,
   markLamp, tapOreProbe, oreStatFocus,
 } from './forge.js';
+import { BLUEPRINTS, MATERIAL_TIERS, RELEASE_RULES, commissionFor, seriesLabel } from './launchRules.js';
 import { ensureThreeRuntime } from './threeRuntime.js';
 import { createViewReset } from '../ui/viewReset.js';
 import { forgeMarkup } from './forgeMarkup.js';
 import { ForgeSound } from './sound.js';
 import { get as getProgress } from '../core/progress.js';
-import { commitFurnace, finishAppraisal, forgeSession, openFurnace } from '../core/v19Progress.js';
+import { commitFurnace, finishAppraisal, forgeSession, openFurnace, walletView } from '../core/v19Progress.js';
 import { haptics, motion } from '../platform/index.js';
 import { hint as showHint } from '../ui/tutorial.js';
 import { countUp } from '../ui/dom.js';
@@ -60,6 +61,8 @@ export function mountForge(root, { onArena, onCollection }) {
   let revealPending = false;
   let revealPace = 1000;
   let heatInput;
+  let heatGesture = false;
+  let confirmAbandon = false;
   let heatHud;
   let saveTask;
   let trayKey;
@@ -104,7 +107,7 @@ export function mountForge(root, { onArena, onCollection }) {
       return null;
     }
     pendingCheckpoint = false;
-    save = { run: result.run, credits: result.credits };
+    save = { run: result.run, credits: result.credits, launch: result.launch };
     showStorageNotice('');
     return result.result;
   }
@@ -164,7 +167,7 @@ export function mountForge(root, { onArena, onCollection }) {
     const navPhase = phase === 'reveal' ? 'ore' : phase === 'broken' ? failedRefining ? 'refine' : 'forge' : phase;
     const idx = PHASES.indexOf(navPhase);
     const ore = phase === 'ore' ? offers(run)[run.selected] : run.ore;
-    const fit = FITS.find(item => item.id === run.fit);
+    const fit = fitOptions(run).find(item => item.id === run.fit);
     stageBox.dataset.mode = phase;
     if (phase !== 'refine') stageBox.dataset.danger = 'false';
     /* 锻打首次进入：等机位切换完成后把三个落锤区贴到刀身上。 */
@@ -193,6 +196,7 @@ export function mountForge(root, { onArena, onCollection }) {
       buy.textContent = (canAfford ? '开石' : '余额不足') + ' · ' + ore.price + ' CR';
       buy.disabled = !canAfford;
       const refresh = actions.querySelector('[data-action="next-batch"]');
+      refresh.hidden = ['first', 'recovery'].includes(run.furnaceKind);
       refresh.disabled = run.batch === BATCHES - 1;
       refresh.setAttribute('aria-label', '换一批，第 ' + (run.batch + 1) + ' / ' + BATCHES + ' 批');
     } else if (phase === 'reveal') {
@@ -214,7 +218,7 @@ export function mountForge(root, { onArena, onCollection }) {
         actions.innerHTML = button('to-refine', '去精炼');
       }
     } else if (phase === 'refine') {
-      title('控制炉温');
+      title('控制炉温', run.furnaceKind === 'challenge' ? '挑战炉' : '', '绿区累计精炼。松手可降温');
       readout.innerHTML = `<div class="heat-display">
         <div class="heat-display-top"><strong id="heat-step">原石升温</strong><span class="heat-clock" id="heat-clock"></span><b class="readout-number" id="heat-number">35°</b></div>
         <div class="thermo" role="progressbar" aria-label="炉温" aria-valuemin="0" aria-valuemax="100" aria-valuenow="35" id="thermo"><i class="thermo-fill" id="heat-fill"></i><i class="thermo-range" id="heat-range"></i><i class="thermo-danger"></i><i class="thermo-needle" id="heat-needle"></i></div>
@@ -235,16 +239,19 @@ export function mountForge(root, { onArena, onCollection }) {
       drawHeat();
     } else if (phase === 'forge') {
       const risk = fractureRisk(run);
+      const bounded = Number.isFinite(hammerLimit(run));
       title(MODELS[run.model]);
       /* 三区作用改由刀身热区 + 命中浮字表达，这里不再堆一行说明文字。 */
       get('description').replaceChildren();
       readout.innerHTML = `<div class="forge-meters"><div><span>落锤</span><b id="hit-count">${run.hits}${run.hits < 6 ? ' / 6' : ' 锤'}</b></div>
         <div><span>下一锤断率</span><b class="risk-value ${risk >= .075 ? 'alert' : ''}" id="risk">${fmt(risk)}</b>
-          <div class="risk-bar"><span style="width:${risk / .9 * 100}%"></span></div></div></div>${lookChips(run)}`;
-      const fallback = webglError ? '<div class="v19-zones">' + ['belly', 'edge', 'tip'].map((zone, index) =>
-        button('strike-fallback', ['刀腹', '刃侧', '刀尖'][index], { id: 'strike-' + zone, kind: 'secondary' })).join('') + '</div>' : '';
+          <div class="risk-bar"><span style="width:${risk / .9 * 100}%"></span></div></div></div>
+          ${bounded && run.hits >= 6 && run.furnaceKind !== 'first' ? `<p class="fit-detail">预计疲劳 ${nextFatigue(run)} / 100 · 最多 10 锤</p>` : ''}${lookChips(run)}`;
+      const fallback = '<div class="v19-zones">' + ['belly', 'edge', 'tip'].map((zone, index) =>
+        button('strike-fallback', ['刀腹', '刃侧', '刀尖'][index], { id: 'strike-' + zone, kind: 'secondary', off: !canStrike(run) })).join('') + '</div>';
       /* 收锤进度画在按钮里，不再用“第 6 锤后可收锤”整条文字解释规则。 */
-      actions.innerHTML = fallback +
+      actions.innerHTML = fallback + (bounded && !run.buffered && nextFatigue(run) >= 100 && run.hits < hammerLimit(run)
+        ? button('buffer-fatigue', '缓冲一次 · −22 疲劳', { kind: 'secondary' }) : '') +
         `<button type="button" class="primary finish-btn" data-action="finish"${run.hits < 6 ? ' disabled' : ''}
           aria-label="${run.hits < 6 ? `收锤，还差 ${6 - run.hits} 锤` : '收锤，去装配'}">
           <span>收锤</span><i class="finish-gauge" style="--v:${Math.min(1, run.hits / 6) * 100}%" aria-hidden="true"></i>
@@ -254,7 +261,9 @@ export function mountForge(root, { onArena, onCollection }) {
       readout.innerHTML = fit ? `<p class="fit-detail">${fit.parts} · ${fit.delta.map((n, i) => n ? STAT_NAMES[i] + signed(n) : '').filter(Boolean).join(' · ')}</p>` : '';
       const price = fittingPrice(run);
       actions.innerHTML = button('appraise', '确认并鉴定', { off: !fit }) +
-        button('refresh', run.refreshed ? '已换配件' : run.freeFitting ? '免费换一批' : '换一批 · ' + price + ' CR', { kind: 'secondary', off: run.refreshed || save.credits < price });
+        (run.furnaceKind !== 'first' ? button('refresh', run.refreshed ? '已换配件' : run.freeFitting ? '免费换一批'
+          : (run.rules === RELEASE_RULES ? '换柄外观 · ' : '换一批 · ') + price + ' CR',
+          { kind: 'secondary', off: run.refreshed || save.credits < price }) : '');
     } else if (phase === 'appraise') {
       const record = run.record;
       title(record?.name || '成刀已鉴定');
@@ -265,6 +274,8 @@ export function mountForge(root, { onArena, onCollection }) {
         readout.innerHTML = `<div class="forge-result arcade-result${rare ? ' is-rare' : ''}" data-rarity="${esc(rarity)}">
           <span class="result-grade">${esc(record.grade)} · 品质 ${esc(record.quality)}</span>
           <b class="result-score"><span id="result-score">0</span><small> 分</small></b><span>+${record.credit} CR</span></div>
+          ${record.craft ? `<p class="fit-detail">工艺 ${esc(record.craft.grade)} · ${record.craft.score}${record.seriesSlot ? ' · ' + seriesLabel(record.seriesSlot) : ''}</p>` : ''}
+          ${record.commission ? `<p class="fit-detail">${esc(record.commission.name)} · ${record.commission.met ? '委托达标' : '未达标'}</p>` : ''}
           <div class="stat-list">${record.stats.map((n, i) => `<div class="stat" style="--i:${i}"><span>${STAT_NAMES[i]}</span><b>${Number(n)}</b><span class="stat-track"><i style="width:${Math.min(100, Number(n) / STAT_CAP * 100)}%"></i></span></div>`).join('')}</div>
           ${perk ? `<p class="fit-detail result-perk">${esc(perk.desc)}</p>` : ''}`;
         const scoreNode = get('result-score');
@@ -285,17 +296,30 @@ export function mountForge(root, { onArena, onCollection }) {
       } else readout.replaceChildren();
       actions.innerHTML = (record ? button('enter-tournament', '带此刀去试斩') : '') +
         button('open-collection', '藏刀阁', { kind: record ? 'secondary' : 'primary' }) +
-        button('restart', '再锻一把', { kind: 'secondary' });
+        (run.furnaceKind === 'first' && !save.launch?.firstPassed ? '' : button('restart', '再锻一把', { kind: 'secondary' }));
     } else {
       /* 失败页不再用三行文字复述同一件事：标题说结果、播报说原因、这里只画复盘刻度。 */
-      title(failedRefining ? '炉次报废' : '刀身断裂');
+      title(run.last?.type === 'abandoned' ? '炉次已放弃' : failedRefining ? '炉次报废' : '刀身断裂');
       const review = failedRefining
         ? [['炉料损伤', Math.min(100, Math.round(run.refinement?.damage ?? 100)), 'danger'],
           ['精炼质量', Math.round(run.refinement?.quality ?? 0), '']]
         : [['落锤', run.hits, ''], ['断率', Math.round((run.last?.risk ?? 0) * 100), 'danger']];
       readout.innerHTML = `<div class="fail-review">${review.map(([label, value, tone]) =>
         `<div${tone ? ` data-tone="${tone}"` : ''}><span>${label}</span><b>${value}</b><i style="--v:${Math.min(100, value)}%"></i></div>`).join('')}</div>`;
+      if (run.reward > 0) readout.insertAdjacentHTML('beforeend', `<p class="fit-detail">退回 ${run.reward} CR · 已入作品账单</p>`);
       actions.innerHTML = button('restart', '再开一炉');
+    }
+    const abandon = get('furnace-abandon');
+    const abandonable = run.rules === RELEASE_RULES && run.furnaceKind !== 'first' &&
+      ['reveal', 'refine', 'forge', 'fit'].includes(phase);
+    abandon.hidden = !abandonable;
+    if (abandonable) {
+      const spent = walletView({ id: run.resultId, seed: run.seed, v19Visual: true }).receipts
+        .reduce((total, row) => total + (row.amount < 0 ? -row.amount : 0), 0);
+      abandon.innerHTML = confirmAbandon
+        ? `<p>已付 ${spent} CR。放弃后本炉归入断刀册。</p>${button('confirm-abandon', '确认放弃', { kind: 'secondary' })}
+          ${button('cancel-abandon', '继续本炉', { kind: 'secondary' })}`
+        : button('ask-abandon', '放弃本炉', { kind: 'secondary' });
     }
     renderTools(run, ore);
     if (phase === 'ore' && webglError) describeProbe(ore, inspectionMode);
@@ -355,6 +379,24 @@ export function mountForge(root, { onArena, onCollection }) {
       toolStone = '';
       return;
     }
+    const config = get('furnace-config');
+    const fixed = ['first', 'recovery'].includes(run.furnaceKind);
+    const task = commissionFor(ore);
+    config.hidden = run.rules !== RELEASE_RULES;
+    if (!config.hidden) {
+      config.innerHTML = fixed ? `<p>${run.furnaceKind === 'first' ? '新手工坊 · 首料免费 · 直刀图样'
+        : '基础复开 · 免费工坊料 · 完成后补到 14 CR'}</p>`
+        : `<div class="furnace-plan"><label for="furnace-blueprint">图样</label><select id="furnace-blueprint">
+          ${Object.entries({ auto: '随炉成形', ...BLUEPRINTS }).map(([value, label]) =>
+            `<option value="${value}" ${run.blueprint === value ? 'selected' : ''}>${label}</option>`).join('')}</select>
+          <button type="button" data-action="toggle-challenge" aria-pressed="${run.furnaceKind === 'challenge'}">
+            ${run.furnaceKind === 'challenge' ? '挑战炉 ✓' : '常规炉'}</button></div>
+          ${run.furnaceKind === 'challenge' ? '<p>挑战炉可报废，失败返实际材料费 40%。</p>' : ''}
+          <button type="button" class="furnace-order" data-action="toggle-commission" aria-pressed="${Boolean(run.commissionSelected)}">
+            <b>${run.commissionSelected ? '✓ 已接' : '接委托'} · ${esc(task.name)} +${task.amount} CR</b>
+            <span>${esc(task.description)}</span>
+          </button>`;
+    }
     const key = run.seed + '|' + ore.id;
     if (toolStone !== key) {
       inspectionMode = ore.window ? 'window' : ore.probe.lamp ? 'lamp' : 'natural';
@@ -382,7 +424,9 @@ export function mountForge(root, { onArena, onCollection }) {
         const image = new URL('../../assets/v19/ore-previews/' + oreModelId(stone) + '.webp', import.meta.url);
         return '<button type="button" class="ore-card" data-action="select-ore" data-id="' + index +
           '" aria-label="' + rock.name + '，' + stone.price + ' CR"><span class="ore-thumbnail" style="--ore-color:' + rock.color +
-          '"><img src="' + image.href + '" alt="" decoding="async"><i></i></span></button>';
+          '"><img src="' + image.href + '" alt="" decoding="async"><i></i></span>' +
+          (run.rules === RELEASE_RULES ? '<span class="ore-card-label"><b>' + rock.name + '</b><small>' +
+            (stone.price ? MATERIAL_TIERS[stone.tier].label + ' · ' + stone.price + ' CR' : '免费') + '</small></span>' : '') + '</button>';
       }).join('');
     }
     [...oreOptions.children].forEach((button, index) => {
@@ -481,8 +525,8 @@ export function mountForge(root, { onArena, onCollection }) {
       }
       heatInput.green = green;
     }
-    const canPour = heat.step === 'molten' && heat.elapsed >= HEAT.minimum && heat.quality >= HEAT.minQuality;
-    const state = [heat.step, danger, rank, paused, Boolean(heatInput?.blowing), canPour, guidance].join('|');
+    const readyToPour = canPour(save.run);
+    const state = [heat.step, danger, rank, paused, Boolean(heatInput?.blowing), readyToPour, guidance].join('|');
     if (!force && state === heatHud.state && now - heatHud.updated < 80) return;
     heatHud.state = state;
     heatHud.updated = now;
@@ -490,6 +534,7 @@ export function mountForge(root, { onArena, onCollection }) {
     text('heat-number', temperature + '°');
     text('heat-clock', heat.step === 'cast' ? '浇注中' : paused ? heat.elapsed ? '待续炼' : '待点火' : Math.max(0, (heat.step === 'ore' ? HEAT.preheat : HEAT.window) - heat.elapsed).toFixed(1) + ' s');
     text('heat-target', heat.step === 'molten' ? '目标 ' + band.lower.toFixed(0) + '–' + band.upper.toFixed(0) + '°' : '');
+    nodes['heat-range'].style.setProperty('--heat-band-width', (band.upper - band.lower) + '%');
     put('lower', band.lower.toFixed(2), value => { nodes.thermo.dataset.lower = value; });
     put('upper', band.upper.toFixed(2), value => { nodes.thermo.dataset.upper = value; });
     text('heat-rank', rank === 'failed' ? '' : outcome.label);
@@ -504,7 +549,7 @@ export function mountForge(root, { onArena, onCollection }) {
     put('heat-disabled', heat.step === 'cast', value => { nodes['heat-button'].disabled = value; });
     text('heat-button', paused && heat.elapsed ? '按住续炼' : '按住鼓风');
     put('blowing', heat.step !== 'cast' && Boolean(heatInput?.blowing), value => nodes['heat-button'].classList.toggle('heating', value));
-    put('pour-disabled', !canPour, value => { nodes['pour-button'].disabled = value; });
+    put('pour-disabled', !readyToPour, value => { nodes['pour-button'].disabled = value; });
     text('pour-button', heat.step === 'cast' ? '浇注中…' : '浇注');
   }
 
@@ -525,7 +570,7 @@ export function mountForge(root, { onArena, onCollection }) {
         heatInput = null;
         if (!persist()) { render(); return; }
         render();
-        const label = REFINEMENT_RESULTS[run.refinement.result].label;
+        const label = run.refinement.assisted ? '保底成坯 · 精炼 22' : REFINEMENT_RESULTS[run.refinement.result].label;
         const difference = run.purity - run.ore.purity;
         /* 播报只说“为什么废”，标题已经说了“废了”，不再拼一遍“· 炉次报废”。 */
         const result = run.phase === 'broken'
@@ -658,20 +703,22 @@ export function mountForge(root, { onArena, onCollection }) {
     }
     if (save.run.phase !== 'forge' || queuedStop || pendingCheckpoint) return;
     if (busy) {
-      if (stage?.blow?.landed && !resultPause) queuedHit = hit;
+      if (stage?.blow?.landed && !resultPause) { queuedHit = hit; say('已排队', ''); }
+      else say('锤头回弹中', '');
       return;
     }
     const result = apply(({ run }) => strike(run, hit.zone, hit.position));
     if (!result) return;
     sound.unlock();
-    busy = Boolean(stage);
+    const animated = stage && hit.world && hit.normal;
+    busy = Boolean(animated);
+    if (busy) root.dataset.swinging = 'true';
     resultPause = result.notable;
     const impact = () => {
       if (result.notable || result.type === 'break') queuedHit = null;
       sound.impact(result, save.run.purity);
       haptics.feedback(result.type === 'break' ? 'fracture' : result.notable ? 'trait' : 'hammer');
-      stage?.impact(hit, result);
-      showHitFloat(hit, result);
+      if (animated) { stage.impact(hit, result); showHitFloat(hit, result); }
       render();
       if (save.run.phase === 'forge' && [.10, .25, .50].some(level => result.risk < level && fractureRisk(save.run) >= level)) {
         sound.play('tension', 1, .12);
@@ -680,10 +727,11 @@ export function mountForge(root, { onArena, onCollection }) {
         say(result.fusion || result.label, result.fusion ? 'surge' : result.type);
       }
     };
-    if (!stage) { impact(); return; }
+    if (!animated) { impact(); return; }
     sound.play('swish');
     stage.swing(hit, result, impact, () => {
       busy = false;
+      delete root.dataset.swinging;
       resultPause = false;
       const next = queuedHit;
       queuedHit = null;
@@ -705,11 +753,21 @@ export function mountForge(root, { onArena, onCollection }) {
     if (action === 'next-batch' && run.batch < BATCHES - 1) {
       run.batch++;
       run.selected = 0;
-    } else if (action === 'select-ore' && Number.isInteger(Number(id)) && Number(id) >= 0 && Number(id) < LOT_SIZE) {
+    } else if (action === 'select-ore' && Number.isInteger(Number(id)) && Number(id) >= 0 && Number(id) < offers(run).length) {
       run.selected = Number(id);
     } else return false;
     return true;
   }
+
+  root.addEventListener('change', event => {
+    if (event.target.id !== 'furnace-blueprint' || !active || save?.run.phase !== 'ore') return;
+    const value = event.target.value;
+    if (value !== 'auto' && !Object.hasOwn(BLUEPRINTS, value)) return;
+    if (apply(({ run }) => { run.blueprint = value; return true; })) {
+      render();
+      get('furnace-blueprint').focus({ preventScroll: true });
+    }
+  });
 
   root.addEventListener('click', event => {
     if (event.target === get('save-notice') && pendingCheckpoint) {
@@ -720,7 +778,7 @@ export function mountForge(root, { onArena, onCollection }) {
     if (!control || !active || !save?.run || pendingCheckpoint) return;
     const { action, id } = control.dataset;
     const run = save.run;
-    if (busy) {
+    if (busy && action !== 'strike-fallback') {
       if (action === 'finish' && run.phase === 'forge' && run.hits >= 6) {
         queuedStop = true;
         queuedHit = null;
@@ -731,7 +789,31 @@ export function mountForge(root, { onArena, onCollection }) {
     sound.configure(getProgress().settings);
     sound.unlock();
     switch (action) {
-      case 'enter-tournament': return onArena(run.resultId);
+      case 'enter-tournament': return onArena(run.resultId, run.furnaceKind === 'first' ? 'first' : 'practice');
+      case 'toggle-commission':
+      case 'toggle-challenge':
+        if (!apply(({ run }) => {
+          if (run.phase !== 'ore' || !['normal', 'challenge'].includes(run.furnaceKind)) return false;
+          if (action === 'toggle-commission') run.commissionSelected = !run.commissionSelected;
+          else run.furnaceKind = run.furnaceKind === 'challenge' ? 'normal' : 'challenge';
+          return true;
+        })) return;
+        break;
+      case 'buffer-fatigue':
+        if (!apply(({ run }) => bufferFatigue(run))) return;
+        break;
+      case 'ask-abandon': confirmAbandon = true; break;
+      case 'cancel-abandon': confirmAbandon = false; break;
+      case 'confirm-abandon':
+        if (!confirmAbandon || !apply(({ run }) => {
+          if (!['reveal', 'refine', 'forge', 'fit'].includes(run.phase) || run.furnaceKind === 'first') return false;
+          run.phase = 'broken';
+          run.last = { type: 'abandoned', label: '主动放弃炉次' };
+          return true;
+        })) return;
+        releaseHeat();
+        confirmAbandon = false;
+        break;
       case 'open-collection': return onCollection();
       case 'inspect-light': {
         if (run.phase !== 'ore') return;
@@ -799,7 +881,10 @@ export function mountForge(root, { onArena, onCollection }) {
         sound.play('cast');
         return;
       case 'finish': return closeAnvil();
-      case 'strike-fallback': return hitBlade({ zone: control.id.slice(7) });
+      case 'strike-fallback': {
+        const zone = control.id.slice(7);
+        return hitBlade(stage?.keyboardHit(zone) || { zone });
+      }
       case 'focus-grip':
         stage.setGripFocus(!stage.gripFocus);
         return renderGripFocus();
@@ -821,6 +906,7 @@ export function mountForge(root, { onArena, onCollection }) {
         say(save.run.record.grade + ' · ' + save.run.record.score, 'surge');
         break;
       case 'restart': {
+        if (heatGesture) return;
         const result = openFurnace({ restart: true });
         if (!result.ok) return showStorageNotice(result.error);
         save = forgeSession();
@@ -835,7 +921,9 @@ export function mountForge(root, { onArena, onCollection }) {
   });
 
   root.addEventListener('pointerdown', event => {
-    if (event.target.id !== 'heat-button' || !event.isPrimary) return;
+    if (!event.isPrimary) return;
+    heatGesture = event.target.id === 'heat-button';
+    if (!heatGesture) return;
     event.preventDefault();
     event.target.setPointerCapture(event.pointerId);
     charge();
@@ -862,7 +950,8 @@ export function mountForge(root, { onArena, onCollection }) {
   window.addEventListener('pagehide', pauseHeat);
   root.addEventListener('keydown', event => {
     if (!active || ![' ', 'Enter'].includes(event.key) || event.repeat) return;
-    if (event.target.id === 'heat-button') {
+    heatGesture = event.target.id === 'heat-button';
+    if (heatGesture) {
       event.preventDefault();
       charge();
     } else if (event.key === ' ' && save.run.phase === 'forge' && event.target.tagName !== 'BUTTON') {
@@ -910,6 +999,7 @@ export function mountForge(root, { onArena, onCollection }) {
     },
     enter() {
       active = true;
+      heatGesture = confirmAbandon = false;
       const result = openFurnace();
       if (!result.ok) { showStorageNotice(result.error); return; }
       if (pendingCheckpoint) persist();
@@ -940,6 +1030,7 @@ export function mountForge(root, { onArena, onCollection }) {
       clearTimeout(phaseTimer);
       stageLoadSeq++;
       revealPending = busy = resultPause = queuedStop = false;
+      delete root.dataset.swinging;
       queuedHit = undefined;
       stageInput?.abort();
       stageEntry++;

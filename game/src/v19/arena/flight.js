@@ -28,7 +28,7 @@ export function flightSchedule(course) {
   const waves = course.rotate ? arrangeWaves(course.waves, random) : course.waves;
   return waves.map((wave, index) => {
     const count = wave.targets.length;
-    const { at, pattern, speed } = wave;
+    const { at, pattern, speed, fixedPositions } = wave;
     const mirrored = random() < .5 ? -1 : 1;
     const lift = (random() - .5) * .035;
     const launches = wave.targets.map((key, i) => {
@@ -48,13 +48,14 @@ export function flightSchedule(course) {
       if (pattern === 'mixed' && key === wave.armor) apex += .042;
       const anchored = pattern === 'anvil';
       const begins = at + delay;
-      const duration = Math.min(course.limit - begins, anchored ? 2.8 : 2.77 - speed * 1.5);
+      const duration = Math.min(course.limit - begins, fixedPositions ? 3.6 : anchored ? 2.8 : 2.77 - speed * 1.5);
       const spin = side * (.18 + random() * .16);
       random(); // Preserve the seeded sequence from the flight rules with first-hit criticals.
       return {
         key, begins, duration, anchored, lane, drift, apex,
         armored: key === wave.armor, marked: wave.marks?.includes(key) ?? false,
-        reinforced: key === wave.reinforced, spin, variation: random(),
+        reinforced: key === wave.reinforced, spin, variation: fixedPositions ? .5 : random(),
+        fixed: fixedPositions?.[i],
       };
     });
     return { ...wave, index, launches };
@@ -67,6 +68,7 @@ export function flightSchedule(course) {
 export function flightAt(launch, elapsed) {
   const age = elapsed - launch.begins;
   if (age < 0 || age >= launch.duration) return null;
+  if (launch.fixed) return { x: launch.fixed[0], y: launch.fixed[1], angle: 0, vx: 0, vy: 0 };
   const p = age / launch.duration;
   if (launch.anchored) {
     const rise = Math.min(1, age / .38);

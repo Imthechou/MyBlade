@@ -8,6 +8,9 @@ on:
       - 'game/src/v19/collectionThumb.js'
       - 'game/css/pages/workshop.css'
       - 'qa/collection-card.spec.cjs'
+      - 'qa/f01-release.spec.cjs'
+      - 'game/src/v19/launchRules.js'
+      - 'game/src/core/v19Progress.js'
       - '.github/workflows/collection-card-qa.yml'
   workflow_dispatch:
 
@@ -42,15 +45,18 @@ jobs:
               -o "$fonts/NotoSerifCJKsc-Regular.otf"
             fc-cache -f "$fonts"
           fi
-      - name: Verify collection cards in the static build
+      - name: Verify collection cards and the F01 loop in the static build
         run: |
           python3 scripts/build_static_site.py
           python3 -m http.server 4173 --bind 127.0.0.1 --directory _site >/tmp/myblade-collection-server.log 2>&1 &
           curl --fail --silent --retry 5 --retry-connrefused --retry-delay 1 http://127.0.0.1:4173/ > /dev/null
           node qa/collection-card.spec.cjs
+          node qa/f01-release.spec.cjs
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: myblade-collection-qa
-          path: audit/collection/
+          path: |
+            audit/collection/
+            audit/f01/
           if-no-files-found: warn

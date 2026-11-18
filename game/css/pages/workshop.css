@@ -595,3 +595,30 @@ button.bcv-face { cursor: pointer; touch-action: manipulation; }
 .ws-collection-page-actions { display:flex; flex-wrap:wrap; justify-content:center; gap:7px; width:100%; }
 .ws-collection-page-actions>.chip { min-height:44px; min-width:62px; padding-inline:12px; }
 .ws-collection-page-actions>.chip:disabled { opacity:.36; cursor:default; }
+
+.ws-f01-entry,
+.ws-f01-slot,
+.credit-ledger {
+  border: 1px solid var(--glass-border);
+  border-radius: var(--r-md);
+  background: var(--surface-glass);
+  padding: 12px;
+}
+.ws-f01-entry {
+  display: flex; justify-content: space-between; align-items: center; gap: 8px;
+  min-height: 48px; color: var(--face); text-align: left; font: inherit; cursor: pointer;
+}
+.ws-f01-entry span, .ws-f01-slot small { color: var(--accent); font-size: 12px; white-space: nowrap; }
+.ws-f01-slot { display: grid; gap: 4px; }
+.ws-f01-slot[data-unlocked="true"] { border-color: var(--accent-line); background: var(--accent-soft); }
+.ws-f01-slot p, .credit-ledger p { margin: 0; color: var(--face-2); font-size: 12px; line-height: 1.6; }
+.credit-ledger { display: grid; gap: 8px; }
+.credit-ledger-head, .credit-ledger-rows .report-line {
+  display: flex; justify-content: space-between; align-items: baseline; gap: 8px;
+}
+.credit-ledger-rows .report-line > span { overflow-wrap: anywhere; }
+.credit-ledger-rows b { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.credit-gain { color: var(--risk-safe); }
+.credit-cost { color: var(--face-2); }
+.credit-pages { display: flex; justify-content: space-between; align-items: center; gap: 6px; }
+.credit-pages .chip { min-height: 44px; }

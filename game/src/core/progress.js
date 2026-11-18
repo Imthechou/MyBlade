@@ -196,7 +196,7 @@ export function archive(record, { mode = 'normal' } = {}) {
 }
 
 /** Archive in the caller's save transaction, including discovery and first-forge rewards. */
-export function archiveInto(s, record, { mode = 'normal', discoveries = [] } = {}) {
+export function archiveInto(s, record, { mode = 'normal', discoveries = [], standardCredit = true, bonusCredit = true } = {}) {
   if (s.collection.some(blade => blade.id === record.id) || s.fractured.some(blade => blade.id === record.id)) {
     return { ok: true, duplicate: true, reward: 0, archived: !record.fractured, fresh: [] };
   }
@@ -248,8 +248,8 @@ export function archiveInto(s, record, { mode = 'normal', discoveries = [] } = {
   }
 
   // CR 奖励：断刀也给少量（V2.1 §1「失败也有记录」），成刀按稀有度
-  let reward = record.fractured ? 10 : Economy.forgeReward(record.rarity);
-  Economy.addCr(s, reward, 'forge');
+  let reward = standardCredit ? (record.fractured ? 10 : Economy.forgeReward(record.rarity)) : 0;
+  Economy.addCr(s, reward, 'forge', { id: 'archive:' + record.id, bladeId: record.id });
   if (!record.fractured && mode !== 'daily') V41Growth.awardWorkshopXp(s,10,'forge:'+record.id);
 
   if (mode === 'daily') {
@@ -266,22 +266,22 @@ export function archiveInto(s, record, { mode = 'normal', discoveries = [] } = {
     const eventType = record.fractured ? Events.EVENT.FORGE_FRACTURED : Events.EVENT.FORGE_COMPLETED;
     const settled = Events.settle(s, eventType, { bladeId: record.id }, {
       rarity: record.rarity || null, score: record.score || 0,
-    });
+    }, { payTask: bonusCredit });
     if (!settled.duplicate) reward += settled.cr;
     if (fresh.length) {
       const disc = Events.settle(s, Events.EVENT.DISCOVERY, { bladeId: record.id, itemKey: 'forge' }, {
         count: fresh.length,
-      });
+      }, { payTask: bonusCredit });
       if (!disc.duplicate) reward += disc.cr;
     }
     const refinement = record.v19Visual?.refinement;
     if (!record.fractured && refinement?.quality >= HEAT.good) {
-      const craft = Events.settle(s, Events.EVENT.REFINEMENT_GOOD, { bladeId: record.id }, { quality: refinement.quality });
+      const craft = Events.settle(s, Events.EVENT.REFINEMENT_GOOD, { bladeId: record.id }, { quality: refinement.quality }, { payTask: bonusCredit });
       if (!craft.duplicate) reward += craft.cr;
     }
   }
 
-  checkAchievements(s);
+  checkAchievements(s, { credits: bonusCredit, bladeId: record.id });
   return { ok: true, reward, archived: !record.fractured && mode !== 'daily', fresh };
 }
 
@@ -377,7 +377,7 @@ export const codexProgress = () => Math.min(1, codexCount() / Math.max(1, codexT
 
 /* ── 成就 ───────────────────────────────────────────────── */
 
-export function checkAchievements(s = load()) {
+export function checkAchievements(s = load(), { credits = true, bladeId = null } = {}) {
   const newly = [];
   const m = s.stats;
   for (const a of ACHIEVEMENTS) {
@@ -410,7 +410,7 @@ export function checkAchievements(s = load()) {
     if (hit) {
       s.achievements[a.id] = Date.now();
       newly.push(a);
-      if (a.reward?.cr) Economy.addCr(s, a.reward.cr, `achievement:${a.id}`);
+      if (credits && a.reward?.cr) Economy.addCr(s, a.reward.cr, `achievement:${a.id}`, { id: 'achievement:' + a.id, bladeId });
       if (a.reward?.unlock) unlockFromAchievement(s, a.reward.unlock);
     }
   }

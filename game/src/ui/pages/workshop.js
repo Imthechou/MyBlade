@@ -19,7 +19,9 @@ import * as CodexCatalog from '../../data/codexCatalog.js';
 import router from '../router.js';
 import { bladeMastery, hasLiveFurnace, openFurnace } from '../../core/v19Progress.js';
 import { LEGACY_MODE as legacy } from '../../platform/env.js';
-import { FITS, LOOKS, REFINEMENT_RESULTS, STAT_CAP, fittingPrice, oreMaterialOf, signaturePerk } from '../../v19/forge.js';
+import { FITS, LOOKS, REFINEMENT_RESULTS, STAT_CAP, familyOf, fittingPrice, oreMaterialOf, signaturePerk } from '../../v19/forge.js';
+import { BLUEPRINTS, SERIES, SPECIALS, ZONES, seriesLabel } from '../../v19/launchRules.js';
+import { creditHistory } from '../creditView.js';
 import { workshopPerks } from '../../v19/workshop.js';
 
 const canResumeForge = () => legacy ? Game.run && !Game.run.finished : hasLiveFurnace();
@@ -233,6 +235,7 @@ export function openTab(id) {
 function renderCollection() {
   const list = Core.progress.collection();
   const fractures = Core.progress.fracturedList();
+  const slots = new Set(list.map(blade => blade.seriesSlot).filter(Boolean));
   body.appendChild(el('div',{class:'ws-collection-head'},[
     el('span',{class:'muted tiny',text:`成刀 ${list.length} 把`}),
     el('button',{
@@ -240,6 +243,9 @@ function renderCollection() {
       'aria-label':`断刀册，${fractures.length} 把，查看断裂记录`,onclick:openFractures,
     },[el('span',{text:`断刀册 · ${fractures.length}`}),icon('next')]),
   ]));
+  if (!legacy) body.append(el('button', {
+    class: 'ws-f01-entry', type: 'button', 'aria-haspopup': 'dialog', onclick: openSeries,
+  }, [el('b', { text: 'F01 首辑图鉴' }), el('span', { text: `${slots.size} / ${SERIES.length} 已入册 ›` })]));
   if (!list.length) {
     body.appendChild(emptyCollection());
     return;
@@ -372,10 +378,38 @@ function openCompare() {
       })),
     ])),
   ]);
-  sheet({ title: '比较成刀', body: el('div', { class: 'stack' }, [
+  const dialog = sheet({ title: '比较成刀', body: el('div', { class: 'stack' }, [
     table,
+    !legacy ? el('button', {
+      class: 'btn btn--primary', type: 'button', text: '带这两把刀同靶对照',
+      onclick: async () => {
+        const { openTournament } = await import('./v19Arena.js');
+        dialog.close();
+        openTournament({ mode: 'compare', bladeIds: models.map(model => model.id) });
+      },
+    }) : null,
     el('p', { class: 'muted tiny', text: '高亮表示该项更优；相同则不标。评分高不等于所有项目都更强 —— 请结合刀型与特性看项目专长。' }),
   ]) });
+}
+
+function openSeries() {
+  const collection = Core.progress.collection();
+  const cards = SERIES.map(item => {
+    const unlocked = collection.filter(blade => blade.seriesSlot === item.id);
+    const waiting = collection.some(blade => blade.seriesCandidate === item.id && !blade.seriesSlot);
+    const work = item.family
+      ? `${familyOf(item.family).name} · ${BLUEPRINTS[item.model]} · ${ZONES[item.zone]}至少 ${item.hits} 锤`
+      : '三种落点各至少两锤 · 其他版位优先';
+    return el('article', { class: 'ws-f01-slot', 'data-unlocked': String(unlocked.length > 0) }, [
+      el('div', { class: 'credit-ledger-head' }, [
+        el('b', { text: `${seriesLabel(item.id)} · ${item.name}` }),
+        el('small', { text: unlocked.length ? `已藏 ${unlocked.length} 把` : waiting ? '等候赛印' : '待发现' }),
+      ]),
+      el('p', { text: `${work} · 精炼 ≥${item.quality}` }),
+      item.special ? el('p', { text: `同刀参加有效快赛并达成 ${SPECIALS[item.special].label} 专项` }) : null,
+    ]);
+  });
+  sheet({ title: 'F01 首辑图鉴', body: el('div', { class: 'stack' }, cards) });
 }
 
 /** 断刀档案只读展示；不依赖完整成刀，也不提供参赛或收藏操作。 */
@@ -433,6 +467,7 @@ function openFractures() {
         el('summary', { text: '结构失效记录' }),
         el('pre', { text: JSON.stringify(info.evidence, null, 2) }),
       ])] : []),
+      !legacy ? creditHistory(blade) : null,
     );
     scroll.scrollTop = 0;
     back.focus({ preventScroll: true });
@@ -477,9 +512,12 @@ function inspect(blade) {
       rarityBadge(model.rarityTone, model.rarityName),
       el('span', { class: 'chip', text: `品质 ${model.qualityName || '未记录'}` }),
       el('span', { class: 'chip', text: `评分 ${model.score}` }),
+      blade.craftRating ? el('span', { class: 'chip', text: `工艺 ${blade.craftRating.grade} · ${blade.craftRating.score}` }) : null,
+      model.seriesSlot ? el('span', { class: 'chip chip--accent', text: seriesLabel(model.seriesSlot) }) : null,
       model.arenaWins > 0 ? el('span', { class: 'chip chip--accent', text: `${model.arenaWins} 胜` }) : null,
     ].filter(Boolean)),
     ...(recipe ? [v19CraftDetails(recipe, signaturePerk(blade.combos?.[0]))] : []),
+    !legacy ? creditHistory(blade) : null,
     ...(mastery ? [el('div', { class: 'report-line',
       text: `${mastery.level} · ${mastery.project}专长 +${Math.round(mastery.bonus * 100)}% · 有效 ${mastery.matches} 场` })] : []),
     bladeCardDetail(model),
@@ -658,7 +696,7 @@ function renderAchievements() {
         el('div', {}, [
           el('div', { class: 'trait-name', text: achievement.name }),
           el('div', { class: 'trait-desc', text: achievement.desc }),
-          el('div', { class: 'tiny muted', text: achievement.reward?.cr ? `奖励 ${achievement.reward.cr} CR` : '' }),
+          legacy && achievement.reward?.cr ? el('div', { class: 'tiny muted', text: `奖励 ${achievement.reward.cr} CR` }) : null,
         ]),
       ]));
     }

@@ -1333,9 +1333,9 @@ export class ForgeStage {
       screen: { x: clientX, y: clientY }, mesh: this.mesh };
   }
 
-  keyboardHit() {
+  keyboardHit(zone = 'belly') {
     if (!this.content.visible || !this.active?.coords) return null;
-    const point = this.zoneAnchors().belly;
+    const point = this.zoneAnchors()?.[zone];
     if (!point) return null;
     const rect = this.canvas.getBoundingClientRect();
     return this.hit(rect.left + point.x, rect.top + point.y);

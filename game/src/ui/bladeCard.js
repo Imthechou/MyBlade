@@ -27,6 +27,7 @@ import { COMBOS } from '../data/combos.js';
 import { resultView as edgeResultView } from '../core/edge.js';
 import { tagName } from '../data/tags.js';
 import { signaturePerk, STAT_CAP } from '../v19/forge.js';
+import { SERIES, seriesLabel } from '../v19/launchRules.js';
 
 /**
  * 把记录里的 `knifeType` 归一成**真实模型 id**。
@@ -129,6 +130,8 @@ export function bladeCardModel(blade, { kind = 'collection' } = {}) {
     rarityName: src.rarityName || null,
     rarityTone: RARITY_TONE[src.rarity] || 'common',
     qualityName: src.qualityName || null,
+    seriesSlot: SERIES.some(item => item.id === src.seriesSlot) ? src.seriesSlot : null,
+    firstTrialStamp: src.firstTrialStamp === true,
 
     /* 卡面核心信息 */
     coreTraits: perk ? [perk] : coreTraits,
@@ -177,7 +180,7 @@ export function bladeCardModel(blade, { kind = 'collection' } = {}) {
 export function bladeCard(model, { art = null, onOpen = null } = {}) {
   const artNode = el('div', { class: 'bcv-art', 'aria-hidden': 'true' }, art ? [art] : []);
   const honor = model.honors.some((item) => item.champion)
-    ? '冠军' : model.arenaWins > 0 ? `${model.arenaWins} 胜` : null;
+    ? '冠军' : model.firstTrialStamp ? '首刀三斩' : model.arenaWins > 0 ? `${model.arenaWins} 胜` : null;
   const extra = model.fractured ? '已断裂' : model.coreTraits[0]?.name;
   const subtitle = extra || (!String(model.name).includes(model.knifeTypeName) ? model.knifeTypeName : null);
   const face = el(onOpen ? 'button' : 'div', {
@@ -196,7 +199,8 @@ export function bladeCard(model, { art = null, onOpen = null } = {}) {
     artNode,
     el('div', { class: 'bcv-body' }, [
       el('div', { class: 'bcv-name', text: model.name }),
-      subtitle && el('div', { class: 'bcv-sub', text: subtitle }),
+      (model.seriesSlot || subtitle) && el('div', { class: 'bcv-sub',
+        text: [model.seriesSlot ? seriesLabel(model.seriesSlot) : null, subtitle].filter(Boolean).join(' · ') }),
     ].filter(Boolean)),
   ]);
   // “加入比较”由藏刀阁加到外层，与打开卡片的按钮并列。

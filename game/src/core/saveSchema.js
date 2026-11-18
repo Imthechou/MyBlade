@@ -1,5 +1,8 @@
 /** 存档默认值与字段归一化；不读写存储，不依赖 UI 或渲染。 */
 import { SAVE_VERSION } from '../platform/storage.js';
+import { LEGACY_MODE } from '../platform/env.js';
+import { NEW_WALLET } from '../v19/launchRules.js';
+import { makeWallet, normalizeWallet } from './wallet.js';
 import { CR_START, STAT_KEYS } from '../data/balance.js';
 import * as Daily from './daily.js';
 import { makeQuickRecords } from './quickChallengeRecords.js';
@@ -54,7 +57,8 @@ export function normalizeSettings(raw) {
 export function makeSave() {
   return {
     version: SAVE_VERSION,
-    cr: CR_START,
+    cr: LEGACY_MODE ? CR_START : NEW_WALLET,
+    ...(!LEGACY_MODE ? { wallet: makeWallet(NEW_WALLET) } : {}),
     createdAt: Date.now(),
 
     collection: [],        // 完整成刀 BladeRecord[]
@@ -88,6 +92,7 @@ export function makeSave() {
     unlockedTitles: [],
 
     arena: {
+      history: [],
       school: {},          // { [branchId]: { cleared: [0..4] } }
       national: { best: 0, wins: 0 },
       apex: { best: 0, wins: 0 },
@@ -106,7 +111,7 @@ export function makeSave() {
     lastDailyDay: null,
 
     settings: defaultSettings(),
-    v19: normalizeV19(),
+    v19: { ...normalizeV19(), launch: { firstBladeId: null, firstPassed: false } },
   };
 }
 
@@ -142,6 +147,15 @@ export function normalizeSave(raw) {
   }
   out.settings = normalizeSettings(src.settings);
   out.v19 = normalizeV19(src.v19);
+  if (!LEGACY_MODE) {
+    out.wallet = normalizeWallet(src.wallet, out.cr);
+    const launch = map(src.v19?.launch);
+    out.v19.launch = {
+      firstBladeId: typeof launch.firstBladeId === 'string' ? launch.firstBladeId : null,
+      firstPassed: launch.firstPassed === true || (!src.v19?.launch && out.collection.some(blade =>
+        !blade.fractured && blade.canEnterArena !== false)),
+    };
+  }
   out.stats = { ...defaults.stats, ...map(src.stats) };
   for (const key of Object.keys(defaults.stats)) out.stats[key] = count(out.stats[key]);
   out.achievements = map(src.achievements);
