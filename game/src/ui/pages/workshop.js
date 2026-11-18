@@ -305,6 +305,7 @@ function renderCollection() {
     const model = bladeCardModel(blade, { kind: 'collection' });
     const picked = compareIds.includes(blade.id);
     const card = bladeCard(model, { art: collectionArt(blade, model), onOpen: () => inspect(blade) });
+    card.dataset.bladeId = blade.id;
     card.appendChild(el('div', { class: 'bcv-compare-row' }, [
       el('button', {
         /* ★ 移动端：卡片内的“加入比较”也是可点控件。
@@ -548,6 +549,11 @@ function inspect(blade) {
   const detailSheet = sheet({
     title: model.name,
     body: details,
+    returnFocus() {
+      const card = [...body.querySelectorAll('.blade-card-v2')]
+        .find((item) => item.dataset.bladeId === model.id);
+      return card?.querySelector('.bcv-open') || body;
+    },
     onClose: () => {
       stopTilt();
       stopPreview?.();

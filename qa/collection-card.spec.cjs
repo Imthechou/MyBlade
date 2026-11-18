@@ -115,6 +115,8 @@ async function inspect(browser, width, height, touch, motion = 'full') {
       const model = sheet.getByRole('button', { name: '3D 鉴赏', exact: true });
       await model.click();
       await sheet.locator('.blade-detail-stage canvas').waitFor({ timeout: 20000 });
+      await sheet.locator('.blade-detail-stage-status').waitFor({ state: 'hidden', timeout: 20000 });
+      await capture(sheet, `model-${tag}.png`);
       await sheet.getByRole('button', { name: '卡面', exact: true }).click();
       assert.equal(await sheet.locator('.blade-detail-stage canvas').count(), 0);
       await model.click();
@@ -144,9 +146,7 @@ async function inspect(browser, width, height, touch, motion = 'full') {
     const openSheet = page.locator('.blade-detail-sheet');
     await openSheet.getByRole('button', { name: '关闭' }).click();
     await openSheet.waitFor({ state: 'detached' });
-    if (width !== 390 || motion !== 'full') {
-      assert.equal(await mythic.evaluate(node => node === document.activeElement), true);
-    }
+    assert.equal(await mythic.evaluate(node => node === document.activeElement), true);
     const comparison = grid.getByRole('button', { name: '加入比较' });
     if (width === 390 && motion === 'full') {
       await comparison.nth(0).click();
