@@ -865,7 +865,7 @@
 
 @media (max-height: 650px) {
   #v19-forge .v19-stage { height: clamp(172px, 34dvh, 225px); }
-  #v19-forge .v19-stage[data-mode="ore"] { height: clamp(132px, 23dvh, 157px); }
+  #v19-forge .v19-stage[data-mode="ore"] { height: clamp(120px, 21dvh, 148px); }
   #v19-forge .v19-stage[data-mode="refine"] { height: clamp(150px, 31dvh, 208px); }
   #v19-forge .v19-stage[data-mode="forge"] { height: clamp(190px, 39dvh, 255px); }
   #v19-forge .ore-card { grid-template-rows: 28px auto; }
