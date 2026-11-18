@@ -49,6 +49,15 @@ async function forge(page, label, zones, fitIndex = 0) {
   await action(page, 'select-fit').nth(fitIndex).click();
   await action(page, 'appraise').click();
   await page.locator('#v19-forge[data-phase="appraise"]').waitFor();
+  await page.locator('#stage[data-loading="false"] canvas').waitFor();
+  await page.evaluate(async () => {
+    const { attachForgeStage } = await import(new URL('src/v19/sharedStage.js', document.baseURI));
+    const stage = attachForgeStage(document.querySelector('#stage'));
+    if (stage.mode !== 'appraise' || stage.lastRender < stage.entered || stage.shown !== stage.want ||
+        !stage.content.visible || !stage.mesh?.visible || !stage.displayStand?.visible || stage.renderer.info.render.calls < 2) {
+      throw new Error('The appraised knife and its stand have not been rendered');
+    }
+  });
   await shot(page, label);
   return saved(page);
 }

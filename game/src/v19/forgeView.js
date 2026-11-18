@@ -324,11 +324,15 @@ export function mountForge(root, { onArena, onCollection }) {
     renderTools(run, ore);
     if (phase === 'ore' && webglError) describeProbe(ore, inspectionMode);
     const loadSeq = ++stageLoadSeq;
+    const started = performance.now();
     const pendingStage = stage?.sync(run, ore, fit);
     if (phase === 'ore') stage?.setInspection(inspectionMode);
-    if (pendingStage?.then) {
+    if (stage && (pendingStage || stageBox.dataset.loading === 'true' || changedPhase && phase === 'appraise')) {
       setStageLoading(true);
-      pendingStage.finally(() => { if (loadSeq === stageLoadSeq) setStageLoading(false); });
+      const isCurrent = () => loadSeq === stageLoadSeq;
+      Promise.resolve(pendingStage ?? true)
+        .then(ok => ok && stageModule.waitForStageFrame(stage, started, isCurrent))
+        .then(() => { if (isCurrent()) setStageLoading(false); });
     } else if (stage || webglError) {
       setStageLoading(false);
     }
@@ -342,7 +346,8 @@ export function mountForge(root, { onArena, onCollection }) {
   function setStageLoading(loading) {
     const marker = get('stage-loading');
     stageBox.dataset.loading = String(Boolean(loading));
-    if (marker) marker.hidden = !loading;
+    marker.textContent = stageBox.dataset.mode === 'appraise' ? '正在呈现刀具…' : '正在准备工位…';
+    marker.hidden = !loading;
   }
 
   function renderGripFocus() {

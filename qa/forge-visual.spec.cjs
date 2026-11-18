@@ -66,10 +66,17 @@ async function run() {
  if(await intro.count()&&await intro.isVisible()) await intro.click();
  await page.evaluate(async () => {
    const { get } = await import('/src/core/progress.js');
-   const { openFurnace } = await import('/src/core/v19Progress.js');
+   const { commitFurnace, forgeSession, openFurnace } = await import('/src/core/v19Progress.js');
+   const { offers } = await import('/src/v19/forge.js');
    // The first furnace caps at six hits. This visual fixture exercises a regular furnace.
    get().v19.launch.firstPassed = true;
-   return openFurnace({ seed: 20261152 }).ok;
+   const opened = openFurnace({ seed: 20261152 });
+   if (!opened.ok) throw new Error(opened.error);
+   const selected = commitFurnace(forgeSession().run, ({ run, credits }) => {
+     run.selected = offers(run).findIndex(ore => ore.price <= credits);
+     return run.selected >= 0;
+   });
+   if (!selected.ok) throw new Error('No affordable fixture material');
  });
  await page.getByRole('button',{name:/开始锻刀/}).click();
  await shot(page,'01_ore');

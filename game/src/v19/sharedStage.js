@@ -134,6 +134,17 @@ export function bindStageInput(stage, {
   });
 }
 
+export async function waitForStageFrame(stage, started, isCurrent) {
+  const deadline = performance.now() + 2500;
+  while (isCurrent()) {
+    if (stage.lastRender >= started && stage.shown === stage.want && stage.mesh?.visible && stage.content.visible) return true;
+    if (performance.now() >= deadline) break;
+    stage.invalidate(250);
+    await new Promise(resolve => requestAnimationFrame(resolve));
+  }
+  return false;
+}
+
 export function showForgedBlade(host, visual, { fractured = false, gallery = false, fitting = FITS.find(item => item.id === visual.fit) } = {}) {
   const stage = attachForgeStage(host, { gallery });
   const abort = new AbortController();
@@ -145,16 +156,10 @@ export function showForgedBlade(host, visual, { fractured = false, gallery = fal
   const phase = fractured ? 'broken' : 'appraise';
   const started = performance.now();
   const synced = stage.sync({ ...visual, phase }, visual.ore, fitting);
-  const ready = Promise.resolve(synced ?? true).then(async ok => {
+  const ready = Promise.resolve(synced ?? true).then(ok => {
     if (!ok || !gallery) return ok;
-    const deadline = performance.now() + 2500;
-    while (host.isConnected && canvas.parentElement === host && !abort.signal.aborted) {
-      if (stage.lastRender >= started && stage.shown === stage.want && stage.mesh?.visible && stage.content.visible) return true;
-      if (performance.now() >= deadline) break;
-      stage.invalidate(250);
-      await new Promise(resolve => requestAnimationFrame(resolve));
-    }
-    return false;
+    return waitForStageFrame(stage, started, () =>
+      host.isConnected && canvas.parentElement === host && !abort.signal.aborted);
   });
   const close = () => {
     abort.abort();
