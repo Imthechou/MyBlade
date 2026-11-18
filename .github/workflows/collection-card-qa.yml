@@ -22,12 +22,26 @@ jobs:
       - uses: actions/checkout@v4
       - name: Run core unit tests
         run: node --test game/tests/unit/*.test.mjs
-      - name: Install Chromium and Chinese fonts
+      - name: Prepare Chrome and Chinese fonts
         run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq fonts-noto-cjk
-          npm install --no-audit --no-fund --no-save playwright@1.56.1
-          npx playwright install --with-deps chromium
+          npm install --no-audit --no-fund --no-save --fetch-timeout=45000 --fetch-retries=1 playwright@1.56.1
+          browser="$(command -v google-chrome || command -v chromium || true)"
+          if [[ -n "$browser" ]]; then
+            echo "CHROMIUM_PATH=$browser" >> "$GITHUB_ENV"
+          else
+            npx playwright install chromium
+          fi
+          if [[ -z "$(fc-list ':lang=zh')" ]]; then
+            fonts="$HOME/.local/share/fonts"
+            mkdir -p "$fonts"
+            curl --fail --silent --show-error --location --max-time 40 \
+              https://raw.githubusercontent.com/notofonts/noto-cjk/Sans2.004/Sans/OTF/SimplifiedChinese/NotoSansCJKsc-Regular.otf \
+              -o "$fonts/NotoSansCJKsc-Regular.otf"
+            curl --fail --silent --show-error --location --max-time 40 \
+              https://raw.githubusercontent.com/notofonts/noto-cjk/Serif2.003/Serif/OTF/SimplifiedChinese/NotoSerifCJKsc-Regular.otf \
+              -o "$fonts/NotoSerifCJKsc-Regular.otf"
+            fc-cache -f "$fonts"
+          fi
       - name: Verify collection cards in the static build
         run: |
           python3 scripts/build_static_site.py
